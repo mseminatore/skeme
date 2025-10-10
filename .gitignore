@@ -1,6 +1,7 @@
 # Project files
 skeme
 build/
+.vscode/
 
 # Prerequisites
 *.d
