@@ -2,6 +2,7 @@
 #define __PARSER_H
 
 #include "lexer.h"
+#include "vm.h"
 
 //-----------------
 // constant decls
@@ -23,5 +24,6 @@
 void push_file_stack(const char *filename);
 void pop_file_stack(void);
 int yyparse(void);
+void dump_symbols();
 
 #endif // __PARSER_H

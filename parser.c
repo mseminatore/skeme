@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include "parser.h"
+#include "vm.h"
 
 // parser tracking
 int err_count = 0;

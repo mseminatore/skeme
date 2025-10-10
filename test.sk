@@ -1,3 +1,13 @@
-(1 (1 2))
+; an empty list
+()
+
+; a pair
 (a b)
+
+; a nested list
+(1 (1 2))
+
+; a variable
 (define foo 5)
+
+; a function

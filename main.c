@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
 #include "parser.h"
+
+VM vm;
 
 // globals
 int g_bDebug = FALSE;
@@ -15,11 +16,11 @@ int g_bSymbols = FALSE;
 //--------------------------------
 void usage()
 {
-    printf("Usage: skeme [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n");
+    printf("\nUsage: %s [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n", APP_NAME);
     printf("  -d : enable debug output\n");
     printf("  -i : take input from stdin\n");
     printf("  -o : specify output file (default is a.out)\n");
-    printf("  -t : generate symbol table\n");
+    printf("  -t : generate symbol table\n\n");
     exit(0);
 }
 
@@ -80,8 +81,15 @@ int main(int argc, char *argv[])
         strcpy(infile, argv[iFirstArg]);
     }
 
+    // initialize the VM
+    if (VM_OK != vm_init(&vm))
+        fprintf(stderr, "Failed to initialize VM!\n");
+
     // fout = fopen(g_szOutputFilename, "wb");
 
     // parse the input file
     yyparse();
+
+    if (g_bSymbols)
+        dump_symbols();
 }
