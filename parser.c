@@ -101,10 +101,10 @@ void dump_symbols()
     // alpha sort symbols
     qsort(symbols, symbol_count, sizeof(Symbol_t), compare_fn);
 
-    puts("\nSymbol table");
+    puts("\nSymbol table\n------------");
     for (int i = 0; i < symbol_count; i++)
     {
-        if (symbols[i].type == ST_LABEL)
+        // if (symbols[i].type == ST_LABEL)
             printf("%10s\t%04X\n", symbols[i].name, symbols[i].value);
     }
 }
@@ -170,13 +170,13 @@ void s_expr()
 }
 
 //-----------------------------------------------
-//
+// parse the input
 //-----------------------------------------------
 int yyparse(void)
 {
     lookahead = yylex();
 
-    // TODO - implement parser here
+    // the top-level is a series of s-expressions
     while (lookahead != DONE)
         s_expr();
 

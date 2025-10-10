@@ -30,8 +30,25 @@
 // #   define VM_LOG __noop
 #endif
 
+// macros to check and convert to object pointers
 #define IS_OBJ(obj) ((obj) != NULL && !((obj) & 0x3))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
+
+// object types
+enum {
+    OBJ_INT,
+    OBJ_STRING,
+    OBJ_PAIR,
+    OBJ_CLOSURE,
+    OBJ_NATIVE_FN,
+    OBJ_BUILTIN_FN,
+    OBJ_NIL,
+    OBJ_TRUE,
+    OBJ_FALSE
+};
+
+// opcode definitions
+enum { OP_PUSH, OP_POP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT };
 
 //
 // Define the Object structure

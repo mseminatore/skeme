@@ -6,8 +6,14 @@ LIBS	= -lm
 
 all: $(TARGET)
 
+.c.o: $(DEPS)
+	$(CC) -c -o $@ $< $(CFLAGS)
+	
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
+test: $(TARGET)
+	./$(TARGET) -v test.sk
 
 clean:
 	rm $(TARGET) $(OBJS) *.o

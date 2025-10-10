@@ -26,6 +26,8 @@ Tokens tokens[] =
 {
     { "lambda",  LAMBDA },
     { "define",  DEFINE },
+    { "car",     CAR },
+    { "cdr",     CDR },
     // { "if",      IF },
     // { "else",    ELSE },
     // { "cond",    COND },
@@ -33,8 +35,6 @@ Tokens tokens[] =
     // { "begin",   BEGIN },
     // { "quote",   QUOTE },
     // { "set!",    SET },
-    // { "car",     CAR },
-    // { "cdr",     CDR },
     // { "cons",    CONS },
     // { "list",    LIST },
     // { "null?",   NULLP },
@@ -295,7 +295,7 @@ int getString(int delim)
     if (sym_num != -1)
     {
         yylval.symbol = sym_num;
-        LOG("Existing symbol: '%s' (index = %d)\n", buf, sym_num);
+        LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         return STRING;
     }
 
@@ -399,7 +399,7 @@ yylex01:
         if (sym_num != -1)
         {
             yylval.symbol = sym_num;
-            LOG("Existing symbol: '%s' (index = %d)\n", buf, sym_num);
+            LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
             return ID;
         }
 
