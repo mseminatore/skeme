@@ -70,7 +70,7 @@ int main(int argc, char *argv[])
     if (argc == 1)
 		usage();
 
-    printf("%s v%s - a Scheme like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
+    printf("%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
 
 	int iFirstArg = getopt(argc, argv);
 
