@@ -4,6 +4,7 @@
 
 #include "parser.h"
 
+// globals
 int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
@@ -58,7 +59,9 @@ int getopt(int n, char *args[])
 	return i;
 }
 
+//-----------------------------------
 //
+//-----------------------------------
 int main(int argc, char *argv[])
 {
     char infile[BUF_SIZE] = "stdin";
