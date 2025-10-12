@@ -56,9 +56,9 @@ enum { OP_PUSH, OP_POP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT };
 typedef struct Object {
     int type;               // Type of the object (e.g., integer, string, etc.)
     int marked;             // Mark flag for garbage collection
+    struct Object* next;    // Pointer to the next object in the linked list
     struct Object* car;
     struct Object* cdr;
-    struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
 // Define the VM structure

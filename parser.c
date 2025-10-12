@@ -7,6 +7,8 @@
 #include "parser.h"
 #include "vm.h"
 
+VM vm;
+
 // parser tracking
 int err_count = 0;
 int warn_count = 0;
@@ -174,6 +176,7 @@ void s_expr()
 //-----------------------------------------------
 int yyparse(void)
 {
+    // prime the pump
     lookahead = yylex();
 
     // the top-level is a series of s-expressions
@@ -182,3 +185,82 @@ int yyparse(void)
 
     return 0;
 }
+
+//-----------------------------------------------
+// built-in function: display
+//-----------------------------------------------
+int sk_display(SKState *pSK)
+{
+    // pop the top of the stack and print it
+    // Object *obj = vm_pop(&vm);
+    // if (obj)
+    // {
+    //     if (obj->type == OBJ_STRING)
+    //         printf("%s\n", obj->value.string);
+    //     else if (obj->type == OBJ_NUMBER)
+    //         printf("%d\n", obj->value.number);
+    //     else
+    //         printf("Unknown object type %d\n", obj->type);
+    // }
+    // else
+    // {
+    //     yyerror("stack underflow");
+    //     return FALSE;
+    // }
+
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in functions
+//-----------------------------------------------
+SKFuncSet built_in_funcs[] =
+{
+    { "define", NULL },
+    { "lambda", NULL },
+    { "print", NULL },
+    { "display", NULL },
+ 
+    { NULL, NULL }
+};
+
+//-----------------------------------------------
+// register built-in functions
+//-----------------------------------------------
+int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
+{
+	for (int i = 0; funcs[i].name && funcs[i].func; i++)
+	{
+		// fth_make_dict_entry(pFirth, words[i].wordName);
+		// pFirth->head->code_pointer = words[i].func;
+	}
+
+    return 0;
+}
+
+//-----------------------------------------------
+// init skeme
+//-----------------------------------------------
+int sk_init(SKState *pSK)
+{
+    // initialize the VM
+    if (VM_OK != vm_init(&vm))
+    {
+        fprintf(stderr, "Failed to initialize VM!\n");
+        return FALSE;
+    }
+
+    // register built-in functions
+    sk_register_functions(pSK, built_in_funcs);
+
+    return TRUE;
+}
+
+//-----------------------------------------------
+// parse the input
+//-----------------------------------------------
+int sk_parse()
+{
+    return yyparse();
+}
+

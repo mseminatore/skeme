@@ -3,8 +3,6 @@
 #include <stdlib.h>
 #include "parser.h"
 
-VM vm;
-
 // globals
 int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
@@ -81,14 +79,15 @@ int main(int argc, char *argv[])
         strcpy(infile, argv[iFirstArg]);
     }
 
-    // initialize the VM
-    if (VM_OK != vm_init(&vm))
-        fprintf(stderr, "Failed to initialize VM!\n");
-
     // fout = fopen(g_szOutputFilename, "wb");
-
+    sk_init();
+    if (g_bDebug)
+        printf("Output file: '%s'\n", g_szOutputFilename);
+    
     // parse the input file
-    yyparse();
+    sk_parse();
+
+    printf("Parsed '%s' with %d errors and %d warnings\n", infile, err_count, warn_count);
 
     if (g_bSymbols)
         dump_symbols();
