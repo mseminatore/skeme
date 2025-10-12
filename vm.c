@@ -3,6 +3,15 @@
 #include <stdlib.h>
 #include "vm.h"
 
+#define VM_MAX_CODE 1024
+
+//
+static int vm_code_ptr = 0;
+static int vm_code[VM_MAX_CODE];
+
+// static Object *vm_globals[VM_MAX_GLOBALS];
+// static int vm_globals_count = 0;
+
 //--------------------------------------------------------------
 // Initialize the VM
 //--------------------------------------------------------------
@@ -25,6 +34,25 @@ int vm_init(VM* vm) {
 #endif
 
     return VM_OK;
+}
+
+//--------------------------------------------------------------
+// Emit a bytecode instruction
+//--------------------------------------------------------------
+void vm_emit(int opcode) {
+    if (vm_code_ptr >= VM_MAX_CODE) {
+        fprintf(stderr, "VM code buffer overflow!\n");
+        exit(1);
+    }
+    vm_code[vm_code_ptr++] = opcode;
+}
+
+//
+//
+//
+void vm_exec(int addr)
+{
+
 }
 
 //--------------------------------------------------------------
