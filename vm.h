@@ -48,7 +48,7 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT };
+enum { OP_PUSH, OP_POP, /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT */};
 
 //
 // Define the Object structure
