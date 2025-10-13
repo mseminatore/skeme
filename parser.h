@@ -27,6 +27,11 @@ typedef struct
 	SKFunc func;
 } SKFuncSet;
 
+struct SKState
+{
+    VM vm;
+};
+
 //-----------------
 // function decls
 //-----------------

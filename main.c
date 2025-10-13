@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include "parser.h"
 
+SKState sk;
+
 // globals
 int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
@@ -80,14 +82,14 @@ int main(int argc, char *argv[])
     }
 
     // fout = fopen(g_szOutputFilename, "wb");
-    sk_init();
+    sk_init(&sk);
     if (g_bDebug)
         printf("Output file: '%s'\n", g_szOutputFilename);
     
     // parse the input file
     sk_parse();
 
-    printf("Parsed '%s' with %d errors and %d warnings\n", infile, err_count, warn_count);
+    printf("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
 
     if (g_bSymbols)
         dump_symbols();

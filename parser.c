@@ -114,17 +114,19 @@ void dump_symbols()
 //-----------------------------------------------
 // parse a single s-expression
 //-----------------------------------------------
-void s_expr()
+int s_expr()
 {
+    int elements = 0;
+
     switch(lookahead)
     {
         case DONE:
-            return;
+            return elements; // done parsing
 
         case ')':
             yyerror("unexpected ')'");
             match(')');
-            return;
+            return elements;
 
         case '(':
             match('(');
@@ -156,19 +158,30 @@ void s_expr()
             // yylval.symbol = sym_num;
             // LOG("Symbol index = %d\n", sym_num);
             match(ID);
+            elements++;
             break;
 
         case NUMBER:
             // TODO - handle number
             LOG("NUMBER: %d\n", yylval.ival);
             match(NUMBER);
+            elements++;
+            break;
+
+        case STRING:
+            // TODO - handle string
+            LOG("STRING: '%s'\n", yylval.lexeme);
+            match(STRING);
+            elements++;
             break;
 
         default:
-            yyerror("expected s-expression");
+            yyerror("expected a valid s-expression");
             match(lookahead); // try to continue
-            return;
+            break;
     }
+
+    return elements;
 }
 
 //-----------------------------------------------
@@ -244,7 +257,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 int sk_init(SKState *pSK)
 {
     // initialize the VM
-    if (VM_OK != vm_init(&vm))
+    if (VM_OK != vm_init(&pSK->vm))
     {
         fprintf(stderr, "Failed to initialize VM!\n");
         return FALSE;

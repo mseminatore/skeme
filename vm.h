@@ -91,5 +91,7 @@ Object* vm_peek(VM* vm, int distance);
 void *vm_alloc(VM* vm, void *ptr, size_t old_size, size_t new_size);
 Object* vm_newObject(VM* vm);
 void vm_freeObjects(VM* vm);
+void vm_emit(uint32_t opcode);
+void vm_exec(int addr);
 
 #endif // __VM_H
