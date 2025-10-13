@@ -50,6 +50,8 @@ enum {
 // opcode definitions
 enum { OP_PUSH, OP_POP, /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT */};
 
+typedef uint32_t VMCode_t;
+
 //
 // Define the Object structure
 //
@@ -91,7 +93,7 @@ Object* vm_peek(VM* vm, int distance);
 void *vm_alloc(VM* vm, void *ptr, size_t old_size, size_t new_size);
 Object* vm_newObject(VM* vm);
 void vm_freeObjects(VM* vm);
-void vm_emit(uint32_t opcode);
+void vm_emit(VMCode_t opcode);
 void vm_exec(int addr);
 
 #endif // __VM_H
