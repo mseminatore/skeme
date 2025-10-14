@@ -164,8 +164,8 @@ int s_expr()
         case NUMBER:
             // TODO - handle number
             LOG("NUMBER: %d\n", yylval.ival);
-            vm_emit(OP_NUM);
-            vm_emit(yylval.ival);
+            vm_emit(&vm, OP_NUM);
+            vm_emit(&vm, yylval.ival);
             match(NUMBER);
             elements++;
             break;
@@ -198,6 +198,7 @@ int yyparse(void)
     while (lookahead != DONE)
         s_expr();
 
+    vm_emit(&vm, OP_HALT);
     return 0;
 }
 

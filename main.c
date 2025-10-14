@@ -93,4 +93,6 @@ int main(int argc, char *argv[])
 
     if (g_bSymbols)
         dump_symbols();
+
+    vm_exec(&sk.vm, 0);
 }

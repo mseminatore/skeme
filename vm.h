@@ -31,7 +31,7 @@
 #endif
 
 // macros to check and convert to object pointers
-#define IS_OBJ(obj) ((obj) != NULL && !((obj) & 0x3))
+#define IS_OBJ(obj) ((obj) != NULL && !((obj) & 0x2))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
 
 // object types
@@ -48,7 +48,7 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_RET /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT, OP_HALT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 typedef uint32_t VMCode_t;
 
@@ -65,14 +65,15 @@ typedef struct Object {
 
 // Define the VM structure
 typedef struct VM {
-    int sp;                 // Stack pointer
-    Object* head;           // Head of the object list
+    int sp;                         // Stack pointer
+    Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
-    int numObjects;         // Number of allocated objects
-    size_t nextGC;             // Threshold to trigger next GC
-    size_t allocatedBytes;  // Total allocated bytes
+    int numObjects;                 // Number of allocated objects
+    // size_t peakObjects;             // Peak number of allocated objects
+    size_t nextGC;                  // Threshold to trigger next GC
+    size_t allocatedBytes;          // Total allocated bytes
 
-    int globals_count;     // Number of global objects
+    int globals_count;              // Number of global objects
     Object globals[VM_MAX_GLOBALS]; // Head of the global objects list
 
     int grayCount;
@@ -85,6 +86,7 @@ typedef struct VM {
 #endif
 } VM;
 
+// function decls
 int vm_init(VM* vm);
 void vm_gc(VM* vm);
 void vm_push(VM* vm, Object* obj);
@@ -93,7 +95,7 @@ Object* vm_peek(VM* vm, int distance);
 void *vm_alloc(VM* vm, void *ptr, size_t old_size, size_t new_size);
 Object* vm_newObject(VM* vm);
 void vm_freeObjects(VM* vm);
-void vm_emit(VMCode_t opcode);
-void vm_exec(int addr);
+void vm_emit(VM* vm, VMCode_t opcode);
+void vm_exec(VM* vm, int addr);
 
 #endif // __VM_H

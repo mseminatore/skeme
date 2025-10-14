@@ -39,7 +39,7 @@ int vm_init(VM* vm) {
 //--------------------------------------------------------------
 // Emit a bytecode instruction
 //--------------------------------------------------------------
-void vm_emit(VMCode_t opcode) 
+void vm_emit(VM* vm, VMCode_t opcode) 
 {
     if (vm_code_ptr >= VM_MAX_CODE) {
         fprintf(stderr, "VM code buffer overflow!\n");
@@ -48,20 +48,26 @@ void vm_emit(VMCode_t opcode)
     vm_code[vm_code_ptr++] = opcode;
 }
 
+#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2)|0x1))
+
 //
 //
 //
-void vm_exec(int addr)
+void vm_exec(VM* vm, int addr)
 {
     if (addr < 0 || addr >= vm_code_ptr) {
         fprintf(stderr, "Invalid VM code address: %d\n", addr);
         return;
     }
 
-    VMCode_t opcode = vm_code[addr++];
+    printf("---- VM Execution Start ----\n");
 
-    switch(opcode)
+    while(1)
     {
+        VMCode_t opcode = vm_code[addr++];
+
+        switch(opcode)
+        {
         case OP_PUSH:
             printf("PUSH\n");
             break;
@@ -72,11 +78,21 @@ void vm_exec(int addr)
 
         case OP_NUM:
             printf("NUM\n");
+            vm_push(vm, MAKE_NUM(vm_code[addr++]));
             break;
+
+        case OP_RET:
+            printf("RET\n");
+            break;
+
+        case OP_HALT:
+            printf("HALT\n");
+            return;
 
         default:
             printf("Unknown opcode: %d\n", addr);
             break;
+        }
     }
 }
 
@@ -84,6 +100,8 @@ void vm_exec(int addr)
 // Mark an object
 //--------------------------------------------------------------
 static void markObject(Object* object) {
+    // if (!IS_OBJ(object)) return;
+
     if (object == NULL || object->marked) return;
 
     object->marked = 1;
