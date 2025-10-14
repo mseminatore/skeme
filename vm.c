@@ -53,7 +53,31 @@ void vm_emit(VMCode_t opcode)
 //
 void vm_exec(int addr)
 {
+    if (addr < 0 || addr >= vm_code_ptr) {
+        fprintf(stderr, "Invalid VM code address: %d\n", addr);
+        return;
+    }
 
+    VMCode_t opcode = vm_code[addr++];
+
+    switch(opcode)
+    {
+        case OP_PUSH:
+            printf("PUSH\n");
+            break;
+
+        case OP_POP:
+            printf("POP\n");
+            break;
+
+        case OP_NUM:
+            printf("NUM\n");
+            break;
+
+        default:
+            printf("Unknown opcode: %d\n", addr);
+            break;
+    }
 }
 
 //--------------------------------------------------------------

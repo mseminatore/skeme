@@ -164,6 +164,8 @@ int s_expr()
         case NUMBER:
             // TODO - handle number
             LOG("NUMBER: %d\n", yylval.ival);
+            vm_emit(OP_NUM);
+            vm_emit(yylval.ival);
             match(NUMBER);
             elements++;
             break;
