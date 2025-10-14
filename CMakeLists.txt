@@ -6,6 +6,13 @@ project(skeme VERSION 1.0 LANGUAGES C)
 # add the includes
 include_directories(${PROJECT_SOURCE_DIR})
 
+# set the C standard
+# set(CMAKE_C_STANDARD 99)
+# set(CMAKE_C_STANDARD_REQUIRED True)
+
+# build hash table library
+# add_subdirectory(./hash)
+
 # add the executable
-add_executable(skeme main.c parser.c)
+add_executable(skeme main.c parser.c lexer.c vm.c)
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
