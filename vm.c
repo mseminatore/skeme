@@ -1,6 +1,7 @@
 // vm.c
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include "vm.h"
 
 #define VM_MAX_CODE 1024
@@ -11,6 +12,8 @@ static VMCode_t vm_code[VM_MAX_CODE];
 
 // static Object *vm_globals[VM_MAX_GLOBALS];
 // static int vm_globals_count = 0;
+
+#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2)|0x1))
 
 //--------------------------------------------------------------
 // Initialize the VM
@@ -47,8 +50,6 @@ void vm_emit(VM* vm, VMCode_t opcode)
     }
     vm_code[vm_code_ptr++] = opcode;
 }
-
-#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2)|0x1))
 
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address

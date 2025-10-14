@@ -2,6 +2,7 @@
 #define __VM_H
 
 #include <stdio.h>
+#include <stdint.h> // Add this include at the top of the file, before typedefs
 
 #define VM_OK 1
 #define VM_ERR -1

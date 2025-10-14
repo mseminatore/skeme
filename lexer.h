@@ -16,6 +16,11 @@
 #   define FALSE 0
 #endif
 
+#ifdef _WIN32
+#   define strcasecmp _stricmp
+#   define strdup _strdup
+#endif
+
 #define LAST_SYMBOL       symbols[symbol_count - 1]
 #define CURRENT_FILE      file_nodes[file_stack_ptr].filename
 #define CURRENT_LINENO    file_nodes[file_stack_ptr].yylineno

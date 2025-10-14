@@ -10,11 +10,6 @@
 #define APP_NAME "skeme"
 #define APP_VER "0.1"
 
-#ifdef _WIN32
-#   define strcasecmp _stricmp
-#   define strdup _strdup
-#endif
-
 // remove this later
 #define YYDEBUG 1
 
