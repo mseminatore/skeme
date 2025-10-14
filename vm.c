@@ -50,9 +50,9 @@ void vm_emit(VM* vm, VMCode_t opcode)
 
 #define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2)|0x1))
 
-//
-//
-//
+//---------------------------------------------------------------
+// Execute the VM code starting from the given address
+//---------------------------------------------------------------
 void vm_exec(VM* vm, int addr)
 {
     if (addr < 0 || addr >= vm_code_ptr) {
@@ -60,7 +60,7 @@ void vm_exec(VM* vm, int addr)
         return;
     }
 
-    printf("---- VM Execution Start ----\n");
+    printf("\n---- VM Execution Start ----\n");
 
     while(1)
     {

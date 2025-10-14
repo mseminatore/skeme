@@ -1,0 +1,3 @@
+[submodule "hash"]
+	path = hash
+	url = https://github.com/mseminatore/hash.git

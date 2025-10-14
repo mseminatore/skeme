@@ -137,13 +137,13 @@ int s_expr()
             match(')');
             break;
 
-        case DEFINE:
-            match(DEFINE);
-            break;
+        // case DEFINE:
+        //     match(DEFINE);
+        //     break;
 
-        case LAMBDA:
-            match(LAMBDA);
-            break;
+        // case LAMBDA:
+        //     match(LAMBDA);
+        //     break;
 
         case ID:
             // TODO - lookup symbol
@@ -162,7 +162,7 @@ int s_expr()
             break;
 
         case NUMBER:
-            // TODO - handle number
+            // handle number
             LOG("NUMBER: %d\n", yylval.ival);
             vm_emit(&vm, OP_NUM);
             vm_emit(&vm, yylval.ival);
@@ -235,7 +235,21 @@ SKFuncSet built_in_funcs[] =
     { "define", NULL },
     { "lambda", NULL },
     { "print", NULL },
-    { "display", NULL },
+    { "display", sk_display },
+    // { "car", NULL },
+    // { "cdr", NULL },
+    // { "cons", NULL },
+    // { "list", NULL },
+    // { "null?", NULL },
+    // { "eq?", NULL },
+    // { "atom?", NULL },
+    // { "number?", NULL },
+    // { "string?", NULL },
+    // { "char?", NULL },
+    // { "pair?", NULL },
+    // { "boolean?", NULL },
+    // { "not", NULL },
+    // { "exit", NULL },
  
     { NULL, NULL }
 };
