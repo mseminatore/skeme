@@ -7,6 +7,8 @@
 #include "parser.h"
 #include "vm.h"
 
+
+// TODO - move inside SKState
 VM vm;
 
 // parser tracking
@@ -251,17 +253,17 @@ SKFuncSet built_in_funcs[] =
     { "lambda", NULL },
     { "print", NULL },
     { "display", sk_display },
-    // { "car", NULL },
-    // { "cdr", NULL },
-    // { "cons", NULL },
-    // { "list", NULL },
-    // { "null?", NULL },
-    // { "eq?", NULL },
+    { "car", NULL },
+    { "cdr", NULL },
+    { "cons", NULL },
+    { "list", NULL },
+    { "null?", NULL },
+    { "eq?", NULL },
+    { "number?", NULL },
+    { "pair?", NULL },
     // { "atom?", NULL },
-    // { "number?", NULL },
     // { "string?", NULL },
     // { "char?", NULL },
-    // { "pair?", NULL },
     // { "boolean?", NULL },
     // { "not", NULL },
     // { "exit", NULL },

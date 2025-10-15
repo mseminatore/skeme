@@ -25,7 +25,7 @@ FileNode file_nodes[MAX_FILE_STACK];
 Tokens tokens[] =
 {
     { "lambda",  LAMBDA },
-    { "define",  DEFINE },
+    //{ "define",  DEFINE },
     { "car",     CAR },
     { "cdr",     CDR },
     // { "if",      IF },
@@ -414,8 +414,12 @@ yylex01:
     // track line numbers
     if (c == '\n')
     {
-        lineno++;
-        CURRENT_LINENO++;
+        lineno++;           // update global line count
+        CURRENT_LINENO++;   // update file local line number
+        
+        if (yyin == stdin)
+            return DONE;
+
         goto yylex01;
     }
 

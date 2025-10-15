@@ -4,7 +4,6 @@
 #include "parser.h"
 
 SKState sk;
-extern VM vm;
 
 // globals
 int g_bDebug = FALSE;
@@ -69,14 +68,16 @@ int main(int argc, char *argv[])
     char infile[BUF_SIZE] = "stdin";
 
     // show usage if no arguments given
-    if (argc == 1)
-		usage();
+  //  if (argc == 1)
+		//usage();
+
+	yyin = stdin;
 
     printf("%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
 
 	int iFirstArg = getopt(argc, argv);
 
-    if (yyin != stdin)
+    if (argc != iFirstArg /* yyin != stdin */)
     {
         push_file_stack(argv[iFirstArg]);
         strcpy(infile, argv[iFirstArg]);

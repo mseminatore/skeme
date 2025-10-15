@@ -88,15 +88,17 @@ typedef struct VM {
 } VM;
 
 // function decls
-int vm_init(VM* vm);
-void vm_gc(VM* vm);
-void vm_push(VM* vm, Object* obj);
-Object* vm_pop(VM* vm);
-Object* vm_peek(VM* vm, int distance);
-void *vm_alloc(VM* vm, void *ptr, size_t old_size, size_t new_size);
-Object* vm_newObject(VM* vm);
-void vm_freeObjects(VM* vm);
-void vm_emit(VM* vm, VMCode_t opcode);
-void vm_exec(VM* vm, int addr);
+int vm_init(VM* pvm);
+int vm_shutdown(VM* pvm);
+void vm_gc(VM* pvm);
+void vm_push(VM* pvm, Object* obj);
+Object* vm_pop(VM* pvm);
+Object* vm_peek(VM* pvm, int distance);
+void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
+Object* vm_newObject(VM* pvm);
+void vm_freeObjects(VM* pvm);
+void vm_emit(VM* pvm, VMCode_t opcode);
+void vm_exec(VM* pvm, int addr);
+int vm_clear_stack(VM* pvm);
 
 #endif // __VM_H

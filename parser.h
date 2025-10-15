@@ -24,8 +24,11 @@ typedef struct
 
 struct SKState
 {
+	int unused;
     // VM vm;
 };
+
+extern VM vm;
 
 //-----------------
 // function decls
