@@ -11,8 +11,9 @@ include_directories(${PROJECT_SOURCE_DIR})
 # set(CMAKE_C_STANDARD_REQUIRED True)
 
 # build hash table library
-# add_subdirectory(./hash)
+add_subdirectory(./hash)
 
 # add the executable
 add_executable(skeme main.c parser.c lexer.c vm.c)
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
+#target_link_libraries(skeme PRIVATE ht)
