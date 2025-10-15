@@ -4,6 +4,7 @@
 #include "parser.h"
 
 SKState sk;
+extern VM vm;
 
 // globals
 int g_bDebug = FALSE;
@@ -94,5 +95,6 @@ int main(int argc, char *argv[])
     if (g_bSymbols)
         dump_symbols();
 
-    vm_exec(&sk.vm, 0);
+    vm_exec(&vm, 0);
+    sk_display(&sk);
 }

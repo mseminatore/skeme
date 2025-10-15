@@ -24,7 +24,7 @@ typedef struct
 
 struct SKState
 {
-    VM vm;
+    // VM vm;
 };
 
 //-----------------
@@ -38,6 +38,7 @@ void dump_symbols();
 int sk_init(SKState *pSK);
 int sk_parse();
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
+int sk_display(SKState *pSK);
 
 extern int err_count;
 extern int warn_count;

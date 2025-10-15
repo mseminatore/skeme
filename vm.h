@@ -32,7 +32,7 @@
 #endif
 
 // macros to check and convert to object pointers
-#define IS_OBJ(obj) ((obj) != NULL && !((obj) & 0x2))
+#define IS_OBJ(obj) ((obj) != NULL && !((intptr_t)(obj) & 0x3))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
 
 // object types

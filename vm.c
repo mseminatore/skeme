@@ -13,7 +13,7 @@ static VMCode_t vm_code[VM_MAX_CODE];
 // static Object *vm_globals[VM_MAX_GLOBALS];
 // static int vm_globals_count = 0;
 
-#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2)|0x1))
+#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2) | 0x1))
 
 //--------------------------------------------------------------
 // Initialize the VM

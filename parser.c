@@ -208,7 +208,22 @@ int yyparse(void)
 int sk_display(SKState *pSK)
 {
     // pop the top of the stack and print it
-    // Object *obj = vm_pop(&vm);
+    Object *obj = vm_pop(&vm);
+
+    if (!obj)
+    {
+        puts("()\n");
+        return TRUE;
+    }
+
+    if (IS_OBJ(obj))
+    {
+    }
+    else
+    {
+        printf("%d\n", (int)((intptr_t)(obj) >> 2));
+    }
+
     // if (obj)
     // {
     //     if (obj->type == OBJ_STRING)
@@ -274,7 +289,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 int sk_init(SKState *pSK)
 {
     // initialize the VM
-    if (VM_OK != vm_init(&pSK->vm))
+    if (VM_OK != vm_init(&vm))
     {
         fprintf(stderr, "Failed to initialize VM!\n");
         return FALSE;
