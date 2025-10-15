@@ -118,6 +118,7 @@ void dump_symbols()
 //-----------------------------------------------
 int s_expr()
 {
+    Symbol_t sym;
     int elements = 0;
 
     switch(lookahead)
@@ -148,18 +149,24 @@ int s_expr()
         //     break;
 
         case ID:
-            // TODO - lookup symbol
-            LOG("ID: '%s'\n", symbols[yylval.symbol].name);
-            // int sym_num = lookup_symbol(symbols[yylval.symbol].name);
-            // if (sym_num == -1)
-            // {
-            //     sym_num = add_symbol(symbols[yylval.symbol].name, lineno);
-            //     if (sym_num == -1)
-            //         yyerror("symbol already defined");
-            // }
-            // yylval.symbol = sym_num;
-            // LOG("Symbol index = %d\n", sym_num);
-            match(ID);
+            // lookup symbol
+            sym = symbols[yylval.symbol];
+            LOG("ID: '%s'\n", sym.name);
+
+            if (sym.type == ST_UNDEF)
+            {
+                yywarning("symbol is undefined");
+			}
+
+            if (sym.type == ST_NATIVE)
+            {
+				sym = symbols[yylval.symbol];
+                match(ID);
+                s_expr(); // parse function arguments (if any)
+				vm_emit(&vm, OP_NATIVE);
+				vm_emit(&vm, sym.func);
+            }
+
             elements++;
             break;
 
@@ -209,17 +216,20 @@ int yyparse(void)
 //-----------------------------------------------
 int sk_display(SKState *pSK)
 {
+	if (!pSK) return FALSE;
+
     // pop the top of the stack and print it
     Object *obj = vm_pop(&vm);
 
     if (!obj)
     {
-        puts("()\n");
+        puts("()\n");   // nil
         return TRUE;
     }
 
     if (IS_OBJ(obj))
     {
+		printf("#<obj type=%d>\n", obj->type);
     }
     else
     {
@@ -244,23 +254,44 @@ int sk_display(SKState *pSK)
     return TRUE;
 }
 
+//
+int sk_nullp(SKState *pSK)
+{
+    if (!pSK) return FALSE;
+    return TRUE;
+}
+
+//
+int sk_eqp(SKState *pSK)
+{
+    if (!pSK) return FALSE;
+    return TRUE;
+}
+
+//
+int sk_numberp(SKState *pSK)
+{
+    if (!pSK) return FALSE;
+    return TRUE;
+}
+
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 SKFuncSet built_in_funcs[] =
 {
-    { "define", NULL },
-    { "lambda", NULL },
-    { "print", NULL },
     { "display", sk_display },
-    { "car", NULL },
-    { "cdr", NULL },
-    { "cons", NULL },
-    { "list", NULL },
-    { "null?", NULL },
-    { "eq?", NULL },
-    { "number?", NULL },
-    { "pair?", NULL },
+    { "null?", sk_nullp },
+    { "eq?", sk_eqp },
+    { "number?", sk_numberp },
+    //{ "pair?", NULL },
+    //{ "define", NULL },
+    //{ "lambda", NULL },
+    //{ "print", NULL },
+    //{ "car", NULL },
+    //{ "cdr", NULL },
+    //{ "cons", NULL },
+    //{ "list", NULL },
     // { "atom?", NULL },
     // { "string?", NULL },
     // { "char?", NULL },
@@ -278,8 +309,13 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 {
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
-		// fth_make_dict_entry(pFirth, words[i].wordName);
-		// pFirth->head->code_pointer = words[i].func;
+        int sym_num = add_symbol(funcs[i].name, 0);
+		if (sym_num == -1)
+			yyerror("symbol already defined");
+
+		symbols[sym_num].type = ST_NATIVE;
+        symbols[sym_num].func = funcs[i].func;
+		LOG("Registered built-in function '%s' (index = %d)\n", funcs[i].name, sym_num);
 	}
 
     return 0;

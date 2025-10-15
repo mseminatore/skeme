@@ -13,9 +13,6 @@
 // remove this later
 #define YYDEBUG 1
 
-typedef struct SKState SKState;
-typedef int (*SKFunc)(SKState *pSK);
-
 typedef struct
 {
 	char *name;

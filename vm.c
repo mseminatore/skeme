@@ -110,6 +110,18 @@ void vm_exec(VM* pvm, int addr)
             printf("HALT\n");
             return;
 
+        case OP_NATIVE:
+            {
+                printf("NATIVE FN\n");
+                SKFunc func = (SKFunc)vm_code[addr++];
+                if (func) {
+                    func(1); // In a real implementation, pass the VM or context
+                } else {
+                    fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+                }
+		    }
+            break;
+
         default:
             printf("Unknown opcode: %d\n", addr);
             break;
@@ -331,8 +343,8 @@ Object* vm_newObject(VM* pvm) {
     Object* obj = (Object*)vm_alloc(pvm, NULL, 0, sizeof(Object));
     obj->marked = 0;        // new objects are unmarked
     obj->type = 0;          // default type
-    obj->car = NULL;
-    obj->cdr = NULL;
+    //obj->car = NULL;
+    //obj->cdr = NULL;
     obj->next = pvm->head;   // Insert at the head of the object list
     pvm->head = obj;
     pvm->numObjects++;

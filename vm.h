@@ -35,6 +35,9 @@
 #define IS_OBJ(obj) ((obj) != NULL && !((intptr_t)(obj) & 0x3))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
 
+typedef struct SKState SKState;
+typedef int (*SKFunc)(SKState* pSK);
+
 // object types
 enum {
     OBJ_INT,
@@ -49,9 +52,9 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_FN, OP_NATIVE, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
-typedef uint32_t VMCode_t;
+typedef intptr_t VMCode_t;
 
 //
 // Define the Object structure
@@ -60,9 +63,18 @@ typedef struct Object {
     int type;               // Type of the object (e.g., integer, string, etc.)
     int marked;             // Mark flag for garbage collection
     struct Object* next;    // Pointer to the next object in the linked list
-    struct Object* car;
-    struct Object* cdr;
 } Object;
+
+typedef struct Boolean {
+    Object base;
+    int value;              // 0 for false, 1 for true
+} Boolean;
+
+typedef struct Pair {
+    Object base;
+    Object* car;
+    Object* cdr;
+} Pair;
 
 // Define the VM structure
 typedef struct VM {

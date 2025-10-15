@@ -17,10 +17,11 @@ int g_bSymbols = FALSE;
 void usage()
 {
     printf("\nUsage: %s [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n", APP_NAME);
-    printf("  -d : enable debug output\n");
+    printf("  -d : enable parser debug output\n");
     printf("  -i : take input from stdin\n");
     printf("  -o : specify output file (default is a.out)\n");
     printf("  -t : generate symbol table\n\n");
+    printf("  -v : enable verbose output\n");
     exit(0);
 }
 
@@ -85,17 +86,22 @@ int main(int argc, char *argv[])
 
     // fout = fopen(g_szOutputFilename, "wb");
     sk_init(&sk);
-    if (g_bDebug)
-        printf("Output file: '%s'\n", g_szOutputFilename);
+
+    LOG("Output file: '%s'\n", g_szOutputFilename);
     
     // parse the input file
     sk_parse();
 
-    printf("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
+    LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
 
     if (g_bSymbols)
         dump_symbols();
 
     vm_exec(&vm, 0);
-    sk_display(&sk);
+
+    if (vm.sp)
+    {
+        sk_display(&sk);
+        LOG("%d items left on stack.\n", vm.sp);
+    }
 }

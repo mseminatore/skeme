@@ -25,6 +25,9 @@
 #define CURRENT_FILE      file_nodes[file_stack_ptr].filename
 #define CURRENT_LINENO    file_nodes[file_stack_ptr].yylineno
 
+typedef struct SKState SKState;
+typedef int (*SKFunc)(SKState* pSK);
+
 typedef struct
 {
     FILE *fptr;
@@ -38,9 +41,8 @@ typedef struct
 typedef enum
 {
     ST_UNDEF,   // symbol is undefined
-    ST_EQU,     // symbol is an EQUate
-    ST_SET,     // symbol is a set value
-    ST_LABEL,   // symbol is an address label
+	ST_FUNCTION, // symbol is a function
+	ST_NATIVE,  // symbol is a native function
     ST_STRING   // symbol is a string literal
 } SYMBOL_TYPE;
 
@@ -49,10 +51,11 @@ typedef struct
 {
     const char *name;
     const char *filename;   // file where symbols was defined
-    int type;
+	int type;               // symbol type
     int value;
     int lineno;             // local file line number
     int refd;               // was symbol referenced?
+	SKFunc func;          // function pointer for native functions
 } Symbol_t;
 
 // token structure def'n
@@ -71,8 +74,8 @@ typedef struct
 
 extern FILE *yyin;
 
-enum { ID = 256, NUMBER, STRING, CHAR, LAMBDA, DEFINE, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
-       CAR, CDR, CONS, LIST, NULLP, NUMBERP, SYMBOLP, PRINT, READ, EVAL, EXIT };
+enum { ID = 256, NUMBER, STRING, CHAR, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
+       CAR, CDR, CONS, LIST, SYMBOLP, PRINT, READ, EVAL, EXIT };
 
 extern int lookahead;
 extern int symbol_count;
@@ -86,5 +89,7 @@ extern FileNode file_nodes[];
 int yylex();
 void LOG(const char *fmt, ...);
 void yyerror(char*);
+int add_symbol(const char* name, int lineno);
+int lookup_symbol(const char* name);
 
 #endif // __LEXER_H

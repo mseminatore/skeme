@@ -24,10 +24,10 @@ FileNode file_nodes[MAX_FILE_STACK];
 // define our keyword token table
 Tokens tokens[] =
 {
-    { "lambda",  LAMBDA },
+    //{ "lambda",  LAMBDA },
     //{ "define",  DEFINE },
-    { "car",     CAR },
-    { "cdr",     CDR },
+    //{ "car",     CAR },
+    //{ "cdr",     CDR },
     // { "if",      IF },
     // { "else",    ELSE },
     // { "cond",    COND },
@@ -95,7 +95,10 @@ void push_file_stack(const char *filename)
 void pop_file_stack()
 {
     if (file_stack_ptr <= 0)
+    {
         yyerror("file stack underflow!");
+        return;
+    }
 
     LOG("Popping '%s' from parser input stack (depth = %d)\n", file_nodes[file_stack_ptr].filename, file_stack_ptr-1);
 
