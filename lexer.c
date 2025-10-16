@@ -361,6 +361,10 @@ yylex01:
         return getString('\'');
     }
 
+    // look for empty lists
+    if (c == '(' && follow(')', 1, 0))
+        return NIL;
+
     // look for string literals
     if (c == '"')
     {

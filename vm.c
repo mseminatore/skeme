@@ -13,8 +13,6 @@ static VMCode_t vm_code[VM_MAX_CODE];
 // static Object *vm_globals[VM_MAX_GLOBALS];
 // static int vm_globals_count = 0;
 
-#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2) | 0x1))
-
 //--------------------------------------------------------------
 // Initialize the VM
 //--------------------------------------------------------------
@@ -93,6 +91,7 @@ void vm_exec(VM* pvm, int addr)
         {
         case OP_PUSH:
             printf("PUSH\n");
+            vm_push(pvm, vm_code[addr++]);
             break;
 
         case OP_POP:
@@ -199,8 +198,7 @@ static int sweepObjects(VM* pvm) {
             Object* unreached = *obj;
             *obj = unreached->next;
 
-            // free(unreached);
-            vm_alloc(pvm, unreached, sizeof(Object), 0);
+            vm_alloc(pvm, unreached, unreached->size, 0);
             pvm->numObjects--;
             free_count++;
         } else {
@@ -306,11 +304,12 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
         return ptr;
     }
 
-    if (new_size > old_size) {
+    if (new_size > old_size) 
+    {
 #ifdef VM_STRESS_GC
         // Force a garbage collection on every allocation if stress GC is enabled
         // This is useful for testing purposes
-        vm_gc(pvm); // Uncomment and ensure vm is accessible here
+        vm_gc(pvm);
 #endif
     }
 
@@ -358,15 +357,17 @@ Object* vm_newObject(VM* pvm, size_t size) {
     Object* obj = (Object*)vm_alloc(pvm, NULL, 0, size);
     obj->marked = 0;        // new objects are unmarked
     obj->type = 0;          // default type
-    //obj->car = NULL;
-    //obj->cdr = NULL;
-    obj->next = pvm->head;   // Insert at the head of the object list
-    pvm->head = obj;
-    pvm->numObjects++;
+	obj->size = size;       // set size
+    obj->next = pvm->head;  // Insert at the head of the object list
+	pvm->head = obj;        // Update head to new object
+	pvm->numObjects++;      // Increment object count
+
     return obj;
 }
 
-//
+//--------------------------------------------------------------
+// Create a new boolean object
+//--------------------------------------------------------------
 Object* vm_newBoolean(VM* pvm, int val)
 {
     Object* obj = vm_newObject(pvm, sizeof(Boolean));

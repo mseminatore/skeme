@@ -34,6 +34,11 @@
 // macros to check and convert to object pointers
 #define IS_OBJ(obj) ((obj) != NULL && !((intptr_t)(obj) & 0x3))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
+#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2) | 0x1))
+#define AS_NUM(obj)    (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
+#define IS_NUM(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
+#define IS_BOOL(obj)   (IS_OBJ(obj) && AS_OBJ(Boolean, obj)->type == OBJ_BOOL)
+#define IS_NIL(obj)    (obj == NULL)
 
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
@@ -60,6 +65,7 @@ typedef intptr_t VMCode_t;
 //
 typedef struct Object {
     int type;               // Type of the object (e.g., integer, string, etc.)
+    size_t size;            // 
     int marked;             // Mark flag for garbage collection
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;

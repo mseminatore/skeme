@@ -7,7 +7,6 @@
 #include "parser.h"
 #include "vm.h"
 
-
 // TODO - move inside SKState
 VM vm;
 
@@ -140,13 +139,11 @@ int s_expr()
             match(')');
             break;
 
-        // case DEFINE:
-        //     match(DEFINE);
-        //     break;
-
-        // case LAMBDA:
-        //     match(LAMBDA);
-        //     break;
+        case NIL:
+            vm_emit(&vm, OP_PUSH);
+            vm_emit(&vm, NULL);
+            match(NIL);
+            break;
 
         case ID:
             // lookup symbol
@@ -252,6 +249,14 @@ int sk_display(SKState *pSK)
 
             break;
 
+        case OBJ_NATIVE_FN:
+            printf("#<native fn>\n");
+			break;
+
+        case OBJ_BUILTIN_FN:
+			printf("#<builtin fn>\n");
+			break;
+
         default:
             printf("#<obj type=%d>\n", obj->type);
             break;
@@ -259,51 +264,70 @@ int sk_display(SKState *pSK)
     }
     else
     {
-        printf("%d\n", (int)((intptr_t)(obj) >> 2));
+        printf("%d\n", AS_NUM(obj));
     }
-
-    // if (obj)
-    // {
-    //     if (obj->type == OBJ_STRING)
-    //         printf("%s\n", obj->value.string);
-    //     else if (obj->type == OBJ_NUMBER)
-    //         printf("%d\n", obj->value.number);
-    //     else
-    //         printf("Unknown object type %d\n", obj->type);
-    // }
-    // else
-    // {
-    //     yyerror("stack underflow");
-    //     return FALSE;
-    // }
 
     return TRUE;
 }
 
-//
+//-----------------------------------------------
+// built-in function: null?
+//-----------------------------------------------
 int sk_nullp(SKState *pSK)
 {
     if (!pSK) return FALSE;
+
+    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&vm, 0);
+
+    if (IS_NIL(obj))
+        ((Boolean*)bool)->value = 1;
+
+    vm_push(&vm, bool);
+
     return TRUE;
 }
 
-//
+//-----------------------------------------------
+// built-in function: eq?
+//-----------------------------------------------
 int sk_eqp(SKState *pSK)
 {
     if (!pSK) return FALSE;
+
+    Object* obj1 = vm_pop(&vm);
+    Object* obj2 = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&vm, 0);
+
+    if (obj1 == obj2)
+        ((Boolean*)bool)->value = 1;
+
+    vm_push(&vm, bool);
+
     return TRUE;
 }
 
-//
+//-----------------------------------------------
+// built-in function: number?
+//-----------------------------------------------
 int sk_numberp(SKState *pSK)
 {
     if (!pSK) return FALSE;
+
+    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&vm, 0);
+
+    if (IS_NUM(obj))
+        ((Boolean*)bool)->value = 1;
+
+    vm_push(&vm, bool);
+
     return TRUE;
 }
 
-//
-//
-//
+//-----------------------------------------------
+// built-in function: boolean?
+//-----------------------------------------------
 int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return FALSE;
@@ -312,7 +336,7 @@ int sk_booleanp(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, 0);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
-        ((Boolean*)bool)->value == 1;
+        ((Boolean*)bool)->value = 1;
 
     vm_push(&vm, bool);
     return TRUE;
