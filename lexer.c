@@ -25,8 +25,8 @@ FileNode file_nodes[MAX_FILE_STACK];
 Tokens tokens[] =
 {
     {"()",      NIL },
-    {"#t",      TRUE },
-    {"#f",      FALSE },
+    {"#t",      TOKEN_TRUE },
+    {"#f",      TOKEN_FALSE },
     // {"display", DISPLAY },
     // {"null?",   NULLP },
     // {"eq?",     EQP },
@@ -384,13 +384,13 @@ yylex01:
 	}
 
     // look for start of a token
-    if (isalpha(c)) 
+    if (c == '#' || isalpha(c))
     {
         char buf[BUF_SIZE], *p = buf;
 
         do {
             *p++ = c;
-        } while ((c=getch()) != EOF && (c == '_' || isalnum(c)));
+        } while ((c=getch()) != EOF && (c == '_' || c == '?' || isalnum(c)));
         
         // put back the last character!
         ungetch(c);

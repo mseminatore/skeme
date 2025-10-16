@@ -47,8 +47,7 @@ enum {
     OBJ_NATIVE_FN,
     OBJ_BUILTIN_FN,
     OBJ_NIL,
-    OBJ_TRUE,
-    OBJ_FALSE
+    OBJ_BOOL
 };
 
 // opcode definitions
@@ -106,9 +105,12 @@ void vm_gc(VM* pvm);
 void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
+
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
-Object* vm_newObject(VM* pvm);
+Object* vm_newObject(VM* pvm, size_t size);
+Object* vm_newBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
+
 void vm_emit(VM* pvm, VMCode_t opcode);
 void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);

@@ -76,6 +76,8 @@ void vm_emit(VM* pvm, VMCode_t opcode)
 //---------------------------------------------------------------
 void vm_exec(VM* pvm, int addr)
 {
+    Object* obj;
+
     if (addr < 0 || addr >= vm_code_ptr) {
         fprintf(stderr, "Invalid VM code address: %d\n", addr);
         return;
@@ -110,6 +112,16 @@ void vm_exec(VM* pvm, int addr)
             printf("HALT\n");
             return;
 
+        case OP_TRUE:
+            obj = vm_newBoolean(pvm, 1);
+            vm_push(pvm, obj);
+            break;
+
+        case OP_FALSE:
+            obj = vm_newBoolean(pvm, 0);
+            vm_push(pvm, obj);
+            break;
+
         case OP_NATIVE:
             {
                 printf("NATIVE FN\n");
@@ -133,7 +145,7 @@ void vm_exec(VM* pvm, int addr)
 // Mark an object
 //--------------------------------------------------------------
 static void markObject(Object* object) {
-    // if (!IS_OBJ(object)) return;
+     if (!IS_OBJ(object)) return;
 
     if (object == NULL || object->marked) return;
 
@@ -335,12 +347,15 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
 //--------------------------------------------------------------
 // Create a new object and add it to the VM's object list
 //--------------------------------------------------------------
-Object* vm_newObject(VM* pvm) {
+Object* vm_newObject(VM* pvm, size_t size) {
     // if (pvm->numObjects == VM_STACK_SIZE) {
     //     vm_gc(vm);
     // }
 
-    Object* obj = (Object*)vm_alloc(pvm, NULL, 0, sizeof(Object));
+    if (size == 0)
+        size = sizeof(Object);
+
+    Object* obj = (Object*)vm_alloc(pvm, NULL, 0, size);
     obj->marked = 0;        // new objects are unmarked
     obj->type = 0;          // default type
     //obj->car = NULL;
@@ -348,6 +363,17 @@ Object* vm_newObject(VM* pvm) {
     obj->next = pvm->head;   // Insert at the head of the object list
     pvm->head = obj;
     pvm->numObjects++;
+    return obj;
+}
+
+//
+Object* vm_newBoolean(VM* pvm, int val)
+{
+    Object* obj = vm_newObject(pvm, sizeof(Boolean));
+    Boolean* bool = (Boolean*)obj;
+
+    bool->base.type = OBJ_BOOL;
+    bool->value = val;
     return obj;
 }
 

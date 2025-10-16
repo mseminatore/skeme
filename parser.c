@@ -242,7 +242,20 @@ int sk_display(SKState *pSK)
 
     if (IS_OBJ(obj))
     {
-		printf("#<obj type=%d>\n", obj->type);
+        switch (obj->type)
+        {
+        case OBJ_BOOL:
+            if (((Boolean*)obj)->value == 0)
+                puts("#f");
+            else
+                puts("#t");
+
+            break;
+
+        default:
+            printf("#<obj type=%d>\n", obj->type);
+            break;
+        }
     }
     else
     {
@@ -288,6 +301,23 @@ int sk_numberp(SKState *pSK)
     return TRUE;
 }
 
+//
+//
+//
+int sk_booleanp(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+    
+    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&vm, 0);
+
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
+        ((Boolean*)bool)->value == 1;
+
+    vm_push(&vm, bool);
+    return TRUE;
+}
+
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
@@ -297,6 +327,7 @@ SKFuncSet built_in_funcs[] =
     { "null?", sk_nullp },
     { "eq?", sk_eqp },
     { "number?", sk_numberp },
+    { "boolean?", sk_booleanp },
     //{ "pair?", NULL },
     //{ "define", NULL },
     //{ "lambda", NULL },
@@ -308,7 +339,6 @@ SKFuncSet built_in_funcs[] =
     // { "atom?", NULL },
     // { "string?", NULL },
     // { "char?", NULL },
-    // { "boolean?", NULL },
     // { "not", NULL },
     // { "exit", NULL },
  
