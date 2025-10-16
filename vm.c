@@ -91,7 +91,7 @@ void vm_exec(VM* pvm, int addr)
         {
         case OP_PUSH:
             printf("PUSH\n");
-            vm_push(pvm, vm_code[addr++]);
+            vm_push(pvm, (Object*)vm_code[addr++]);
             break;
 
         case OP_POP:

@@ -141,7 +141,7 @@ int s_expr()
 
         case NIL:
             vm_emit(&vm, OP_PUSH);
-            vm_emit(&vm, NULL);
+            vm_emit(&vm, (VMCode_t)NULL);
             match(NIL);
             break;
 
@@ -249,6 +249,28 @@ int sk_display(SKState *pSK)
 
             break;
 
+        case OBJ_PAIR:
+            {
+                Pair* pair = (Pair*)obj;
+                printf("(");
+                sk_display(pSK); // display car
+                Object* cdr = pair->cdr;
+                while (cdr && IS_OBJ(cdr) && cdr->type == OBJ_PAIR)
+                {
+                    pair = (Pair*)cdr;
+                    printf(" ");
+                    sk_display(pSK); // display car
+                    cdr = pair->cdr;
+                }
+                if (cdr && !IS_NIL(cdr))
+                {
+                    printf(" . ");
+                    sk_display(pSK); // display cdr
+                }
+                printf(")\n");
+            }
+			break;
+
         case OBJ_NATIVE_FN:
             printf("#<native fn>\n");
 			break;
@@ -277,14 +299,14 @@ int sk_nullp(SKState *pSK)
 {
     if (!pSK) return FALSE;
 
-    Object* obj = vm_pop(&vm);
-    Object* bool = vm_newBoolean(&vm, 0);
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
 
     if (IS_NIL(obj))
-        ((Boolean*)bool)->value = 1;
+        ((Boolean*)bool)->value = TRUE;
 
+    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-
     return TRUE;
 }
 
@@ -295,15 +317,16 @@ int sk_eqp(SKState *pSK)
 {
     if (!pSK) return FALSE;
 
-    Object* obj1 = vm_pop(&vm);
-    Object* obj2 = vm_pop(&vm);
-    Object* bool = vm_newBoolean(&vm, 0);
+    Object* obj2 = vm_peek(&vm, 0);
+    Object* obj1 = vm_peek(&vm, 1);             // need objects to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
 
     if (obj1 == obj2)
-        ((Boolean*)bool)->value = 1;
+        ((Boolean*)bool)->value = TRUE;
 
+    vm_pop(&vm);        // done with obj2
+    vm_pop(&vm);        // done with obj1
     vm_push(&vm, bool);
-
     return TRUE;
 }
 
@@ -314,14 +337,14 @@ int sk_numberp(SKState *pSK)
 {
     if (!pSK) return FALSE;
 
-    Object* obj = vm_pop(&vm);
-    Object* bool = vm_newBoolean(&vm, 0);
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
 
     if (IS_NUM(obj))
-        ((Boolean*)bool)->value = 1;
+        ((Boolean*)bool)->value = TRUE;
 
+    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-
     return TRUE;
 }
 
@@ -332,13 +355,111 @@ int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return FALSE;
     
-    Object* obj = vm_pop(&vm);
-    Object* bool = vm_newBoolean(&vm, 0);
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
-        ((Boolean*)bool)->value = 1;
+        ((Boolean*)bool)->value = TRUE;
 
+    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: pair?
+//-----------------------------------------------
+int sk_pairp(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+    
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+        ((Boolean*)bool)->value = TRUE;
+
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: cons
+//-----------------------------------------------
+int sk_cons(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    Object* obj2 = vm_peek(&vm, 0);
+    Object* obj1 = vm_peek(&vm, 1);
+
+    Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair));
+    pair->base.type = OBJ_PAIR;
+    pair->car = obj1;
+    pair->cdr = obj2;
+
+    vm_pop(&vm);        // done with obj2
+    vm_pop(&vm);        // done with obj1
+    vm_push(&vm, (Object*)pair);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: not
+//-----------------------------------------------
+int sk_not(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+	Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+	Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+
+    if (obj == NULL || (IS_OBJ(obj) && obj->type == OBJ_BOOL && ((Boolean*)obj)->value == 0))
+        ((Boolean*)bool)->value = TRUE;
+
+	vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: car
+//-----------------------------------------------
+int sk_car(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* result = NULL;
+
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+        result = ((Pair*)obj)->car;
+    else
+        yyerror("argument to 'car' is not a pair");
+
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, result);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: cdr
+//-----------------------------------------------
+int sk_cdr(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* result = NULL;
+
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+        result = ((Pair*)obj)->cdr;
+    else
+        yyerror("argument to 'cdr' is not a pair");
+
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, result);
     return TRUE;
 }
 
@@ -352,18 +473,18 @@ SKFuncSet built_in_funcs[] =
     { "eq?", sk_eqp },
     { "number?", sk_numberp },
     { "boolean?", sk_booleanp },
-    //{ "pair?", NULL },
+    { "pair?", sk_pairp },
+    { "cons", sk_cons },
+    { "not", sk_not },
+    { "car", sk_car },
+    { "cdr", sk_cdr },
     //{ "define", NULL },
     //{ "lambda", NULL },
     //{ "print", NULL },
-    //{ "car", NULL },
-    //{ "cdr", NULL },
-    //{ "cons", NULL },
     //{ "list", NULL },
     // { "atom?", NULL },
     // { "string?", NULL },
     // { "char?", NULL },
-    // { "not", NULL },
     // { "exit", NULL },
  
     { NULL, NULL }
