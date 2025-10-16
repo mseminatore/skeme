@@ -24,6 +24,13 @@ FileNode file_nodes[MAX_FILE_STACK];
 // define our keyword token table
 Tokens tokens[] =
 {
+    {"()",      NIL },
+    {"#t",      TRUE },
+    {"#f",      FALSE },
+    // {"display", DISPLAY },
+    // {"null?",   NULLP },
+    // {"eq?",     EQP },
+    // {"number?", NUMBERP },
     //{ "lambda",  LAMBDA },
     //{ "define",  DEFINE },
     //{ "car",     CAR },

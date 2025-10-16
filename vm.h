@@ -52,7 +52,7 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_FN, OP_NATIVE, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_TRUE, OP_FALSE, OP_FN, OP_NATIVE, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 typedef intptr_t VMCode_t;
 

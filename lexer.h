@@ -74,7 +74,7 @@ typedef struct
 
 extern FILE *yyin;
 
-enum { ID = 256, NUMBER, STRING, CHAR, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
+enum { ID = 256, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FALSE, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
        CAR, CDR, CONS, LIST, SYMBOLP, PRINT, READ, EVAL, EXIT };
 
 extern int lookahead;

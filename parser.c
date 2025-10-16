@@ -171,6 +171,18 @@ int s_expr()
             elements++;
             break;
 
+        case TOKEN_TRUE:
+            vm_emit(&vm, OP_TRUE);
+            match(TOKEN_TRUE);
+            elements++;
+            break;
+
+        case TOKEN_FALSE:
+            vm_emit(&vm, OP_FALSE);
+            match(TOKEN_FALSE);
+            elements++;
+            break;
+
         case NUMBER:
             // handle number
             LOG("NUMBER: %d\n", yylval.ival);
