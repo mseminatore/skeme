@@ -115,7 +115,7 @@ void vm_exec(VM* pvm, int addr)
                 printf("NATIVE FN\n");
                 SKFunc func = (SKFunc)vm_code[addr++];
                 if (func) {
-                    func(1); // In a real implementation, pass the VM or context
+                    func((SKState*)1); // In a real implementation, pass the VM or context
                 } else {
                     fprintf(stderr, "NULL function pointer in NATIVE call!\n");
                 }

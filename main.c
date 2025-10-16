@@ -66,6 +66,8 @@ int getopt(int n, char *args[])
 //-----------------------------------
 int main(int argc, char *argv[])
 {
+    int done = FALSE;
+    
     char infile[BUF_SIZE] = "stdin";
 
     // show usage if no arguments given

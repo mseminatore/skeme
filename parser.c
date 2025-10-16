@@ -156,6 +156,7 @@ int s_expr()
             if (sym.type == ST_UNDEF)
             {
                 yywarning("symbol is undefined");
+                match(ID);
 			}
 
             if (sym.type == ST_NATIVE)
@@ -164,7 +165,7 @@ int s_expr()
                 match(ID);
                 s_expr(); // parse function arguments (if any)
 				vm_emit(&vm, OP_NATIVE);
-				vm_emit(&vm, sym.func);
+				vm_emit(&vm, (VMCode_t)sym.func);
             }
 
             elements++;
