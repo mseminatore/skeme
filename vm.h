@@ -27,7 +27,7 @@
 #endif
 
 #ifdef VM_DEBUG_LOG_GC
-#   define VM_LOG(...) fprintf(stderr, __VA_ARGS__)
+#   define VM_LOG(...) (fprintf(stderr, __VA_ARGS__))
 #else
 #   define VM_LOG(...)
 // #   define VM_LOG __noop

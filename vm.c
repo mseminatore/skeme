@@ -98,7 +98,7 @@ void vm_exec(VM* pvm, int addr)
         return;
     }
 
-    LOG("\n---- VM Execution Start ----\n");
+    VM_LOG("\n---- VM Execution Start ----\n");
 
     while(1)
     {
@@ -107,25 +107,25 @@ void vm_exec(VM* pvm, int addr)
         switch(opcode)
         {
         case OP_PUSH:
-            LOG("PUSH\n");
+            VM_LOG("PUSH\n");
             vm_push(pvm, (Object*)vm_code[addr++]);
             break;
 
         case OP_POP:
-            LOG("POP\n");
+            VM_LOG("POP\n");
             break;
 
         case OP_NUM:
-            LOG("NUM\n");
+            VM_LOG("NUM\n");
             vm_push(pvm, MAKE_NUM(vm_code[addr++]));
             break;
 
         case OP_RET:
-            LOG("RET\n");
+            VM_LOG("RET\n");
             break;
 
         case OP_HALT:
-            LOG("HALT\n");
+            VM_LOG("HALT\n");
             return;
 
         case OP_TRUE:
@@ -140,7 +140,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_NATIVE:
             {
-                LOG("NATIVE FN\n");
+                VM_LOG("NATIVE FN\n");
                 SKFunc func = (SKFunc)vm_code[addr++];
                 if (func) {
                     func((SKState*)1); // In a real implementation, pass the VM or context
