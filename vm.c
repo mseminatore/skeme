@@ -4,9 +4,7 @@
 #include <assert.h>
 #include "vm.h"
 
-#define VM_MAX_CODE 1024
-
-//
+// TODO - should these be inside the VM struct?
 static int vm_code_ptr = 0;
 static VMCode_t vm_code[VM_MAX_CODE];
 
@@ -69,6 +67,25 @@ void vm_emit(VM* pvm, VMCode_t opcode)
     vm_code[vm_code_ptr++] = opcode;
 }
 
+//--------------------------------------------------------------
+// Clear the VM code buffer
+//--------------------------------------------------------------
+void vm_clear_code()
+{
+    vm_code_ptr = 0;
+}
+
+//--------------------------------------------------------------
+// Reset the VM
+//--------------------------------------------------------------
+int vm_reset(VM* pvm)
+{
+    CHECK_THAT(pvm != NULL);
+    vm_clear_stack(pvm);
+    vm_clear_code();
+    return VM_OK;
+}
+
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address
 //---------------------------------------------------------------
@@ -81,7 +98,7 @@ void vm_exec(VM* pvm, int addr)
         return;
     }
 
-    printf("\n---- VM Execution Start ----\n");
+    LOG("\n---- VM Execution Start ----\n");
 
     while(1)
     {
@@ -90,25 +107,25 @@ void vm_exec(VM* pvm, int addr)
         switch(opcode)
         {
         case OP_PUSH:
-            printf("PUSH\n");
+            LOG("PUSH\n");
             vm_push(pvm, (Object*)vm_code[addr++]);
             break;
 
         case OP_POP:
-            printf("POP\n");
+            LOG("POP\n");
             break;
 
         case OP_NUM:
-            printf("NUM\n");
+            LOG("NUM\n");
             vm_push(pvm, MAKE_NUM(vm_code[addr++]));
             break;
 
         case OP_RET:
-            printf("RET\n");
+            LOG("RET\n");
             break;
 
         case OP_HALT:
-            printf("HALT\n");
+            LOG("HALT\n");
             return;
 
         case OP_TRUE:
@@ -123,7 +140,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_NATIVE:
             {
-                printf("NATIVE FN\n");
+                LOG("NATIVE FN\n");
                 SKFunc func = (SKFunc)vm_code[addr++];
                 if (func) {
                     func((SKState*)1); // In a real implementation, pass the VM or context
@@ -144,7 +161,7 @@ void vm_exec(VM* pvm, int addr)
 // Mark an object
 //--------------------------------------------------------------
 static void markObject(Object* object) {
-     if (!IS_OBJ(object)) return;
+    if (!IS_OBJ(object)) return;
 
     if (object == NULL || object->marked) return;
 

@@ -74,22 +74,22 @@ int main(int argc, char *argv[])
   //  if (argc == 1)
 		//usage();
 
-	yyin = stdin;
+	// default input is stdin
+    yyin = stdin;
 
     printf("%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
+    sk_init(&sk);
 
 	int iFirstArg = getopt(argc, argv);
+
+    // fout = fopen(g_szOutputFilename, "wb");
+    LOG("Output file: '%s'\n", g_szOutputFilename);
 
     if (argc != iFirstArg /* yyin != stdin */)
     {
         push_file_stack(argv[iFirstArg]);
         strcpy(infile, argv[iFirstArg]);
     }
-
-    // fout = fopen(g_szOutputFilename, "wb");
-    sk_init(&sk);
-
-    LOG("Output file: '%s'\n", g_szOutputFilename);
     
     // parse the input file
     sk_parse();
@@ -106,4 +106,28 @@ int main(int argc, char *argv[])
         sk_display(&sk);
         LOG("%d items left on stack.\n", vm.sp);
     }
+
+	// REPL loop
+    while (!done)
+    {
+        vm_reset(&vm);
+
+        printf("sk> ");
+        yyin = stdin;
+        lineno = 1;
+        CURRENT_LINENO = 1;
+
+        sk_parse();
+        vm_exec(&vm, 0);
+        if (vm.sp)
+        {
+            sk_display(&sk);
+            LOG("%d items left on stack.\n", vm.sp);
+        }
+    }
+
+    LOG("Shutting down...\n");
+    //sk_shutdown(&sk);
+    LOG("Done.\n");
+	return 0;
 }

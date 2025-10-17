@@ -18,6 +18,8 @@
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
 
+#define VM_MAX_CODE 1024
+
 #ifdef _DEBUG
 #   define CHECK_THAT(cond)            assert(cond); if (!(cond)) return VM_ERR;
 #else
@@ -120,5 +122,7 @@ void vm_freeObjects(VM* pvm);
 void vm_emit(VM* pvm, VMCode_t opcode);
 void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);
+void vm_clear_code();
+int vm_reset(VM* pvm);
 
 #endif // __VM_H
