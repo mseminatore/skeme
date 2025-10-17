@@ -218,7 +218,6 @@ static int yyparse(void)
     while (lookahead != DONE)
         s_expr();
 
-    vm_emit(&vm, OP_HALT);
     return 0;
 }
 
@@ -601,6 +600,38 @@ int sk_gc_stats(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: load
+//-----------------------------------------------
+int sk_load(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement load
+	Object* obj = vm_pop(&vm);
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    {
+        // Get the filename from the string object
+        const char* filename = ((String*)obj)->value;
+		push_file_stack(filename);
+        yyparse();
+    }
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: if
+//-----------------------------------------------
+int sk_if(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement if
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -622,9 +653,8 @@ static SKFuncSet built_in_funcs[] =
     { "list?", sk_listp },
     { "gc", sk_gc },
     { "gc-stats", sk_gc_stats },
-
-    // { "load", sk_load },
-    // { "if", sk_if },
+     { "load", sk_load },
+     { "if", sk_if },
     // { "lambda", sk_lambda },
     // { "list", sk_list },
     // { "print", sk_print },
@@ -680,6 +710,8 @@ int sk_init(SKState *pSK)
 //-----------------------------------------------
 int sk_parse()
 {
-    return yyparse();
+    int result = yyparse();
+    vm_emit(&vm, OP_HALT);
+    return result;
 }
 

@@ -120,8 +120,13 @@ void vm_exec(VM* pvm, int addr)
             vm_push(pvm, MAKE_NUM(vm_code[addr++]));
             break;
 
+        case OP_STRING:
+            VM_LOG("STRING\n");
+            break;
+
         case OP_RET:
             VM_LOG("RET\n");
+            // TODO - set IP to return address
             break;
 
         case OP_HALT:
