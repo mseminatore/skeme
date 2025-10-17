@@ -28,8 +28,6 @@ Tokens tokens[] =
 	{"nil",     NIL },
     {"#t",      TOKEN_TRUE },
     {"#f",      TOKEN_FALSE },
-    //{ "lambda",  LAMBDA },
-    //{ "define",  DEFINE },
     // { "if",      IF },
     // { "else",    ELSE },
     // { "cond",    COND },
@@ -42,7 +40,6 @@ Tokens tokens[] =
     // { "print",   PRINT },
     // { "read",    READ },
     // { "eval",    EVAL },
-    // { "exit",    EXIT },
     { NULL, 0}
 };
 
@@ -228,7 +225,7 @@ int getNumber()
         c = getch();
     }
 
-	if (c == '$' || (c == '0' && (follow('X', 1, 0) || follow('x', 1, 0))))
+	if (c == '$' || (c == '0' && (follow('X', TRUE, FALSE) || follow('x', TRUE, FALSE))))
 		base = 16;
 	else
 		ungetch(c);
@@ -343,7 +340,7 @@ yylex01:
     if (c == '\'')
     {
         c = getch();
-        if (follow('\'', 1, 0))
+        if (follow('\'', TRUE, FALSE))
         {
             yylval.ival = backslash(c);
             return CHAR;
@@ -354,7 +351,7 @@ yylex01:
     }
 
     // look for empty lists
-    if (c == '(' && follow(')', 1, 0))
+    if (c == '(' && follow(')', TRUE, FALSE))
         return NIL;
 
     // look for string literals
