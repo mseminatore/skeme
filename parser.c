@@ -510,6 +510,68 @@ int sk_define(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: string?
+//-----------------------------------------------
+int sk_stringp(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+        ((Boolean*)bool)->value = TRUE;
+
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: list?
+//-----------------------------------------------
+int sk_listp(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    
+    // check for proper list (nil or chain of pairs ending in nil)
+    if (obj == NULL)
+    {
+        ((Boolean*)bool)->value = TRUE;
+    }
+    else
+    {
+        Object* current = obj;
+        int is_list = TRUE;
+        while (current && IS_OBJ(current))
+        {
+            if (current->type == OBJ_PAIR)
+            {
+                current = ((Pair*)current)->cdr;
+            }
+            else if (IS_NIL(current))
+            {
+                break;  // end of list
+            }
+            else
+            {
+                is_list = FALSE;
+                break;
+            }
+        }
+        if (is_list)
+            ((Boolean*)bool)->value = TRUE;
+    }
+
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+    return TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 SKFuncSet built_in_funcs[] =
@@ -527,13 +589,20 @@ SKFuncSet built_in_funcs[] =
     { "exit", sk_exit },
 	{ "error", sk_error },
     { "define", sk_define },
-    //{ "list", sk_list },
-    //{ "lambda", sk_lambda },
-    //{ "print", sk_print },
+    { "string?", sk_stringp },
+    { "list?", sk_listp },
+    // { "load", sk_load },
+    // { "if", sk_if },
+    // { "lambda", sk_lambda },
+    // { "list", sk_list },
+    // { "print", sk_print },
     // { "atom?", sk_atomp },
-    // { "string?", sk_stringp },
     // { "char?", sk_charp },
-
+	// { "symbol?", sk_symbolp },
+	// { "read", sk_read },
+	// { "eval", sk_eval },
+	// { "map", sk_map },
+	// { "filter", sk_filter },
     { NULL, NULL }
 };
 
