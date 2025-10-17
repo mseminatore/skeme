@@ -10,6 +10,7 @@ int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
+int g_bDone = FALSE;
 
 //--------------------------------
 // print usage banner
@@ -89,26 +90,24 @@ int main(int argc, char *argv[])
     {
         push_file_stack(argv[iFirstArg]);
         strcpy(infile, argv[iFirstArg]);
+        // parse the input file
+        sk_parse();
+        vm_exec(&vm, 0);
+
+        LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
+
+        if (vm.sp)
+        {
+            sk_display(&sk);
+            LOG("%d items left on stack.\n", vm.sp);
+        }
     }
     
-    // parse the input file
-    sk_parse();
-
-    LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
-
     if (g_bSymbols)
         dump_symbols();
 
-    vm_exec(&vm, 0);
-
-    if (vm.sp)
-    {
-        sk_display(&sk);
-        LOG("%d items left on stack.\n", vm.sp);
-    }
-
 	// REPL loop
-    while (!done)
+    while (!g_bDone)
     {
         vm_reset(&vm);
 

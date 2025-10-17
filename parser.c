@@ -17,6 +17,7 @@ int warn_count = 0;
 // input and output files
 FILE *yyin = NULL;
 FILE *fout = NULL;
+extern int g_bDone;
 
 //------------------------
 // error routine
@@ -275,9 +276,9 @@ int sk_display(SKState *pSK)
             printf("#<native fn>\n");
 			break;
 
-        case OBJ_BUILTIN_FN:
-			printf("#<builtin fn>\n");
-			break;
+   //     case OBJ_BUILTIN_FN:
+			//printf("#<builtin fn>\n");
+			//break;
 
         default:
             printf("#<obj type=%d>\n", obj->type);
@@ -464,6 +465,51 @@ int sk_cdr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: exit
+//-----------------------------------------------
+int sk_exit(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+    g_bDone = TRUE;
+    //exit(0);
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: error
+//
+int sk_error(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+	// TODO - get error message from stack
+    //Object* obj = vm_pop(&vm);
+    //if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    //{
+    //    // Get the error message from the string object
+    //    const char* error_msg = ((String*)obj)->value;
+    //    yyerror(error_msg);
+    //}
+
+    // simply raise a parser error for now
+    yyerror("error called");
+    
+    return TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: define
+//-----------------------------------------------
+int sk_define(SKState* pSK)
+{
+    if (!pSK) return FALSE;
+
+    // TODO - implement define
+
+    return TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 SKFuncSet built_in_funcs[] =
@@ -478,15 +524,16 @@ SKFuncSet built_in_funcs[] =
     { "not", sk_not },
     { "car", sk_car },
     { "cdr", sk_cdr },
-    //{ "define", NULL },
-    //{ "lambda", NULL },
-    //{ "print", NULL },
-    //{ "list", NULL },
-    // { "atom?", NULL },
-    // { "string?", NULL },
-    // { "char?", NULL },
-    // { "exit", NULL },
- 
+    { "exit", sk_exit },
+	{ "error", sk_error },
+    { "define", sk_define },
+    //{ "list", sk_list },
+    //{ "lambda", sk_lambda },
+    //{ "print", sk_print },
+    // { "atom?", sk_atomp },
+    // { "string?", sk_stringp },
+    // { "char?", sk_charp },
+
     { NULL, NULL }
 };
 

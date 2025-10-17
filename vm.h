@@ -47,12 +47,14 @@ typedef int (*SKFunc)(SKState* pSK);
 
 // object types
 enum {
-    OBJ_INT,
+    //OBJ_INT,
     OBJ_STRING,
     OBJ_PAIR,
+    OBJ_LIST,
+	OBJ_FUNCTION,
     OBJ_CLOSURE,
     OBJ_NATIVE_FN,
-    OBJ_BUILTIN_FN,
+    //OBJ_BUILTIN_FN,
     OBJ_NIL,
     OBJ_BOOL
 };
@@ -67,35 +69,42 @@ typedef intptr_t VMCode_t;
 //
 typedef struct Object {
     int type;               // Type of the object (e.g., integer, string, etc.)
-    size_t size;            // 
+    size_t size;            // Size of the object (for strings, pairs, etc.)
     int marked;             // Mark flag for garbage collection
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
 typedef struct Boolean {
-    Object base;
+	Object base;            // base object
     int value;              // 0 for false, 1 for true
 } Boolean;
 
 typedef struct Pair {
-    Object base;
-    Object* car;
-    Object* cdr;
+	Object base;    // base object
+	Object* car;    // first element
+	Object* cdr;    // second element
 } Pair;
+
+typedef struct String {
+    Object base;        // base object
+    char* value;        // string value
+} String;
 
 // Define the VM structure
 typedef struct VM {
-    int sp;                         // Stack pointer
+	int sp;                         // Stack pointer should be size_t or uint
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
-    int numObjects;                 // Number of allocated objects
-    // size_t peakObjects;             // Peak number of allocated objects
+	int numObjects;                 // Number of allocated objects should be size_t
+    // size_t peakObjects;              // Peak number of allocated objects
+	// size_t peakAllocatedBytes;       // Peak allocated bytes
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
 
-    int globals_count;              // Number of global objects
+	int globals_count;              // Number of global objects should be size_t or uint
     Object globals[VM_MAX_GLOBALS]; // Head of the global objects list
 
+	// TODO - implement interned string table
     int grayCount;
     int grayCapacity;
     Object** grayStack;
