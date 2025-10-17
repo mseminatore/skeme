@@ -13,6 +13,14 @@
 // remove this later
 #define YYDEBUG 1
 
+#ifndef SK_TRUE
+	#define SK_TRUE 1
+#endif
+
+#ifndef SK_FALSE
+	#define SK_FALSE 0
+#endif
+
 typedef struct
 {
 	char *name;
@@ -32,7 +40,7 @@ extern VM vm;
 //-----------------
 void push_file_stack(const char *filename);
 void pop_file_stack(void);
-int yyparse(void);
+//int yyparse(void);
 void dump_symbols();
 
 int sk_init(SKState *pSK);

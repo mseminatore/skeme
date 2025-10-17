@@ -136,7 +136,7 @@ int add_symbol(const char *name, int lineno)
 
     symbols[symbol_count].name      = strdup(name);
     symbols[symbol_count].lineno    = CURRENT_LINENO;
-    symbols[symbol_count].filename  = strdup(CURRENT_FILE);
+    symbols[symbol_count].filename  = CURRENT_FILE ? strdup(CURRENT_FILE) : "noname";
     symbols[symbol_count].type      = ST_UNDEF;
     symbols[symbol_count].value     = -1;
     symbols[symbol_count].refd      = 0;
@@ -386,7 +386,7 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch()) != EOF && (c == '_' || c == '?' || isalnum(c)));
+        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || isalnum(c)));
         
         // put back the last character!
         ungetch(c);

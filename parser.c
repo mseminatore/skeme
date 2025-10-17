@@ -209,7 +209,7 @@ int s_expr()
 //-----------------------------------------------
 // parse the input
 //-----------------------------------------------
-int yyparse(void)
+static int yyparse(void)
 {
     // prime the pump
     lookahead = yylex();
@@ -227,7 +227,7 @@ int yyparse(void)
 //-----------------------------------------------
 int sk_display(SKState *pSK)
 {
-	if (!pSK) return FALSE;
+	if (!pSK) return SK_FALSE;
 
     // pop the top of the stack and print it
     Object *obj = vm_pop(&vm);
@@ -235,7 +235,7 @@ int sk_display(SKState *pSK)
     if (!obj)
     {
         puts("()\n");   // nil
-        return TRUE;
+        return SK_TRUE;
     }
 
     if (IS_OBJ(obj))
@@ -287,10 +287,11 @@ int sk_display(SKState *pSK)
     }
     else
     {
+        // print number
         printf("%d\n", AS_NUM(obj));
     }
 
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -298,7 +299,7 @@ int sk_display(SKState *pSK)
 //-----------------------------------------------
 int sk_nullp(SKState *pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -308,7 +309,7 @@ int sk_nullp(SKState *pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -316,7 +317,7 @@ int sk_nullp(SKState *pSK)
 //-----------------------------------------------
 int sk_eqp(SKState *pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj2 = vm_peek(&vm, 0);
     Object* obj1 = vm_peek(&vm, 1);             // need objects to stay live for now in case of GC
@@ -328,7 +329,7 @@ int sk_eqp(SKState *pSK)
     vm_pop(&vm);        // done with obj2
     vm_pop(&vm);        // done with obj1
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -336,7 +337,7 @@ int sk_eqp(SKState *pSK)
 //-----------------------------------------------
 int sk_numberp(SKState *pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -346,7 +347,7 @@ int sk_numberp(SKState *pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -354,7 +355,7 @@ int sk_numberp(SKState *pSK)
 //-----------------------------------------------
 int sk_booleanp(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
     
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -364,7 +365,7 @@ int sk_booleanp(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -372,7 +373,7 @@ int sk_booleanp(SKState* pSK)
 //-----------------------------------------------
 int sk_pairp(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
     
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -382,7 +383,7 @@ int sk_pairp(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -390,7 +391,7 @@ int sk_pairp(SKState* pSK)
 //-----------------------------------------------
 int sk_cons(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj2 = vm_peek(&vm, 0);
     Object* obj1 = vm_peek(&vm, 1);
@@ -403,7 +404,7 @@ int sk_cons(SKState* pSK)
     vm_pop(&vm);        // done with obj2
     vm_pop(&vm);        // done with obj1
     vm_push(&vm, (Object*)pair);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -411,7 +412,7 @@ int sk_cons(SKState* pSK)
 //-----------------------------------------------
 int sk_not(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
 	Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
 	Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -421,7 +422,7 @@ int sk_not(SKState* pSK)
 
 	vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -429,7 +430,7 @@ int sk_not(SKState* pSK)
 //-----------------------------------------------
 int sk_car(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* result = NULL;
@@ -441,7 +442,7 @@ int sk_car(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, result);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -449,7 +450,7 @@ int sk_car(SKState* pSK)
 //-----------------------------------------------
 int sk_cdr(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* result = NULL;
@@ -461,7 +462,7 @@ int sk_cdr(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, result);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -469,10 +470,10 @@ int sk_cdr(SKState* pSK)
 //-----------------------------------------------
 int sk_exit(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
     g_bDone = TRUE;
     //exit(0);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -480,7 +481,7 @@ int sk_exit(SKState* pSK)
 //
 int sk_error(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
 	// TODO - get error message from stack
     //Object* obj = vm_pop(&vm);
@@ -494,7 +495,7 @@ int sk_error(SKState* pSK)
     // simply raise a parser error for now
     yyerror("error called");
     
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -502,11 +503,11 @@ int sk_error(SKState* pSK)
 //-----------------------------------------------
 int sk_define(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     // TODO - implement define
 
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -514,7 +515,7 @@ int sk_define(SKState* pSK)
 //-----------------------------------------------
 int sk_stringp(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -524,7 +525,7 @@ int sk_stringp(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -532,7 +533,7 @@ int sk_stringp(SKState* pSK)
 //-----------------------------------------------
 int sk_listp(SKState* pSK)
 {
-    if (!pSK) return FALSE;
+    if (!pSK) return SK_FALSE;
 
     Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
@@ -568,13 +569,41 @@ int sk_listp(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
-    return TRUE;
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// force a gc
+//-----------------------------------------------
+int sk_gc(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    vm_gc(&vm);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// display gc stats
+//-----------------------------------------------
+int sk_gc_stats(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    fprintf(stderr, "GC Stats: %d objects allocated, %zu bytes used, next GC at %zu bytes\n",
+        vm.numObjects,
+        vm.allocatedBytes,
+        vm.nextGC
+    );
+
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
-SKFuncSet built_in_funcs[] =
+static SKFuncSet built_in_funcs[] =
 {
     { "display", sk_display },
     { "null?", sk_nullp },
@@ -591,6 +620,9 @@ SKFuncSet built_in_funcs[] =
     { "define", sk_define },
     { "string?", sk_stringp },
     { "list?", sk_listp },
+    { "gc", sk_gc },
+    { "gc-stats", sk_gc_stats },
+
     // { "load", sk_load },
     // { "if", sk_if },
     // { "lambda", sk_lambda },
