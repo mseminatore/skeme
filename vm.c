@@ -136,11 +136,11 @@ void vm_exec(VM* pvm, int addr)
             return;
 
         case OP_TRUE:
-			vm_pushBoolean(pvm, 1);
+			vm_pushBoolean(pvm, TRUE);
             break;
 
         case OP_FALSE:
-			vm_pushBoolean(pvm, 0);
+			vm_pushBoolean(pvm, FALSE);
             break;
 
         case OP_NATIVE:

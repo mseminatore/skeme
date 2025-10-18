@@ -20,6 +20,14 @@
 
 #define VM_MAX_CODE 1024
 
+#ifndef TRUE
+#   define TRUE 1
+#endif
+
+#ifndef FALSE
+#   define FALSE 0
+#endif
+
 #ifdef _DEBUG
 #   define CHECK_THAT(cond)            assert(cond); if (!(cond)) return VM_ERR;
 #else
