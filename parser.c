@@ -255,7 +255,7 @@ static void printObject(Object *obj)
 {
     if (!obj)
     {
-        puts("()\n");   // nil
+        printf("()");   // nil
         return;
     }
 
@@ -265,9 +265,9 @@ static void printObject(Object *obj)
         {
         case OBJ_BOOL:
             if (((Boolean*)obj)->value == 0)
-                puts("#f");
+                printf("#f");
             else
-                puts("#t");
+                printf("#t");
 
             break;
 
