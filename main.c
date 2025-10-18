@@ -102,30 +102,32 @@ int main(int argc, char *argv[])
             LOG("%d items left on stack.\n", vm.sp);
         }
     }
-    
-    if (g_bSymbols)
-        dump_symbols();
-
-	// REPL loop
-    while (!g_bDone)
+    else
     {
-        vm_reset(&vm);
-
-        printf("sk> ");
-        yyin = stdin;
-        lineno = 1;
-        CURRENT_LINENO = 1;
-
-        sk_parse();
-        vm_exec(&vm, 0);
-        if (vm.sp)
+        // REPL loop
+        while (!g_bDone)
         {
-            sk_display(&sk);
-            LOG("%d items left on stack.\n", vm.sp);
+            vm_reset(&vm);
+
+            printf("sk> ");
+            yyin = stdin;
+            lineno = 1;
+            CURRENT_LINENO = 1;
+
+            sk_parse();
+            vm_exec(&vm, 0);
+            if (vm.sp)
+            {
+                sk_display(&sk);
+                LOG("%d items left on stack.\n", vm.sp);
+            }
         }
     }
 
-    LOG("Shutting down...\n");
+    if (g_bSymbols)
+        dump_symbols();
+
+    LOG("Shutting down...");
     //sk_shutdown(&sk);
     LOG("Done.\n");
 	return 0;
