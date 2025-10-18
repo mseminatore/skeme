@@ -329,6 +329,7 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
         return ptr;
     }
 
+    // possibly trigger GC
     if (new_size > old_size) 
     {
 #ifdef VM_STRESS_GC
@@ -342,7 +343,7 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     if (new_size == 0) {
         free(ptr);
 
-        // TODO update allocatedBytes
+        // update allocatedBytes
         pvm->allocatedBytes -= old_size;
 
         return NULL;

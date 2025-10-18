@@ -120,50 +120,63 @@ void dump_symbols()
     }
 }
 
+int s_expr();
+
 //-----------------------------------------------
-// parse a single s-expression
+// parse an atomic value
 //-----------------------------------------------
-int s_expr()
+int atom()
 {
     Symbol_t sym;
-    int elements = 0;
 
-    switch(lookahead)
+    switch (lookahead)
     {
-    case DONE:
-        return elements; // done parsing
+    case TOKEN_TRUE:
+        vm_emit(&vm, OP_TRUE);
+        match(TOKEN_TRUE);
+        return 1;
 
-    case ')':
-        yyerror("unexpected ')'");
-        match(')');
-        return elements;
+    case TOKEN_FALSE:
+        vm_emit(&vm, OP_FALSE);
+        match(TOKEN_FALSE);
+        return 1;
 
-    case '(':
-        match('(');
-        while (lookahead != ')')
-        {
-            s_expr();
-        }
-        match(')');
-        break;
+    case NUMBER:
+        // handle number
+        LOG("NUMBER: %d\n", yylval.ival);
+        vm_emit(&vm, OP_NUM);
+        vm_emit(&vm, yylval.ival);
+        match(NUMBER);
+        return 1;
+
+    case STRING:
+        // handle string
+        LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+		vm_emit(&vm, OP_STRING);
+		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
+        match(STRING);
+        return 1;
 
     case NIL:
+        LOG("NIL\n");
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)NULL);
         match(NIL);
-        break;
+        return 1;
 
     case ID:
         // lookup symbol
         sym = symbols[yylval.symbol];
         LOG("ID: '%s'\n", sym.name);
 
+        // undefined symbol error
         if (sym.type == ST_UNDEF)
         {
             yywarning("symbol is undefined");
             match(ID);
 		}
 
+        // handle native function call
         if (sym.type == ST_NATIVE)
         {
 			sym = symbols[yylval.symbol];
@@ -173,46 +186,51 @@ int s_expr()
 			vm_emit(&vm, (VMCode_t)sym.func);
         }
 
-        elements++;
-        break;
-
-    case TOKEN_TRUE:
-        vm_emit(&vm, OP_TRUE);
-        match(TOKEN_TRUE);
-        elements++;
-        break;
-
-    case TOKEN_FALSE:
-        vm_emit(&vm, OP_FALSE);
-        match(TOKEN_FALSE);
-        elements++;
-        break;
-
-    case NUMBER:
-        // handle number
-        LOG("NUMBER: %d\n", yylval.ival);
-        vm_emit(&vm, OP_NUM);
-        vm_emit(&vm, yylval.ival);
-        match(NUMBER);
-        elements++;
-        break;
-
-    case STRING:
-        // handle string
-        LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
-		vm_emit(&vm, OP_STRING);
-		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
-        match(STRING);
-        elements++;
-        break;
-
-    default:
-        yyerror("expected a valid s-expression");
-        match(lookahead); // try to continue
-        break;
+        return 1;
     }
 
-    return elements;
+    return 0;
+}
+
+//-----------------------------------------------
+//
+//-----------------------------------------------
+int atoms()
+{
+    while (atom())
+        ;
+
+    return 1;
+}
+
+//-----------------------------------------------
+// parse a list
+//-----------------------------------------------
+int list()
+{
+    match('(');
+
+    while (lookahead != ')')
+    {
+        s_expr();
+    }
+
+    match(')');
+
+    return 1;
+}
+
+//-----------------------------------------------
+// parse a single s-expression
+//-----------------------------------------------
+int s_expr()
+{
+    if (lookahead == '(')
+        list();
+    else
+        atoms();
+
+    return 1;
 }
 
 //-----------------------------------------------
@@ -230,6 +248,74 @@ static int yyparse(void)
     return 0;
 }
 
+//
+//
+//
+static void printObject(Object *obj)
+{
+    if (!obj)
+    {
+        puts("()\n");   // nil
+        return;
+    }
+
+    if (IS_OBJ(obj))
+    {
+        switch (obj->type)
+        {
+        case OBJ_BOOL:
+            if (((Boolean*)obj)->value == 0)
+                puts("#f");
+            else
+                puts("#t");
+
+            break;
+
+        case OBJ_PAIR:
+            {
+                Pair* pair = (Pair*)obj;
+                printf(TERM_BLUE"(");
+
+                printObject(pair->car); // display car
+
+                Object* cdr = pair->cdr;
+                while (cdr && IS_OBJ(cdr) && cdr->type == OBJ_PAIR)
+                {
+                    pair = (Pair*)cdr;
+                    printf(" ");
+                    printObject(pair->car); // display car
+                    cdr = pair->cdr;
+                }
+
+                if (cdr && !IS_NIL(cdr))
+                {
+                    printf(" . ");
+                    printObject(pair->car); // display car
+                }
+                printf(")\n");
+            }
+			break;
+
+        case OBJ_NATIVE_FN:
+            printf("#<native fn>\n");
+			break;
+
+   //     case OBJ_BUILTIN_FN:
+			//printf("#<builtin fn>\n");
+			//break;
+
+        default:
+            printf("#<obj type=%d>\n", obj->type);
+            break;
+        }
+    }
+    else
+    {
+        // print number
+        printf("%d", AS_NUM(obj));
+    }
+}
+
 //-----------------------------------------------
 // built-in function: display
 //-----------------------------------------------
@@ -240,64 +326,9 @@ int sk_display(SKState *pSK)
     // pop the top of the stack and print it
     Object *obj = vm_pop(&vm);
 
-    if (!obj)
-    {
-        puts(TERM_BLUE"()\n"TERM_RESET);   // nil
-        return SK_TRUE;
-    }
-
-    if (IS_OBJ(obj))
-    {
-        switch (obj->type)
-        {
-        case OBJ_BOOL:
-            if (((Boolean*)obj)->value == 0)
-                puts(TERM_BLUE"#f"TERM_RESET);
-            else
-                puts(TERM_BLUE"#t"TERM_RESET);
-
-            break;
-
-        case OBJ_PAIR:
-            {
-                Pair* pair = (Pair*)obj;
-                printf(TERM_BLUE"(");
-                sk_display(pSK); // display car
-                Object* cdr = pair->cdr;
-                while (cdr && IS_OBJ(cdr) && cdr->type == OBJ_PAIR)
-                {
-                    pair = (Pair*)cdr;
-                    printf(" ");
-                    sk_display(pSK); // display car
-                    cdr = pair->cdr;
-                }
-                if (cdr && !IS_NIL(cdr))
-                {
-                    printf(" . ");
-                    sk_display(pSK); // display cdr
-                }
-                printf(")\n"TERM_RESET);
-            }
-			break;
-
-        case OBJ_NATIVE_FN:
-            printf(TERM_BLUE"#<native fn>\n"TERM_RESET);
-			break;
-
-   //     case OBJ_BUILTIN_FN:
-			//printf("#<builtin fn>\n");
-			//break;
-
-        default:
-            printf(TERM_BLUE"#<obj type=%d>\n"TERM_RESET, obj->type);
-            break;
-        }
-    }
-    else
-    {
-        // print number
-        printf(TERM_BLUE"%d\n"TERM_RESET, AS_NUM(obj));
-    }
+    printf(TERM_BLUE);
+        printObject(obj);
+    printf(TERM_RESET);
 
     return SK_TRUE;
 }
