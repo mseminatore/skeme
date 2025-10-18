@@ -23,18 +23,24 @@ extern int g_bDone;
 //------------------------
 // error routine
 //------------------------
-void yyerror(char *s)
+void yyerror(const char *s)
 {
-    fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
+    if (yyin == stdin)
+        fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
+    else
+        fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
     err_count++;
 }
 
 //------------------------
 // error routine
 //------------------------
-void yywarning(char *s)
+void yywarning(const char *s)
 {
-    fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
+    if (yyin == stdin)
+        fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
+    else
+        fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
     warn_count++;
 }
 
@@ -192,8 +198,10 @@ int s_expr()
         break;
 
     case STRING:
-        // TODO - handle string
+        // handle string
         LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+		vm_emit(&vm, OP_STRING);
+		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
         match(STRING);
         elements++;
         break;
@@ -483,17 +491,18 @@ int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	// TODO - get error message from stack
-    //Object* obj = vm_pop(&vm);
-    //if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
-    //{
-    //    // Get the error message from the string object
-    //    const char* error_msg = ((String*)obj)->value;
-    //    yyerror(error_msg);
-    //}
+    const char* error_msg = "error called";
+
+	// get error message from stack
+    Object* obj = vm_pop(&vm);
+    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    {
+        // Get the error message from the string object
+        error_msg = ((String*)obj)->value;
+    }
 
     // simply raise a parser error for now
-    yyerror("error called");
+    yyerror(error_msg);
     
     return SK_TRUE;
 }
@@ -505,7 +514,21 @@ int sk_define(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    // TODO - implement define
+    // implement define
+    //Object* obj = vm_pop(&vm);
+    //if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+    //{
+    //    Pair* pair = (Pair*)obj;
+    //    Object* key = pair->car;
+    //    Object* value = pair->cdr;
+
+    //    if (IS_OBJ(key) && key->type == OBJ_STRING)
+    //    {
+    //        // Add the new global variable
+    //        const char* name = ((String*)key)->value;
+    //        vm_define_global(&vm, name, value);
+    //    }
+    //}
 
     return SK_TRUE;
 }

@@ -88,7 +88,7 @@ extern FileNode file_nodes[];
 
 int yylex();
 void LOG(const char *fmt, ...);
-void yyerror(char*);
+void yyerror(const char*);
 int add_symbol(const char* name, int lineno);
 int lookup_symbol(const char* name);
 

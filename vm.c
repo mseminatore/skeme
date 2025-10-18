@@ -122,6 +122,8 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_STRING:
             VM_LOG("STRING\n");
+            obj = vm_newString(pvm, (const char*)vm_code[addr++]);
+            vm_push(pvm, obj);
             break;
 
         case OP_RET:
@@ -401,6 +403,19 @@ void vm_pushBoolean(VM* pvm, int val)
 {
     Object* obj = vm_newBoolean(pvm, val);
     vm_push(pvm, obj);
+}
+
+//--------------------------------------------------------------
+// Create a new string object
+//--------------------------------------------------------------
+Object *vm_newString(VM* pvm, const char* str)
+{
+    Object* obj = vm_newObject(pvm, sizeof(String));
+    String* stringObj = (String*)obj;
+
+    stringObj->base.type = OBJ_STRING;
+    stringObj->value = str;
+    return obj;
 }
 
 //--------------------------------------------------------------

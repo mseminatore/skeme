@@ -87,7 +87,7 @@ typedef struct Pair {
 
 typedef struct String {
     Object base;        // base object
-    char* value;        // string value
+    const char* value;  // string value
 } String;
 
 // Define the VM structure
@@ -128,6 +128,7 @@ Object* vm_newObject(VM* pvm, size_t size);
 Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
+Object* vm_newString(VM* pvm, const char* str);
 
 void vm_emit(VM* pvm, VMCode_t opcode);
 void vm_exec(VM* pvm, int addr);
