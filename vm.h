@@ -104,8 +104,8 @@ typedef struct VM {
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
 	int numObjects;                 // Number of allocated objects should be size_t
-    // size_t peakObjects;              // Peak number of allocated objects
-	// size_t peakAllocatedBytes;       // Peak allocated bytes
+    size_t peakObjects;              // Peak number of allocated objects
+	size_t peakAllocatedBytes;       // Peak allocated bytes
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
 

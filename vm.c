@@ -24,6 +24,9 @@ int vm_init(VM* pvm) {
     pvm->allocatedBytes = 0;
     pvm->globals_count = 0;
     
+    pvm->peakAllocatedBytes = 0;
+    pvm->peakObjects = 0;
+
     pvm->grayCount = 0;
     pvm->grayCapacity = 0;
     pvm->grayStack = NULL;
@@ -353,8 +356,11 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
         exit(1);
     }
 
-    // Update allocated bytes
+    // Update allocated and peak bytes
     pvm->allocatedBytes += new_size - old_size;
+    if (pvm->allocatedBytes > pvm->peakAllocatedBytes) {
+        pvm->peakAllocatedBytes = pvm->allocatedBytes;
+    }
 
     // update gc threshold
     if (pvm->allocatedBytes > pvm->nextGC) {
@@ -362,6 +368,7 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
         pvm->nextGC = pvm->allocatedBytes * VM_GC_HEAP_GROWTH_FACTOR;
     }
 
+    // return the new pointer
     return new_ptr;
 }
 
@@ -379,6 +386,11 @@ Object* vm_newObject(VM* pvm, size_t size) {
     obj->next = pvm->head;  // Insert at the head of the object list
 	pvm->head = obj;        // Update head to new object
 	pvm->numObjects++;      // Increment object count
+
+    // update peak objects count
+    if (pvm->numObjects > pvm->peakObjects) {
+        pvm->peakObjects = pvm->numObjects;
+    }
 
     return obj;
 }
@@ -437,6 +449,8 @@ void vm_freeObjects(VM* pvm) {
     pvm->head = NULL;
     pvm->numObjects = 0;
     pvm->allocatedBytes = 0;
+    pvm->peakAllocatedBytes = 0;
+    pvm->peakObjects = 0;
 }
 
 
