@@ -242,7 +242,7 @@ int sk_display(SKState *pSK)
 
     if (!obj)
     {
-        puts("()\n");   // nil
+        puts(TERM_BLUE"()\n"TERM_RESET);   // nil
         return SK_TRUE;
     }
 
@@ -252,16 +252,16 @@ int sk_display(SKState *pSK)
         {
         case OBJ_BOOL:
             if (((Boolean*)obj)->value == 0)
-                puts("#f");
+                puts(TERM_BLUE"#f"TERM_RESET);
             else
-                puts("#t");
+                puts(TERM_BLUE"#t"TERM_RESET);
 
             break;
 
         case OBJ_PAIR:
             {
                 Pair* pair = (Pair*)obj;
-                printf("(");
+                printf(TERM_BLUE"(");
                 sk_display(pSK); // display car
                 Object* cdr = pair->cdr;
                 while (cdr && IS_OBJ(cdr) && cdr->type == OBJ_PAIR)
@@ -276,12 +276,12 @@ int sk_display(SKState *pSK)
                     printf(" . ");
                     sk_display(pSK); // display cdr
                 }
-                printf(")\n");
+                printf(")\n"TERM_RESET);
             }
 			break;
 
         case OBJ_NATIVE_FN:
-            printf("#<native fn>\n");
+            printf(TERM_BLUE"#<native fn>\n"TERM_RESET);
 			break;
 
    //     case OBJ_BUILTIN_FN:
@@ -289,14 +289,14 @@ int sk_display(SKState *pSK)
 			//break;
 
         default:
-            printf("#<obj type=%d>\n", obj->type);
+            printf(TERM_BLUE"#<obj type=%d>\n"TERM_RESET, obj->type);
             break;
         }
     }
     else
     {
         // print number
-        printf("%d\n", AS_NUM(obj));
+        printf(TERM_BLUE"%d\n"TERM_RESET, AS_NUM(obj));
     }
 
     return SK_TRUE;
