@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include "parser.h"
 #include "vm.h"
+#include "term_colors.h"
 
 // TODO - move inside SKState
 VM vm;
@@ -24,7 +25,7 @@ extern int g_bDone;
 //------------------------
 void yyerror(char *s)
 {
-    fprintf(stderr, "ERROR: '%s' in file '%s' near line %d\n", s, CURRENT_FILE, CURRENT_LINENO);
+    fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
     err_count++;
 }
 
@@ -33,7 +34,7 @@ void yyerror(char *s)
 //------------------------
 void yywarning(char *s)
 {
-    fprintf(stderr, "WARNING: '%s' in file '%s' near line %d\n", s, CURRENT_FILE, CURRENT_LINENO);
+    fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
     warn_count++;
 }
 
@@ -123,84 +124,84 @@ int s_expr()
 
     switch(lookahead)
     {
-        case DONE:
-            return elements; // done parsing
+    case DONE:
+        return elements; // done parsing
 
-        case ')':
-            yyerror("unexpected ')'");
-            match(')');
-            return elements;
+    case ')':
+        yyerror("unexpected ')'");
+        match(')');
+        return elements;
 
-        case '(':
-            match('(');
-            while (lookahead != ')')
-            {
-                s_expr();
-            }
-            match(')');
-            break;
+    case '(':
+        match('(');
+        while (lookahead != ')')
+        {
+            s_expr();
+        }
+        match(')');
+        break;
 
-        case NIL:
-            vm_emit(&vm, OP_PUSH);
-            vm_emit(&vm, (VMCode_t)NULL);
-            match(NIL);
-            break;
+    case NIL:
+        vm_emit(&vm, OP_PUSH);
+        vm_emit(&vm, (VMCode_t)NULL);
+        match(NIL);
+        break;
 
-        case ID:
-            // lookup symbol
-            sym = symbols[yylval.symbol];
-            LOG("ID: '%s'\n", sym.name);
+    case ID:
+        // lookup symbol
+        sym = symbols[yylval.symbol];
+        LOG("ID: '%s'\n", sym.name);
 
-            if (sym.type == ST_UNDEF)
-            {
-                yywarning("symbol is undefined");
-                match(ID);
-			}
+        if (sym.type == ST_UNDEF)
+        {
+            yywarning("symbol is undefined");
+            match(ID);
+		}
 
-            if (sym.type == ST_NATIVE)
-            {
-				sym = symbols[yylval.symbol];
-                match(ID);
-                s_expr(); // parse function arguments (if any)
-				vm_emit(&vm, OP_NATIVE);
-				vm_emit(&vm, (VMCode_t)sym.func);
-            }
+        if (sym.type == ST_NATIVE)
+        {
+			sym = symbols[yylval.symbol];
+            match(ID);
+            s_expr(); // parse function arguments (if any)
+			vm_emit(&vm, OP_NATIVE);
+			vm_emit(&vm, (VMCode_t)sym.func);
+        }
 
-            elements++;
-            break;
+        elements++;
+        break;
 
-        case TOKEN_TRUE:
-            vm_emit(&vm, OP_TRUE);
-            match(TOKEN_TRUE);
-            elements++;
-            break;
+    case TOKEN_TRUE:
+        vm_emit(&vm, OP_TRUE);
+        match(TOKEN_TRUE);
+        elements++;
+        break;
 
-        case TOKEN_FALSE:
-            vm_emit(&vm, OP_FALSE);
-            match(TOKEN_FALSE);
-            elements++;
-            break;
+    case TOKEN_FALSE:
+        vm_emit(&vm, OP_FALSE);
+        match(TOKEN_FALSE);
+        elements++;
+        break;
 
-        case NUMBER:
-            // handle number
-            LOG("NUMBER: %d\n", yylval.ival);
-            vm_emit(&vm, OP_NUM);
-            vm_emit(&vm, yylval.ival);
-            match(NUMBER);
-            elements++;
-            break;
+    case NUMBER:
+        // handle number
+        LOG("NUMBER: %d\n", yylval.ival);
+        vm_emit(&vm, OP_NUM);
+        vm_emit(&vm, yylval.ival);
+        match(NUMBER);
+        elements++;
+        break;
 
-        case STRING:
-            // TODO - handle string
-            LOG("STRING: '%s'\n", yylval.lexeme);
-            match(STRING);
-            elements++;
-            break;
+    case STRING:
+        // TODO - handle string
+        LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+        match(STRING);
+        elements++;
+        break;
 
-        default:
-            yyerror("expected a valid s-expression");
-            match(lookahead); // try to continue
-            break;
+    default:
+        yyerror("expected a valid s-expression");
+        match(lookahead); // try to continue
+        break;
     }
 
     return elements;
@@ -477,7 +478,7 @@ int sk_exit(SKState* pSK)
 
 //-----------------------------------------------
 // built-in function: error
-//
+//-----------------------------------------------
 int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
@@ -632,6 +633,24 @@ int sk_if(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: zero?
+//-----------------------------------------------
+int sk_zerop(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    
+    if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
+        ((Boolean*)bool)->value = TRUE;
+    
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -653,8 +672,9 @@ static SKFuncSet built_in_funcs[] =
     { "list?", sk_listp },
     { "gc", sk_gc },
     { "gc-stats", sk_gc_stats },
-     { "load", sk_load },
-     { "if", sk_if },
+    { "load", sk_load },
+    { "if", sk_if },
+    { "zero?", sk_zerop },
     // { "lambda", sk_lambda },
     // { "list", sk_list },
     // { "print", sk_print },

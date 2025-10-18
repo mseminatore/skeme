@@ -126,6 +126,7 @@ Object* vm_peek(VM* pvm, int distance);
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
 Object* vm_newObject(VM* pvm, size_t size);
 Object* vm_newBoolean(VM* pvm, int val);
+void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
 
 void vm_emit(VM* pvm, VMCode_t opcode);

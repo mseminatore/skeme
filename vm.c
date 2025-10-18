@@ -134,13 +134,11 @@ void vm_exec(VM* pvm, int addr)
             return;
 
         case OP_TRUE:
-            obj = vm_newBoolean(pvm, 1);
-            vm_push(pvm, obj);
+			vm_pushBoolean(pvm, 1);
             break;
 
         case OP_FALSE:
-            obj = vm_newBoolean(pvm, 0);
-            vm_push(pvm, obj);
+			vm_pushBoolean(pvm, 0);
             break;
 
         case OP_NATIVE:
@@ -369,10 +367,6 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
 // Create a new object and add it to the VM's object list
 //--------------------------------------------------------------
 Object* vm_newObject(VM* pvm, size_t size) {
-    // if (pvm->numObjects == VM_STACK_SIZE) {
-    //     vm_gc(vm);
-    // }
-
     if (size == 0)
         size = sizeof(Object);
 
@@ -398,6 +392,15 @@ Object* vm_newBoolean(VM* pvm, int val)
     bool->base.type = OBJ_BOOL;
     bool->value = val;
     return obj;
+}
+
+//--------------------------------------------------------------
+// Push a boolean object onto the stack
+//--------------------------------------------------------------
+void vm_pushBoolean(VM* pvm, int val)
+{
+    Object* obj = vm_newBoolean(pvm, val);
+    vm_push(pvm, obj);
 }
 
 //--------------------------------------------------------------
