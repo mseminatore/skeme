@@ -612,11 +612,11 @@ int sk_listp(SKState* pSK)
             if (current->type == OBJ_PAIR)
             {
                 current = ((Pair*)current)->cdr;
-            }
-            else if (IS_NIL(current))
-            {
-                is_list = TRUE;
-                break;  // end of list
+                if (IS_NIL(current))
+                {
+                    is_list = TRUE;
+                    break;  // end of list
+                }
             }
             else
             {
