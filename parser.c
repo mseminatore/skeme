@@ -131,6 +131,10 @@ int atom()
 
     switch (lookahead)
     {
+    case '(':
+        list();
+        return 1;
+
     case TOKEN_TRUE:
         vm_emit(&vm, OP_TRUE);
         match(TOKEN_TRUE);
