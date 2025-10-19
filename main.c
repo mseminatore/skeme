@@ -99,6 +99,7 @@ int main(int argc, char *argv[])
         if (vm.sp)
         {
             sk_display(&sk);
+            puts("");
             LOG("%d items left on stack.\n", vm.sp);
         }
     }
