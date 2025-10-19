@@ -20,6 +20,10 @@ FILE *yyin = NULL;
 FILE *fout = NULL;
 extern int g_bDone;
 
+// forward declarations
+int s_expr();
+int list();
+
 //------------------------
 // error routine
 //------------------------
@@ -119,8 +123,6 @@ void dump_symbols()
             printf("%10s\t%04X\n", symbols[i].name, symbols[i].value);
     }
 }
-
-int s_expr();
 
 //-----------------------------------------------
 // parse an atomic value
