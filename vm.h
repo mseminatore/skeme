@@ -58,12 +58,13 @@ enum {
     //OBJ_INT,
     OBJ_STRING,
     OBJ_PAIR,
-    OBJ_LIST,
+    // OBJ_LIST,
 	OBJ_FUNCTION,
     OBJ_CLOSURE,
+    OBJ_UPVALUE,
     OBJ_NATIVE_FN,
     //OBJ_BUILTIN_FN,
-    OBJ_NIL,
+    // OBJ_NIL,
     OBJ_BOOL
 };
 
@@ -101,6 +102,7 @@ typedef struct String {
 // Define the VM structure
 typedef struct VM {
 	int sp;                         // Stack pointer should be size_t or uint
+    VMCode_t ip;                    // Instruction pointer
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
 	int numObjects;                 // Number of allocated objects should be size_t

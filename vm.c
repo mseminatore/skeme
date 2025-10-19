@@ -31,6 +31,7 @@ int vm_init(VM* pvm) {
     pvm->grayCapacity = 0;
     pvm->grayStack = NULL;
 
+    // init globals
 #ifdef VM_USE_FREE_LIST
     pvm->freeObjects = 0;
 #endif
@@ -45,7 +46,11 @@ int vm_shutdown(VM* pvm)
 {
     CHECK_THAT(pvm != NULL);
     vm_freeObjects(pvm);
-	return VM_OK;
+
+    free(pvm->grayStack);
+    pvm->grayStack = NULL;
+
+    return VM_OK;
 }
 
 //--------------------------------------------------------------
@@ -165,22 +170,28 @@ void vm_exec(VM* pvm, int addr)
     }
 }
 
-//--------------------------------------------------------------
+#define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
+
+    //--------------------------------------------------------------
 // Mark an object
 //--------------------------------------------------------------
-static void markObject(Object* object) {
+static void markObject(VM* pvm, Object* object) {
     if (!IS_OBJ(object)) return;
 
-    if (object == NULL || object->marked) return;
+    if (/*object == NULL || */ object->marked) return;
 
     object->marked = 1;
 
-    // if (pvm->grayCapacity < pvm->grayCount + 1) {
-    //     pvm->grayCapacity = GROW_CAPACITY(pvm->grayCapacity);
-    //     pvm->grayStack = (Object**)realloc(pvm->grayStack, sizeof(Object*) * ppvm->grayCapacity);
-    // }
+    if (pvm->grayCapacity < pvm->grayCount + 1) 
+    {
+        pvm->grayCapacity = GROW_CAPACITY(pvm->grayCapacity);
+        pvm->grayStack = (Object**)realloc(pvm->grayStack, sizeof(Object*) * pvm->grayCapacity);
 
-    // pvm->grayStack[pvm->grayCount++] = object;
+        // fatal error
+        if (pvm->grayStack == NULL) exit(1);
+    }
+
+    pvm->grayStack[pvm->grayCount++] = object;
 }
 
 //--------------------------------------------------------------
@@ -188,24 +199,18 @@ static void markObject(Object* object) {
 //--------------------------------------------------------------
 static void markObjects(VM* pvm) {
     VM_LOG("-- gc marking\n");
-    // In a real implementation, you would recursively mark all reachable objects
-
-    // mark roots: globals, stack, constants, etc.
+    // Recursively mark all reachable objects
 
     // mark global objects
-    for (int i = 0; i < pvm->globals_count; i++) {
-        markObject(&pvm->globals[i]);
-        // if (pvm->globals[i].marked == 0) {
-        //     pvm->globals[i].marked = 1;
-        // }
+    for (int i = 0; i < pvm->globals_count; i++) 
+    {
+        markObject(pvm, &pvm->globals[i]);
     }
 
     // mark stack objects
-    for (int i = 0; i < pvm->sp; i++) {
-        markObject(pvm->stack[i]);
-        // if (pvm->stack[i]) {
-        //     pvm->stack[i]->marked = 1;
-        // }
+    for (int i = 0; i < pvm->sp; i++) 
+    {
+        markObject(pvm, pvm->stack[i]);
     }
 }
 
@@ -218,15 +223,18 @@ static int sweepObjects(VM* pvm) {
     int free_count = 0;
 
     Object** obj = &pvm->head;
-    while (*obj) {
-        if (!(*obj)->marked) {
+    while (*obj) 
+    {
+        if (!(*obj)->marked) 
+        {
             Object* unreached = *obj;
             *obj = unreached->next;
 
             vm_alloc(pvm, unreached, unreached->size, 0);
             pvm->numObjects--;
             free_count++;
-        } else {
+        } else 
+        {
             (*obj)->marked = 0; // Reset mark for next GC cycle
             obj = &(*obj)->next;
         }
@@ -240,23 +248,53 @@ static int sweepObjects(VM* pvm) {
 //-------------------------------------------------------------
 // Mark an object and add it to the gray stack
 //-------------------------------------------------------------
-static void blackenObject(Object* object) {
+static void blackenObject(VM* pvm, Object* object) 
+{
     // In a real implementation, you would mark the object's references
     // and add them to the gray stack if they are not already marked
     VM_LOG("-- gc blackening object\n");
+
+    if (!IS_OBJ(object)) return;
+
+    switch(object->type) 
+    {
+        case OBJ_PAIR:
+            {
+                Pair* pair = (Pair*)object;
+                markObject(pvm, pair->car);
+                markObject(pvm, pair->cdr);
+            }
+            break;
+
+        case OBJ_STRING:
+            // Strings have no references to mark
+            break;
+
+        case OBJ_NATIVE_FN:
+            // Native functions have no references to mark
+            break;
+
+        case OBJ_BOOL:
+            // Booleans have no references to mark
+            break;
+
+        default:
+            // Handle other object types as needed
+            break;
+    }
 }
 
 //--------------------------------------------------------------
 // Trace references from the gray stack
 //--------------------------------------------------------------
 static void traceReferences(VM* pvm) {
-    // In a real implementation, you would trace references
-    // from the gray stack and mark reachable objects
+    // Trace references from the gray stack and mark reachable objects
     VM_LOG("-- gc tracing references\n");
 
-    while (pvm->grayCount > 0) {
+    while (pvm->grayCount > 0) 
+    {
         Object* object = pvm->grayStack[--pvm->grayCount];
-        blackenObject(object);
+        blackenObject(pvm, object);
     }
 }
 
@@ -273,7 +311,7 @@ void vm_gc(VM* pvm) {
 
     // if there are any references from the stack or globals, we need to
     // follow those references and mark them as well
-    // traceReferences(vm);
+    traceReferences(pvm);
 
     // remove strings from the intern table that are not marked
     // removeWhiteObjects(vm);
