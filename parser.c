@@ -600,7 +600,7 @@ int sk_listp(SKState* pSK)
     else
     {
         Object* current = obj;
-        int is_list = TRUE;
+        int is_list = FALSE;
         while (current && IS_OBJ(current))
         {
             if (current->type == OBJ_PAIR)
@@ -609,6 +609,7 @@ int sk_listp(SKState* pSK)
             }
             else if (IS_NIL(current))
             {
+                is_list = TRUE;
                 break;  // end of list
             }
             else
