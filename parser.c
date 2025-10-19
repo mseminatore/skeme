@@ -711,6 +711,33 @@ int sk_zerop(SKState* pSK)
     return SK_TRUE;
 }
 
+//
+//
+//
+int sk_less(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj1 = vm_peek(&vm, 0);
+    Object* obj2 = vm_peek(&vm, 1);
+
+    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    {
+        yyerror("arguments to '<' must be numbers");
+        return SK_FALSE;
+	}
+
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    if (AS_NUM(obj1) < AS_NUM(obj2))
+        ((Boolean*)bool)->value = TRUE;
+
+    vm_pop(&vm);        // done with obj
+    vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+
+    return SK_TRUE;
+}
+
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
@@ -734,8 +761,9 @@ static SKFuncSet built_in_funcs[] =
     { "gc", sk_gc },
     { "gc-stats", sk_gc_stats },
     { "load", sk_load },
-    { "if", sk_if },
+    //{ "if", sk_if },
     { "zero?", sk_zerop },
+    //{ "<", sk_less, },
     // { "lambda", sk_lambda },
     // { "list", sk_list },
     // { "print", sk_print },
