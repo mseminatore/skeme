@@ -8,6 +8,8 @@
 static int vm_code_ptr = 0;
 static VMCode_t vm_code[VM_MAX_CODE];
 
+#define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
+
 // static Object *vm_globals[VM_MAX_GLOBALS];
 // static int vm_globals_count = 0;
 
@@ -170,9 +172,7 @@ void vm_exec(VM* pvm, int addr)
     }
 }
 
-#define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
-
-    //--------------------------------------------------------------
+//--------------------------------------------------------------
 // Mark an object
 //--------------------------------------------------------------
 static void markObject(VM* pvm, Object* object) {
@@ -467,6 +467,15 @@ Object *vm_newString(VM* pvm, const char* str)
     stringObj->base.type = OBJ_STRING;
     stringObj->value = str;
     return obj;
+}
+
+//--------------------------------------------------------------
+// Define a global object
+//--------------------------------------------------------------
+void vm_define_global(VM *pvm, const char *name, Object *value)
+{
+
+
 }
 
 //--------------------------------------------------------------

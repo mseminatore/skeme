@@ -199,14 +199,16 @@ int atom()
 }
 
 //-----------------------------------------------
-//
+// parse multiple atomic values
 //-----------------------------------------------
 int atoms()
 {
-    while (atom())
-        ;
+    int count = 0;
 
-    return 1;
+    while (atom())
+        count++;
+
+    return count;
 }
 
 //-----------------------------------------------
@@ -232,11 +234,9 @@ int list()
 int s_expr()
 {
     if (lookahead == '(')
-        list();
+        return list();
     else
-        atoms();
-
-    return 1;
+        return atoms();
 }
 
 //-----------------------------------------------
@@ -254,9 +254,9 @@ static int yyparse(void)
     return 0;
 }
 
+//-----------------------------------------------
 //
-//
-//
+//-----------------------------------------------
 static void printObject(Object *obj)
 {
     if (!obj)
@@ -739,6 +739,24 @@ int sk_less(SKState* pSK)
 }
 
 //-----------------------------------------------
+//
+//-----------------------------------------------
+int sk_strings(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement string concatenation
+    for (int i = 0; i < symbol_count; i++)
+    {
+        // if (symbols[i].type == ST_STRING)
+        // {
+            printf("String[%d]: '%s'\n", i, symbols[i].name);
+        // }
+    }
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -761,8 +779,9 @@ static SKFuncSet built_in_funcs[] =
     { "gc", sk_gc },
     { "gc-stats", sk_gc_stats },
     { "load", sk_load },
-    //{ "if", sk_if },
     { "zero?", sk_zerop },
+    { "strings", sk_strings },
+    //{ "if", sk_if },
     //{ "<", sk_less, },
     // { "lambda", sk_lambda },
     // { "list", sk_list },
