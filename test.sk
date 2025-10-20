@@ -1,17 +1,18 @@
 ; a number
-;5
+5
 
 ; an empty list
 ()
 
-; a pair
-(a b)
+; construct a pair
+(cons 1 2)
+(pair? (cons 1 2))
 
-; a nested list
-(1 (1 2))
+; make a nested list
+(cons 1 (cons 2 ()))
 
-; a variable
-(define foo 5)
+; define a variable
+;(define foo 5)
 
 ; a function
 ;(define (fib n)

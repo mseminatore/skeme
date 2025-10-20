@@ -25,7 +25,8 @@ int vm_init(VM* pvm) {
     pvm->nextGC = VM_INITIAL_GC_THRESHOLD; // initial threshold
     pvm->allocatedBytes = 0;
     pvm->globals_count = 0;
-    
+    pvm->gc_cycles = 0;
+
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
 
@@ -204,7 +205,7 @@ static void markObjects(VM* pvm) {
     // mark global objects
     for (int i = 0; i < pvm->globals_count; i++) 
     {
-        markObject(pvm, &pvm->globals[i]);
+        markObject(pvm, pvm->globals[i]);
     }
 
     // mark stack objects
@@ -318,6 +319,8 @@ void vm_gc(VM* pvm) {
 
     int freed = sweepObjects(pvm);
 
+    pvm->gc_cycles++;
+    
     VM_LOG("-- gc end [%d / %d] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
 }
 

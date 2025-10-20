@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include "parser.h"
 
+#define PROMPT "sk> "
+
 SKState sk;
 
 // globals
@@ -67,8 +69,6 @@ int getopt(int n, char *args[])
 //-----------------------------------
 int main(int argc, char *argv[])
 {
-    int done = FALSE;
-    
     char infile[BUF_SIZE] = "stdin";
 
     // show usage if no arguments given
@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 	// default input is stdin
     yyin = stdin;
 
-    printf("%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
+    printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
     sk_init(&sk);
 
 	int iFirstArg = getopt(argc, argv);
@@ -110,10 +110,10 @@ int main(int argc, char *argv[])
         {
             vm_reset(&vm);
 
-            printf("sk> ");
-            yyin = stdin;
-            lineno = 1;
-            CURRENT_LINENO = 1;
+            printf(PROMPT);
+            // yyin = stdin;
+            // lineno = 1;
+            // CURRENT_LINENO = 1;
 
             sk_parse();
             vm_exec(&vm, 0);

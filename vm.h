@@ -106,13 +106,14 @@ typedef struct VM {
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
 	int numObjects;                 // Number of allocated objects should be size_t
-    size_t peakObjects;              // Peak number of allocated objects
-	size_t peakAllocatedBytes;       // Peak allocated bytes
+    size_t peakObjects;             // Peak number of allocated objects
+	size_t peakAllocatedBytes;      // Peak allocated bytes
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
+    size_t gc_cycles;               // Number of GC cycles run
 
 	int globals_count;              // Number of global objects should be size_t or uint
-    Object globals[VM_MAX_GLOBALS]; // Head of the global objects list
+    Object *globals[VM_MAX_GLOBALS]; // Head of the global objects list
 
 	// TODO - implement interned string table
     int grayCount;
