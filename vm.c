@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 #include "vm.h"
 
 // TODO - should these be inside the VM struct?
@@ -10,8 +11,13 @@ static VMCode_t vm_code[VM_MAX_CODE];
 
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 
-// static Object *vm_globals[VM_MAX_GLOBALS];
-// static int vm_globals_count = 0;
+//--------------------------------------
+// case sensistive string compare
+//--------------------------------------
+static int compare_fn(const void* a, const void* b)
+{
+    return strcmp((const char*)a, (const char*)b) == 0;
+}
 
 //--------------------------------------------------------------
 // Initialize the VM
@@ -26,6 +32,10 @@ int vm_init(VM* pvm) {
     pvm->allocatedBytes = 0;
     pvm->globals_count = 0;
     pvm->gc_cycles = 0;
+
+	pvm->global_table = ht_create();
+	ht_set_hash_func(pvm->global_table, HT_HASH_STRING);
+	ht_set_compare_func(pvm->global_table, compare_fn);
 
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
@@ -52,6 +62,9 @@ int vm_shutdown(VM* pvm)
 
     free(pvm->grayStack);
     pvm->grayStack = NULL;
+
+	ht_free(pvm->global_table);
+	pvm->global_table = NULL;
 
     return VM_OK;
 }

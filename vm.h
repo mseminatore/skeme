@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h> // Add this include at the top of the file, before typedefs
+#include "hash/hash.h"
 
 #define VM_OK 1
 #define VM_ERR -1
@@ -114,6 +115,7 @@ typedef struct VM {
 
 	int globals_count;              // Number of global objects should be size_t or uint
     Object *globals[VM_MAX_GLOBALS]; // Head of the global objects list
+	HashTable *global_table;        // Hash table for global variables
 
 	// TODO - implement interned string table
     int grayCount;
