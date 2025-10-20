@@ -711,9 +711,9 @@ int sk_zerop(SKState* pSK)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
 //
-//
-//
+//-----------------------------------------------
 int sk_less(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
