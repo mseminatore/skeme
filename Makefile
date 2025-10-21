@@ -7,8 +7,8 @@ LFLAGS  += -L./hash
 
 all: $(TARGET)
 
-.c.o: $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
+# %.o.%c: $(DEPS)
+# 	$(CC) -c -o $@ $< $(CFLAGS)
 	
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) $(LIBS)
