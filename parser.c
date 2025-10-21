@@ -269,6 +269,13 @@ static void printObject(Object *obj)
     {
         switch (obj->type)
         {
+        case OBJ_STRING:
+            {
+                String* strObj = (String*)obj;
+                printf("\"%s\"", strObj->value);
+            }
+            break;
+
         case OBJ_BOOL:
             if (((Boolean*)obj)->value == 0)
                 printf("#f");
