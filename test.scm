@@ -15,7 +15,7 @@
 
 (zero? 0)
 (zero? 1)
-(null? ()))
+(null? ())
 (number? 1)
 (boolean? #t)
 
