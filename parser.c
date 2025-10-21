@@ -287,7 +287,7 @@ static void printObject(Object *obj)
         case OBJ_PAIR:
             {
                 Pair* pair = (Pair*)obj;
-                printf(TERM_BLUE"(");
+                printf("(");
 
                 printObject(pair->car); // display car
 
@@ -659,7 +659,7 @@ int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, "GC Stats: %d live obj (%zu peak), %zu bytes in use (%zu peak), %zu passes, next GC at %zu bytes\n",
+    fprintf(stderr, "GC Stats: %d live obj (%zu peak), %zu bytes in use (%zu peak), %zu gc passes, next GC at %zu bytes\n",
         vm.numObjects,
         vm.peakObjects,
         vm.allocatedBytes,
@@ -678,7 +678,7 @@ int sk_load(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    // TODO - implement load
+    // implement load
 	Object* obj = vm_pop(&vm);
     if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
     {
@@ -710,13 +710,12 @@ int sk_zerop(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
     
     if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
         ((Boolean*)bool)->value = TRUE;
     
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
