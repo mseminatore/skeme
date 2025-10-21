@@ -8,6 +8,12 @@
 #include "vm.h"
 #include "term_colors.h"
 
+#ifdef _WIN32
+    #include <direct.h> // for _getcwd
+#else
+    #include <unistd.h> // for getcwd
+#endif
+
 // TODO - move inside SKState
 VM vm;
 
@@ -244,6 +250,9 @@ int s_expr()
 //-----------------------------------------------
 static int yyparse(void)
 {
+    if (yyin == NULL)
+        return 0;
+
     // prime the pump
     lookahead = yylex();
 
@@ -254,8 +263,14 @@ static int yyparse(void)
     return 0;
 }
 
-//-----------------------------------------------
 //
+//[]-----------------------------------------------
+//  built-in functions
+//[]-----------------------------------------------
+//
+
+//-----------------------------------------------
+// print an object
 //-----------------------------------------------
 static void printObject(Object *obj)
 {
@@ -339,7 +354,7 @@ int sk_display(SKState *pSK)
     // pop the top of the stack and print it
     Object *obj = vm_pop(&vm);
 
-    printf(TERM_BLUE);
+    printf(TERM_BRIGHT_BLUE);
         printObject(obj);
     printf(TERM_RESET);
 
@@ -353,13 +368,12 @@ int sk_nullp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (IS_NIL(obj))
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -371,15 +385,13 @@ int sk_eqp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_peek(&vm, 0);
-    Object* obj1 = vm_peek(&vm, 1);             // need objects to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
 
     if (obj1 == obj2)
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj2
-    vm_pop(&vm);        // done with obj1
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -391,13 +403,12 @@ int sk_numberp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (IS_NUM(obj))
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -409,13 +420,12 @@ int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -427,13 +437,12 @@ int sk_pairp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -445,10 +454,10 @@ int sk_cons(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_peek(&vm, 0);
+    Object* obj2 = vm_peek(&vm, 0);     // need objects to stay live for now in case of GC
     Object* obj1 = vm_peek(&vm, 1);
 
-    Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair));
+	Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair));    // might GC here!
     pair->base.type = OBJ_PAIR;
     pair->car = obj1;
     pair->cdr = obj2;
@@ -466,13 +475,12 @@ int sk_not(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
-	Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (obj == NULL || (IS_OBJ(obj) && obj->type == OBJ_BOOL && ((Boolean*)obj)->value == 0))
         ((Boolean*)bool)->value = TRUE;
 
-	vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -484,7 +492,7 @@ int sk_car(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* obj = vm_pop(&vm);
     Object* result = NULL;
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
@@ -492,7 +500,6 @@ int sk_car(SKState* pSK)
     else
         yyerror("argument to 'car' is not a pair");
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, result);
     return SK_TRUE;
 }
@@ -504,7 +511,7 @@ int sk_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
+    Object* obj = vm_pop(&vm);
     Object* result = NULL;
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
@@ -512,7 +519,6 @@ int sk_cdr(SKState* pSK)
     else
         yyerror("argument to 'cdr' is not a pair");
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, result);
     return SK_TRUE;
 }
@@ -584,13 +590,12 @@ int sk_stringp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
         ((Boolean*)bool)->value = TRUE;
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -602,9 +607,9 @@ int sk_listp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_peek(&vm, 0);              // need object to stay live for now in case of GC
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
-    
+    Object* obj = vm_pop(&vm);
+
     // check for proper list (nil or chain of pairs ending in nil)
     if (obj == NULL)
     {
@@ -635,7 +640,6 @@ int sk_listp(SKState* pSK)
             ((Boolean*)bool)->value = TRUE;
     }
 
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -765,6 +769,23 @@ int sk_strings(SKState* pSK)
     return SK_TRUE;
 }
 
+#ifdef _WIN32
+    #define PATH_MAX _MAX_PATH
+    #define getcwd _getcwd
+#endif
+
+//
+int sk_pwd(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+	char cwd[PATH_MAX];
+	getcwd(cwd, sizeof(cwd));
+
+    printf("Current working directory: '%s'\n", cwd);
+    return SK_TRUE;
+}
+
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
@@ -790,6 +811,8 @@ static SKFuncSet built_in_funcs[] =
     { "load", sk_load },
     { "zero?", sk_zerop },
     { "strings", sk_strings },
+	{ "pwd", sk_pwd },
+
     //{ "if", sk_if },
     //{ "<", sk_less, },
     // { "lambda", sk_lambda },

@@ -66,14 +66,17 @@ void LOG(const char *fmt, ...)
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-void push_file_stack(const char *filename)
+void push_file_stack(const char* filename)
 {
     if (file_stack_ptr + 1 > MAX_FILE_STACK)
-        yyerror("too many includes!");
+        yyerror("too many files!");
 
-    FILE *fptr = fopen(filename, "rt");
+    FILE* fptr = fopen(filename, "rt");
     if (!fptr)
-        yyerror("include file not found");
+    {
+        yyerror("file not found!");
+        return;
+    }
 
     file_stack_ptr++;
     file_nodes[file_stack_ptr].fptr = fptr;
