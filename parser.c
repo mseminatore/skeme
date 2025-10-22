@@ -8,6 +8,10 @@
 #include "vm.h"
 #include "term_colors.h"
 
+#ifdef __linux
+    #include <limits.h> // for PATH_MAX
+#endif
+
 #ifdef _WIN32
     #include <direct.h> // for _getcwd
 #else
