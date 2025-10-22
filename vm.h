@@ -42,6 +42,16 @@
 // #   define VM_LOG __noop
 #endif
 
+//
+// Define the Object structure
+//
+typedef struct Object {
+    int type;               // Type of the object (e.g., integer, string, etc.)
+    size_t size;            // Size of the object (for strings, pairs, etc.)
+    int marked;             // Mark flag for garbage collection
+    struct Object* next;    // Pointer to the next object in the linked list
+} Object;
+
 // macros to check and convert to object pointers
 #define IS_OBJ(obj) ((obj) != NULL && !((intptr_t)(obj) & 0x3))
 #define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
@@ -79,16 +89,6 @@ enum {
 enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_FN, OP_NATIVE, OP_RET, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 typedef intptr_t VMCode_t;
-
-//
-// Define the Object structure
-//
-typedef struct Object {
-    int type;               // Type of the object (e.g., integer, string, etc.)
-    size_t size;            // Size of the object (for strings, pairs, etc.)
-    int marked;             // Mark flag for garbage collection
-    struct Object* next;    // Pointer to the next object in the linked list
-} Object;
 
 //typedef struct Boolean {
 //	Object base;            // base object

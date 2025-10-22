@@ -788,9 +788,11 @@ int sk_pwd(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
 	char cwd[PATH_MAX];
-	getcwd(cwd, sizeof(cwd));
+	if (NULL == getcwd(cwd, sizeof(cwd)))
+		yyerror("failed to get current working directory");
+    else
+        printf("Current working directory: '%s'\n", cwd);
 
-    printf("Current working directory: '%s'\n", cwd);
     return SK_TRUE;
 }
 
