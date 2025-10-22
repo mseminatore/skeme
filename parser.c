@@ -14,6 +14,11 @@
     #include <unistd.h> // for getcwd
 #endif
 
+#ifdef _WIN32
+    #define PATH_MAX _MAX_PATH
+    #define getcwd _getcwd
+#endif
+
 // TODO - move inside SKState
 VM vm;
 
@@ -280,6 +285,16 @@ static void printObject(Object *obj)
         return;
     }
 
+    if (IS_BOOL(obj))
+    {
+        if (IS_TRUE(obj))
+            printf("#t");
+        else
+            printf("#f");
+
+        return;
+    }
+
     if (IS_OBJ(obj))
     {
         switch (obj->type)
@@ -289,14 +304,6 @@ static void printObject(Object *obj)
                 String* strObj = (String*)obj;
                 printf("\"%s\"", strObj->value);
             }
-            break;
-
-        case OBJ_BOOL:
-            if (((Boolean*)obj)->value == 0)
-                printf("#f");
-            else
-                printf("#t");
-
             break;
 
         case OBJ_PAIR:
@@ -372,7 +379,7 @@ int sk_nullp(SKState *pSK)
     Object* obj = vm_pop(&vm);
 
     if (IS_NIL(obj))
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -390,7 +397,7 @@ int sk_eqp(SKState *pSK)
     Object* obj1 = vm_pop(&vm);
 
     if (obj1 == obj2)
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -407,7 +414,7 @@ int sk_numberp(SKState *pSK)
     Object* obj = vm_pop(&vm);
 
     if (IS_NUM(obj))
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -424,7 +431,7 @@ int sk_booleanp(SKState* pSK)
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -441,7 +448,7 @@ int sk_pairp(SKState* pSK)
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -478,8 +485,8 @@ int sk_not(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
     Object* obj = vm_pop(&vm);
 
-    if (obj == NULL || (IS_OBJ(obj) && obj->type == OBJ_BOOL && ((Boolean*)obj)->value == 0))
-        ((Boolean*)bool)->value = TRUE;
+    if (IS_BOOL(obj) && IS_FALSE(obj))
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -594,7 +601,7 @@ int sk_stringp(SKState* pSK)
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -613,7 +620,7 @@ int sk_listp(SKState* pSK)
     // check for proper list (nil or chain of pairs ending in nil)
     if (obj == NULL)
     {
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
     }
     else
     {
@@ -637,7 +644,7 @@ int sk_listp(SKState* pSK)
             }
         }
         if (is_list)
-            ((Boolean*)bool)->value = TRUE;
+            bool = MAKE_TRUE();
     }
 
     vm_push(&vm, bool);
@@ -718,7 +725,7 @@ int sk_zerop(SKState* pSK)
     Object* obj = vm_pop(&vm);
     
     if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
     
     vm_push(&vm, bool);
     return SK_TRUE;
@@ -742,7 +749,7 @@ int sk_less(SKState* pSK)
 
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
     if (AS_NUM(obj1) < AS_NUM(obj2))
-        ((Boolean*)bool)->value = TRUE;
+        bool = MAKE_TRUE();
 
     vm_pop(&vm);        // done with obj
     vm_pop(&vm);        // done with obj
@@ -769,12 +776,9 @@ int sk_strings(SKState* pSK)
     return SK_TRUE;
 }
 
-#ifdef _WIN32
-    #define PATH_MAX _MAX_PATH
-    #define getcwd _getcwd
-#endif
-
+//-----------------------------------------------
 //
+//-----------------------------------------------
 int sk_pwd(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;

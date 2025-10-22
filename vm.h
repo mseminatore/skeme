@@ -48,8 +48,14 @@
 #define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2) | 0x1))
 #define AS_NUM(obj)    (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
 #define IS_NUM(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
-#define IS_BOOL(obj)   (IS_OBJ(obj) && AS_OBJ(Boolean, obj)->type == OBJ_BOOL)
 #define IS_NIL(obj)    (obj == NULL)
+
+//#define IS_BOOL(obj)    (IS_OBJ(obj) && AS_OBJ(Boolean, obj)->type == OBJ_BOOL)
+#define IS_BOOL(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x2)))
+#define IS_TRUE(obj)    (((intptr_t)(obj)) == 3)
+#define IS_FALSE(obj)   (((intptr_t)(obj)) == 2)
+#define MAKE_TRUE()     ((Object*)3)
+#define MAKE_FALSE()    ((Object*)2)
 
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
@@ -70,7 +76,7 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_FN, OP_NATIVE, OP_RET, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_FN, OP_NATIVE, OP_RET, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 typedef intptr_t VMCode_t;
 
@@ -84,10 +90,10 @@ typedef struct Object {
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
-typedef struct Boolean {
-	Object base;            // base object
-    int value;              // 0 for false, 1 for true
-} Boolean;
+//typedef struct Boolean {
+//	Object base;            // base object
+//    int value;              // 0 for false, 1 for true
+//} Boolean;
 
 typedef struct Pair {
 	Object base;    // base object

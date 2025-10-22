@@ -455,12 +455,10 @@ Object* vm_newObject(VM* pvm, size_t size) {
 //--------------------------------------------------------------
 Object* vm_newBoolean(VM* pvm, int val)
 {
-    Object* obj = vm_newObject(pvm, sizeof(Boolean));
-    Boolean* bool = (Boolean*)obj;
+    if (val)
+        return MAKE_TRUE();
 
-    bool->base.type = OBJ_BOOL;
-    bool->value = val;
-    return obj;
+    return MAKE_FALSE();
 }
 
 //--------------------------------------------------------------
