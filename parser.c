@@ -193,8 +193,10 @@ int atom()
         // undefined symbol error
         if (sym.type == ST_UNDEF)
         {
-            yywarning("symbol is undefined");
+            //yywarning("symbol is undefined");
             match(ID);
+			vm_emit(&vm, OP_PUSH);
+			vm_emit(&vm, (VMCode_t)sym.name);
 		}
 
         // handle native function call
@@ -576,21 +578,16 @@ int sk_define(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     // implement define
-    //Object* obj = vm_pop(&vm);
-    //if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
-    //{
-    //    Pair* pair = (Pair*)obj;
-    //    Object* key = pair->car;
-    //    Object* value = pair->cdr;
+    Object* obj_value = vm_peek(&vm, 0);
+    const char* key = vm_peek(&vm, 1);
 
-    //    if (IS_OBJ(key) && key->type == OBJ_STRING)
-    //    {
-    //        // Add the new global variable
-    //        const char* name = ((String*)key)->value;
-    //        vm_define_global(&vm, name, value);
-    //    }
-    //}
+    Object *obj_key = vm_newString(&vm, key);
 
+    // Add the new global variable
+    vm_define_global(&vm, obj_key, obj_value);
+
+	vm_pop(&vm);
+    vm_pop(&vm);        // done with values
     return SK_TRUE;
 }
 

@@ -154,5 +154,6 @@ void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);
 void vm_clear_code();
 int vm_reset(VM* pvm);
+void vm_define_global(VM* pvm, Object* key, Object* value);
 
 #endif // __VM_H

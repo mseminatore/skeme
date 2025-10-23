@@ -486,10 +486,9 @@ Object *vm_newString(VM* pvm, const char* str)
 //--------------------------------------------------------------
 // Define a global object
 //--------------------------------------------------------------
-void vm_define_global(VM *pvm, const char *name, Object *value)
+void vm_define_global(VM *pvm, Object* key, Object *value)
 {
-
-
+    ht_insert(pvm->global_table, key, value);
 }
 
 //--------------------------------------------------------------
