@@ -579,7 +579,7 @@ int sk_define(SKState* pSK)
 
     // implement define
     Object* obj_value = vm_peek(&vm, 0);
-    const char* key = vm_peek(&vm, 1);
+    const char* key = (const char*)vm_peek(&vm, 1);
 
     Object *obj_key = vm_newString(&vm, key);
 
