@@ -40,10 +40,10 @@ typedef struct
 // symbol types
 typedef enum
 {
-    ST_UNDEF,   // symbol is undefined
-	ST_FUNCTION, // symbol is a function
-	ST_NATIVE,  // symbol is a native function
-    ST_STRING   // symbol is a string literal
+    ST_UNDEF,       // symbol is undefined
+	ST_FUNCTION,    // symbol is a function
+	ST_NATIVE,      // symbol is a native function
+    ST_STRING       // symbol is a string literal
 } SYMBOL_TYPE;
 
 // symbol structure def'n
@@ -52,10 +52,10 @@ typedef struct
     const char *name;
     const char *filename;   // file where symbols was defined
 	int type;               // symbol type
-    int value;
+    int value;              // TODO - Object* ?
     int lineno;             // local file line number
     int refd;               // was symbol referenced?
-	SKFunc func;          // function pointer for native functions
+	SKFunc func;            // function pointer for native functions
 } Symbol_t;
 
 // token structure def'n
