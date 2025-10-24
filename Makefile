@@ -14,7 +14,7 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) $(LIBS)
 
 test: $(TARGET)
-	./$(TARGET) -v test.sk
+	./$(TARGET) -v test.scm
 
 clean:
 	rm $(TARGET) $(OBJS) *.o

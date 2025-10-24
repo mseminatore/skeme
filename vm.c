@@ -288,10 +288,6 @@ static void blackenObject(VM* pvm, Object* object)
             // Native functions have no references to mark
             break;
 
-        case OBJ_BOOL:
-            // Booleans have no references to mark
-            break;
-
         default:
             // Handle other object types as needed
             break;
@@ -313,6 +309,15 @@ static void traceReferences(VM* pvm) {
 }
 
 //--------------------------------------------------------------
+// Remove unmarked objects from the interned string table
+//--------------------------------------------------------------
+static void removeWhiteObjects(VM* pvm) {
+    // In a real implementation, you would remove unmarked strings
+    // from the interned string table here
+    VM_LOG("-- gc removing white objects from intern table\n");
+}
+
+//--------------------------------------------------------------
 // Perform garbage collection
 // Mark-and-sweep algorithm
 //--------------------------------------------------------------
@@ -328,7 +333,7 @@ void vm_gc(VM* pvm) {
     traceReferences(pvm);
 
     // remove strings from the intern table that are not marked
-    // removeWhiteObjects(vm);
+    removeWhiteObjects(pvm);
 
     int freed = sweepObjects(pvm);
 

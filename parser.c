@@ -287,7 +287,7 @@ static void printObject(Object *obj)
 {
     if (!obj)
     {
-        printf("()");   // nil
+        printf("'()");   // nil
         return;
     }
 
@@ -436,7 +436,7 @@ int sk_booleanp(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
     Object* obj = vm_pop(&vm);
 
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_BOOL)
+    if (obj && IS_BOOL(obj))
         bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
@@ -794,6 +794,35 @@ int sk_pwd(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: list
+//-----------------------------------------------
+int sk_list(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement list creation
+    // pop the number of elements from the stack
+    // int count = vm_pop(&vm) ? AS_NUM(vm_pop(&vm)) : 0;
+    
+    // create a linked list of pairs
+    // push the list object onto the stack
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: length
+//-----------------------------------------------
+int sk_length(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement length function for lists and strings
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -819,6 +848,8 @@ static SKFuncSet built_in_funcs[] =
     { "zero?", sk_zerop },
     { "strings", sk_strings },
 	{ "pwd", sk_pwd },
+    { "list", sk_list },
+    { "length", sk_length },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },

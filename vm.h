@@ -72,7 +72,6 @@ typedef int (*SKFunc)(SKState* pSK);
 
 // object types
 enum {
-    //OBJ_INT,
     OBJ_STRING,
     OBJ_PAIR,
     // OBJ_LIST,
@@ -81,19 +80,12 @@ enum {
     OBJ_UPVALUE,
     OBJ_NATIVE_FN,
     //OBJ_BUILTIN_FN,
-    // OBJ_NIL,
-    OBJ_BOOL
 };
 
 // opcode definitions
 enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_FN, OP_NATIVE, OP_RET, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 typedef intptr_t VMCode_t;
-
-//typedef struct Boolean {
-//	Object base;            // base object
-//    int value;              // 0 for false, 1 for true
-//} Boolean;
 
 typedef struct Pair {
 	Object base;    // base object
