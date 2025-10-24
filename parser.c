@@ -822,6 +822,38 @@ int sk_length(SKState* pSK)
     return SK_TRUE;
 }
 
+int sk_set_car(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // implement set-car!
+    Object *obj = vm_peek(&vm, 1);
+    if (!obj || !IS_OBJ(obj) || obj->type != OBJ_PAIR)
+    {
+        vm_pop(&vm); // remove values
+        vm_pop(&vm);
+        yyerror("argument to 'set-car!' is not a pair");
+        return SK_FALSE;
+    }
+
+    Pair* pair = (Pair*)obj;
+    Object* new_car = vm_pop(&vm); // get new car value
+    pair->car = new_car;
+
+    // leave pair on stack
+
+    return SK_TRUE;
+}
+
+int sk_set_cdr(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // TODO - implement set-cdr!
+
+    return SK_TRUE;
+}
+
 //-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
@@ -850,6 +882,8 @@ static SKFuncSet built_in_funcs[] =
 	{ "pwd", sk_pwd },
     { "list", sk_list },
     { "length", sk_length },
+    { "set-car!", sk_set_car },
+    { "set-cdr!", sk_set_cdr },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },
