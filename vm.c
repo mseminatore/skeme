@@ -140,12 +140,12 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_NUM:
-            VM_LOG("NUM\n");
+            VM_LOG("NUM %d\n", AS_NUM(vm_code[addr]));
             vm_push(pvm, MAKE_NUM(vm_code[addr++]));
             break;
 
         case OP_STRING:
-            VM_LOG("STRING\n");
+            VM_LOG("STRING %s\n", (const char*)vm_code[addr]);
             obj = vm_newString(pvm, (const char*)vm_code[addr++]);
             vm_push(pvm, obj);
             break;

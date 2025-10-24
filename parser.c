@@ -822,6 +822,9 @@ int sk_length(SKState* pSK)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// built-in function: set-car!
+//-----------------------------------------------
 int sk_set_car(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
@@ -845,6 +848,9 @@ int sk_set_car(SKState* pSK)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// built-in function: set-cdr!
+//-----------------------------------------------
 int sk_set_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;

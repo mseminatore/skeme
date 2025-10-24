@@ -386,7 +386,7 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || isalnum(c)));
+        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || isalnum(c)));
         
         // put back the last character!
         ungetch(c);
