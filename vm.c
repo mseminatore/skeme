@@ -140,7 +140,7 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_NUM:
-            VM_LOG("NUM %d\n", vm_code[addr]);
+            VM_LOG("NUM %zu\n", vm_code[addr]);
             vm_push(pvm, MAKE_NUM(vm_code[addr++]));
             break;
 
