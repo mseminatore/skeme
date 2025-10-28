@@ -497,6 +497,15 @@ void vm_define_global(VM *pvm, Object* key, Object *value)
 }
 
 //--------------------------------------------------------------
+// Get a global object by key
+//--------------------------------------------------------------
+Object *vm_get_global(VM *pvm, Object* key)
+{
+    ht_value_t val = ht_find(pvm->global_table, key);
+    return (Object*)val;
+}
+
+//--------------------------------------------------------------
 // Free all objects in the VM
 //--------------------------------------------------------------
 void vm_freeObjects(VM* pvm) {
