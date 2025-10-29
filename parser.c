@@ -12,6 +12,10 @@
     #include <limits.h> // for PATH_MAX
 #endif
 
+#ifdef __APPLE__
+    #include <sys/syslimits.h> // for PATH_MAX
+#endif
+
 #ifdef _WIN32
     #include <direct.h> // for _getcwd
 #else
