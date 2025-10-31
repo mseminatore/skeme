@@ -547,6 +547,9 @@ int sk_exit(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     g_bDone = TRUE;
+
+    printf(TERM_GREEN"\nExiting skeme interpreter. Goodbye!\n\n"TERM_RESET);
+
     //exit(0);
     return SK_TRUE;
 }
@@ -782,7 +785,7 @@ int sk_strings(SKState* pSK)
 }
 
 //-----------------------------------------------
-//
+// built-in function: pwd
 //-----------------------------------------------
 int sk_pwd(SKState* pSK)
 {
@@ -821,8 +824,44 @@ int sk_length(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    // TODO - implement length function for lists and strings
+    // length function for lists and strings
+    int count = 0;
 
+    Object* obj = vm_pop(&vm);
+    if (!obj)
+    {
+        vm_push(&vm, NULL); // length 0
+        return SK_TRUE;
+    }
+
+    if (IS_OBJ(obj))
+    {
+        if (obj->type == OBJ_PAIR)
+        {
+            // count list elements
+            Object* current = obj;
+            while (current && IS_OBJ(current) && current->type == OBJ_PAIR)
+            {
+                count++;
+                current = ((Pair*)current)->cdr;
+            }
+        }
+        else if (obj->type == OBJ_STRING)
+        {
+            String* strObj = (String*)obj;
+            count = (int)strlen(strObj->value);
+        }
+        else
+        {
+            yyerror("argument to 'length' is not a list or string");
+        }
+    }
+    else
+    {
+        yyerror("argument to 'length' is not a list or string");
+    }
+
+    vm_push(&vm, MAKE_NUM(count)); // push length as number object
     return SK_TRUE;
 }
 
@@ -865,6 +904,25 @@ int sk_set_cdr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: set!
+//-----------------------------------------------
+int sk_set(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    // implement set!
+    Object* obj_value = vm_peek(&vm, 0);
+    Object* obj_key = vm_peek(&vm, 1);
+
+    // Update the global variable
+    vm_update_global(&vm, obj_key, obj_value);
+    vm_pop(&vm);
+    vm_pop(&vm);        // done with values
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -894,6 +952,7 @@ static SKFuncSet built_in_funcs[] =
     { "length", sk_length },
     { "set-car!", sk_set_car },
     { "set-cdr!", sk_set_cdr },
+    { "set!", sk_set },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },

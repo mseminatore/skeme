@@ -10,8 +10,12 @@
 
 // configuration
 // #define VM_USE_FREE_LIST
+
+// uncomment to enable GC stress testing (collect on every allocation)
 #define VM_STRESS_GC
-#define VM_DEBUG_LOG_GC
+
+// uncomment to enable GC debug logging
+// #define VM_DEBUG_LOG_GC
 
 #define VM_STACK_SIZE 256
 #define VM_FREE_LIST 128
@@ -147,5 +151,6 @@ int vm_clear_stack(VM* pvm);
 void vm_clear_code();
 int vm_reset(VM* pvm);
 void vm_define_global(VM* pvm, Object* key, Object* value);
+void vm_update_global(VM *pvm, Object* key, Object *value);
 
 #endif // __VM_H

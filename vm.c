@@ -221,6 +221,16 @@ static void markObjects(VM* pvm) {
         markObject(pvm, pvm->globals[i]);
     }
 
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+
+    while(ht_next(pvm->global_table, &index, &key, &value))
+    {
+        markObject(pvm, (Object*)key);
+        markObject(pvm, (Object*)value);
+    }
+
     // mark stack objects
     for (int i = 0; i < pvm->sp; i++) 
     {
@@ -494,6 +504,14 @@ Object *vm_newString(VM* pvm, const char* str)
 void vm_define_global(VM *pvm, Object* key, Object *value)
 {
     ht_insert(pvm->global_table, key, value);
+}
+
+//--------------------------------------------------------------
+// Update a global object
+//--------------------------------------------------------------
+void vm_update_global(VM *pvm, Object* key, Object *value)
+{
+    ht_add(pvm->global_table, key, value);
 }
 
 //--------------------------------------------------------------
