@@ -27,3 +27,8 @@
 ;    (if (<= n 2)
 ;        1
 ;        (+ (fib (- n 1)) (fib (- n 2)))))
+
+;(define (assert condition message)
+;  (if (not condition)
+;      (error "Assertion failed:" message)
+;      condition))
