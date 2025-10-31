@@ -15,8 +15,12 @@ hash/libht.a:
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) $(LIBS)
 
+.phony: test
+
 test: $(TARGET)
 	./$(TARGET) -v test.scm
+
+.phony: clean
 
 clean:
 	rm $(TARGET) $(OBJS) *.o
