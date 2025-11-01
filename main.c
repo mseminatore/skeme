@@ -2,8 +2,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include "parser.h"
+#include "term_colors.h"
 
-#define PROMPT "sk> "
+#define PROMPT TERM_GREEN"sk> "TERM_RESET
 
 SKState sk;
 
