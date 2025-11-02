@@ -271,7 +271,7 @@ static int yyparse(void)
     // prime the pump
     lookahead = yylex();
 
-    // the top-level is a series of s-expressions
+    // the top-level is one or more s-expressions
     while (lookahead != DONE)
         s_expr();
 
