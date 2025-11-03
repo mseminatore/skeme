@@ -9,7 +9,7 @@ all: hash/libht.a $(TARGET)
 
 $(OBJS): $(DEPS)
 
-hash/libht.a:
+hash/libht.a: hash/hash.c hash/hash.h
 	cd hash && $(MAKE)
 
 $(TARGET): $(OBJS)
