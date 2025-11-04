@@ -24,7 +24,7 @@
 #define VM_GC_HEAP_GROWTH_FACTOR 2
 
 #ifdef _WIN32
-#   define UNUSED __declspec(unused)
+#   define UNUSED //__declspec(unused)
 #else
 #   define UNUSED __attribute__((unused))
 #endif

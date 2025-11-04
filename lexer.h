@@ -6,6 +6,7 @@
 #define DONE 0
 #define MAX_SYMBOLS 4096
 
+#define SMALL_BUF   64
 #define BUF_SIZE    512
 
 #ifndef TRUE
@@ -49,7 +50,7 @@ typedef enum
 // symbol structure def'n
 typedef struct
 {
-    const char *name;
+    const char *name;       // symbol name
     const char *filename;   // file where symbols was defined
 	int type;               // symbol type
     int value;              // TODO - Object* ?
@@ -65,11 +66,13 @@ typedef struct
     int token;
 } Tokens;
 
+// yylval structure def'n
 typedef struct 
 {
     int ival;
     int symbol;
-    char *lexeme;
+    char word[SMALL_BUF];   // storage for symbol name
+//    char *lexeme;
 } YYLVAL;
 
 extern FILE *yyin;
