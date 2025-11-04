@@ -285,33 +285,33 @@ static int sweepObjects(VM* pvm) {
 //-------------------------------------------------------------
 static void blackenObject(VM* pvm, Object* object) 
 {
-    // In a real implementation, you would mark the object's references
-    // and add them to the gray stack if they are not already marked
+    // Mark the object's references and add them to the gray stack
+    // if they are not already marked
     VM_LOG("-- gc blackening object\n");
 
     if (!IS_OBJ(object)) return;
 
     switch(object->type) 
     {
-        case OBJ_PAIR:
-            {
-                Pair* pair = (Pair*)object;
-                markObject(pvm, pair->car);
-                markObject(pvm, pair->cdr);
-            }
-            break;
+    case OBJ_PAIR:
+        {
+            Pair* pair = (Pair*)object;
+            markObject(pvm, pair->car);
+            markObject(pvm, pair->cdr);
+        }
+        break;
 
-        case OBJ_STRING:
-            // Strings have no references to mark
-            break;
+    case OBJ_STRING:
+        // Strings have no references to mark
+        break;
 
-        case OBJ_NATIVE_FN:
-            // Native functions have no references to mark
-            break;
+    case OBJ_NATIVE_FN:
+        // Native functions have no references to mark
+        break;
 
-        default:
-            // Handle other object types as needed
-            break;
+    default:
+        // Handle other object types as needed
+        break;
     }
 }
 
@@ -333,8 +333,8 @@ static void traceReferences(VM* pvm) {
 // Remove unmarked objects from the interned string table
 //--------------------------------------------------------------
 static void removeWhiteObjects(VM* pvm) {
-    // In a real implementation, you would remove unmarked strings
-    // from the interned string table here
+    // TODO - Remove unmarked strings from the interned string table here
+
     VM_LOG("-- gc removing white objects from intern table\n");
 }
 
@@ -503,6 +503,14 @@ Object *vm_newString(VM* pvm, const char* str)
 {
     if (!str) return NULL;
 
+    // TODO - check interned strings table first
+    ht_value_t val = ht_find(pvm->interned_strings, str);
+    
+    // TODO - if string already exists, return it
+    // if ()
+
+    // otherwise create new string object
+    
     Object* obj = vm_newObject(pvm, sizeof(String) + strlen(str) + 1);
     obj->type = OBJ_STRING;
 
