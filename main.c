@@ -4,7 +4,7 @@
 #include "parser.h"
 #include "term_colors.h"
 
-#define PROMPT TERM_GREEN"sk> "TERM_RESET
+#define PROMPT TERM_BRIGHT_GREEN"sk> "TERM_RESET
 
 SKState sk;
 
