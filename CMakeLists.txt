@@ -18,7 +18,7 @@ include_directories(${PROJECT_SOURCE_DIR})
 
 # add the executable
 add_executable(skeme main.c parser.c lexer.c vm.c)
-add_subdirectory(${CMAKE_SOURCE_DIR}/hash EXCLUDE_FROM_ALL)
+add_subdirectory(${PROJECT_SOURCE_DIR}/hash EXCLUDE_FROM_ALL)
 
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme PRIVATE ht)
