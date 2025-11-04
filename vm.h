@@ -99,7 +99,7 @@ typedef struct Pair {
 
 typedef struct String {
     Object base;        // base object
-    const char* value;  // string value
+    const char value[];  // string value
 } String;
 
 // Define the VM structure
@@ -114,6 +114,9 @@ typedef struct VM {
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
+
+    int vm_code_ptr;
+    VMCode_t vm_code[VM_MAX_CODE];
 
 	int globals_count;              // Number of global objects should be size_t or uint
     Object *globals[VM_MAX_GLOBALS]; // Head of the global objects list
@@ -146,9 +149,12 @@ void vm_freeObjects(VM* pvm);
 Object* vm_newString(VM* pvm, const char* str);
 
 void vm_emit(VM* pvm, VMCode_t opcode);
+//void vm_emit_num(VM* pvm, int val);
+//void vm_emit_string(VM* pvm, const char *str);
+
 void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);
-void vm_clear_code();
+void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);

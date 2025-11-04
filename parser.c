@@ -261,7 +261,81 @@ int s_expr()
 }
 
 //-----------------------------------------------
-// parse the input
+//
+//-----------------------------------------------
+int command()
+{
+	return 0;
+}
+
+//-----------------------------------------------
+// defintion := '(' 'define' ( function-definition | variable-definition ) ')'
+// function-definition := '(' ID parameter* ')' s-expr
+// variable-definition := ID s-expr
+//-----------------------------------------------
+int definition()
+{
+    Symbol_t sym;
+
+    match('(');
+    match(DEFINE);
+
+    // look for a function definition or variable definition
+    if (lookahead == '(')
+    {
+		// function definition
+		match('(');
+        
+        // function name
+        match(ID);
+		
+        // parameters
+        while (lookahead == ID)
+			match(ID);
+		match(')');
+
+		s_expr(); // function body
+	}
+    else
+    {
+        sym = symbols[yylval.symbol];
+
+        Object* key = vm_newString(&vm, sym.name);
+        vm_define_global(&vm, key, NULL);
+        vm_emit(&vm, OP_PUSH);
+        vm_emit(&vm, (VMCode_t)key);
+
+        match(ID);
+        s_expr();
+    }
+
+    match(')');
+
+    return 0;
+}
+
+//-----------------------------------------------
+// program := <commmand | definition>*
+//-----------------------------------------------
+int top_level()
+{
+    while (lookahead != DONE)
+    {
+#if 0
+        if (lookahead == '(')
+            definition();
+        else
+            command();
+#else
+        s_expr();
+#endif
+    }
+
+    return 0;
+}
+
+//-----------------------------------------------
+// parse the input stream (stdin or file)
 //-----------------------------------------------
 static int yyparse(void)
 {
@@ -271,9 +345,8 @@ static int yyparse(void)
     // prime the pump
     lookahead = yylex();
 
-    // the top-level is one or more s-expressions
-    while (lookahead != DONE)
-        s_expr();
+    // the top-level is zero or more s-expressions
+    top_level();
 
     return 0;
 }
@@ -740,7 +813,7 @@ int sk_zerop(SKState* pSK)
 }
 
 //-----------------------------------------------
-//
+// built-in function: <
 //-----------------------------------------------
 int sk_less(SKState* pSK)
 {
@@ -767,7 +840,7 @@ int sk_less(SKState* pSK)
 }
 
 //-----------------------------------------------
-//
+// built-in function: strings
 //-----------------------------------------------
 int sk_strings(SKState* pSK)
 {

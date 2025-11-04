@@ -6,8 +6,6 @@
 #include "vm.h"
 
 // TODO - should these be inside the VM struct?
-static int vm_code_ptr = 0;
-static VMCode_t vm_code[VM_MAX_CODE];
 
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 
@@ -84,19 +82,19 @@ int vm_clear_stack(VM* pvm)
 //--------------------------------------------------------------
 void vm_emit(VM* pvm, VMCode_t opcode) 
 {
-    if (vm_code_ptr >= VM_MAX_CODE) {
+    if (pvm->vm_code_ptr >= VM_MAX_CODE) {
         fprintf(stderr, "VM code buffer overflow!\n");
         exit(1);
     }
-    vm_code[vm_code_ptr++] = opcode;
+    pvm->vm_code[pvm->vm_code_ptr++] = opcode;
 }
 
 //--------------------------------------------------------------
 // Clear the VM code buffer
 //--------------------------------------------------------------
-void vm_clear_code()
+void vm_clear_code(VM* pvm)
 {
-    vm_code_ptr = 0;
+    pvm->vm_code_ptr = 0;
 }
 
 //--------------------------------------------------------------
@@ -106,7 +104,7 @@ int vm_reset(VM* pvm)
 {
     CHECK_THAT(pvm != NULL);
     vm_clear_stack(pvm);
-    vm_clear_code();
+    vm_clear_code(pvm);
     return VM_OK;
 }
 
@@ -117,7 +115,7 @@ void vm_exec(VM* pvm, int addr)
 {
     Object* obj;
 
-    if (addr < 0 || addr >= vm_code_ptr) {
+    if (addr < 0 || addr >= pvm->vm_code_ptr) {
         fprintf(stderr, "Invalid VM code address: %d\n", addr);
         return;
     }
@@ -126,13 +124,13 @@ void vm_exec(VM* pvm, int addr)
 
     while(1)
     {
-        VMCode_t opcode = vm_code[addr++];
+        VMCode_t opcode = pvm->vm_code[addr++];
 
         switch(opcode)
         {
         case OP_PUSH:
             VM_LOG("PUSH\n");
-            vm_push(pvm, (Object*)vm_code[addr++]);
+            vm_push(pvm, (Object*)pvm->vm_code[addr++]);
             break;
 
         case OP_POP:
@@ -140,13 +138,13 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_NUM:
-            VM_LOG("NUM %zu\n", vm_code[addr]);
-            vm_push(pvm, MAKE_NUM(vm_code[addr++]));
+            VM_LOG("NUM %zu\n", pvm->vm_code[addr]);
+            vm_push(pvm, MAKE_NUM(pvm->vm_code[addr++]));
             break;
 
         case OP_STRING:
-            VM_LOG("STRING %s\n", (const char*)vm_code[addr]);
-            obj = vm_newString(pvm, (const char*)vm_code[addr++]);
+            VM_LOG("STRING %s\n", (const char*)pvm->vm_code[addr]);
+            obj = vm_newString(pvm, (const char*)pvm->vm_code[addr++]);
             vm_push(pvm, obj);
             break;
 
@@ -170,7 +168,7 @@ void vm_exec(VM* pvm, int addr)
         case OP_NATIVE:
             {
                 VM_LOG("NATIVE FN\n");
-                SKFunc func = (SKFunc)vm_code[addr++];
+                SKFunc func = (SKFunc)pvm->vm_code[addr++];
                 if (func) {
                     func((SKState*)1); // In a real implementation, pass the VM or context
                 } else {
@@ -490,11 +488,14 @@ void vm_pushBoolean(VM* pvm, int val)
 //--------------------------------------------------------------
 Object *vm_newString(VM* pvm, const char* str)
 {
-    Object* obj = vm_newObject(pvm, sizeof(String));
+    if (!str) return NULL;
+
+    Object* obj = vm_newObject(pvm, sizeof(String) + strlen(str) + 1);
+    obj->type = OBJ_STRING;
+
     String* stringObj = (String*)obj;
 
-    stringObj->base.type = OBJ_STRING;
-    stringObj->value = str;
+    strcpy((char*)stringObj->value, str);
     return obj;
 }
 
