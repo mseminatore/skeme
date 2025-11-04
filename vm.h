@@ -23,6 +23,13 @@
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
 
+#ifdef _WIN32
+#   define UNUSED __declspec(unused)
+#else
+#   define UNUSED __attribute__((unused))
+#endif
+
+// TODO - use dynamic code buffer
 #define VM_MAX_CODE 1024
 
 #ifndef TRUE
@@ -118,11 +125,12 @@ typedef struct VM {
     int vm_code_ptr;
     VMCode_t vm_code[VM_MAX_CODE];
 
-	int globals_count;              // Number of global objects should be size_t or uint
-    Object *globals[VM_MAX_GLOBALS]; // Head of the global objects list
-	HashTable *global_table;        // Hash table for global variables
-
+	// int globals_count;                // Number of objects should be size_t or uint
+    // Object *globals[VM_MAX_GLOBALS];  // Head of the global objects list
+    HashTable *global_table;          // Hash table for global variables
+    HashTable *interned_strings;
 	// TODO - implement interned string table
+
     int grayCount;
     int grayCapacity;
     Object** grayStack;

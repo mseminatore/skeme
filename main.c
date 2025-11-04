@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
 	// default input is stdin
     yyin = stdin;
 
-    printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n", APP_NAME, APP_VER);
+    printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n\n", APP_NAME, APP_VER);
     sk_init(&sk);
 
 	int iFirstArg = getopt(argc, argv);

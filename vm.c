@@ -28,13 +28,18 @@ int vm_init(VM* pvm) {
     pvm->numObjects = 0;
     pvm->nextGC = VM_INITIAL_GC_THRESHOLD; // initial threshold
     pvm->allocatedBytes = 0;
-    pvm->globals_count = 0;
+    // pvm->globals_count = 0;
     pvm->gc_cycles = 0;
 
 	pvm->global_table = ht_create();
 	ht_set_hash_func(pvm->global_table, HT_HASH_STRING);
 	ht_set_compare_func(pvm->global_table, compare_fn);
 
+    pvm->interned_strings = ht_create();
+    ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
+    ht_set_compare_func(pvm->interned_strings, compare_fn);
+
+    pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
 
@@ -214,20 +219,28 @@ static void markObjects(VM* pvm) {
     // Recursively mark all reachable objects
 
     // mark global objects
-    for (int i = 0; i < pvm->globals_count; i++) 
-    {
-        markObject(pvm, pvm->globals[i]);
-    }
+    // for (int i = 0; i < pvm->globals_count; i++) 
+    // {
+    //     markObject(pvm, pvm->globals[i]);
+    // }
 
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
 
+    // mark global objects
     while(ht_next(pvm->global_table, &index, &key, &value))
     {
         markObject(pvm, (Object*)key);
         markObject(pvm, (Object*)value);
     }
+
+    // mark interned strings
+    // index = 0;
+    // while(ht_next(pvm->interned_strings, &index, &key, &value))
+    // {
+    //     markObject(pvm, (Object*)key);
+    // }
 
     // mark stack objects
     for (int i = 0; i < pvm->sp; i++) 
@@ -332,7 +345,7 @@ static void removeWhiteObjects(VM* pvm) {
 void vm_gc(VM* pvm) {
     VM_LOG("-- gc begin\n");
 
-    size_t before = pvm->allocatedBytes;
+    size_t before UNUSED = pvm->allocatedBytes;
 
     markObjects(pvm);
 
@@ -343,7 +356,7 @@ void vm_gc(VM* pvm) {
     // remove strings from the intern table that are not marked
     removeWhiteObjects(pvm);
 
-    int freed = sweepObjects(pvm);
+    int freed UNUSED = sweepObjects(pvm);
 
     pvm->gc_cycles++;
     

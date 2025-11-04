@@ -751,7 +751,7 @@ int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, "GC Stats: %d live obj (%zu peak), %zu bytes in use (%zu peak), %zu gc passes, next GC at %zu bytes\n",
+    fprintf(stderr, "\tLive objects: %d (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\tGC passes: %zu\n\tNext GC at %zu bytes\n",
         vm.numObjects,
         vm.peakObjects,
         vm.allocatedBytes,
