@@ -405,18 +405,18 @@ yylex01:
         
         // lookup symbol and return if exists
         int sym_num = lookup_symbol(buf);
-        if (sym_num != -1)
+        if (sym_num == -1)
         {
-            yylval.symbol = sym_num;
+            sym_num = add_symbol(buf, lineno);
+            LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+        }
+        else
+        {
             LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
-            return ID;
         }
 
-        sym_num = add_symbol(buf, lineno);
-
         yylval.symbol = sym_num;
-        LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
-    
+        strcpy(yylval.word, buf);
         return ID;
     }
 
