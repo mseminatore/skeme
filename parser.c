@@ -277,7 +277,6 @@ int definition()
 {
     Symbol_t sym;
 
-    match('(');
     match(DEFINE);
 
     // look for a function definition or variable definition
@@ -307,9 +306,19 @@ int definition()
 
         match(ID);
         s_expr();
+        vm_emit(&vm, OP_ASSIGN);
     }
 
-    match(')');
+    return 0;
+}
+
+//-----------------------------------------------
+// lambda := '(' 'lambda' ( lambda-definition ) ')'
+// lambda-definition := '(' parameter* ')' s-expr
+//-----------------------------------------------
+int lambda()
+{
+    match(LAMBDA);
 
     return 0;
 }
@@ -319,11 +328,43 @@ int definition()
 //-----------------------------------------------
 int top_level()
 {
+    Symbol_t sym;
+
     while (lookahead != DONE)
     {
-#if 0
+#if 1
         if (lookahead == '(')
-            definition();
+        {
+            match('(');
+
+            switch (lookahead)
+            {
+            case DEFINE:
+                definition();
+                break;
+
+            case LAMBDA:
+                lambda();
+                break;
+            
+            default:
+                // handle native function call
+                sym = symbols[yylval.symbol];
+                if (sym.type == ST_NATIVE)
+                {
+                    match(ID);
+                    s_expr(); // parse function arguments (if any)
+                    vm_emit(&vm, OP_NATIVE);
+                    vm_emit(&vm, (VMCode_t)sym.func);
+                }
+                else
+                    yyerror("procedure expected!");
+
+                break;
+            }
+
+            match(')');
+        }
         else
             command();
 #else
@@ -1012,7 +1053,7 @@ static SKFuncSet built_in_funcs[] =
     { "cdr", sk_cdr },
     { "exit", sk_exit },
 	{ "error", sk_error },
-    { "define", sk_define },
+    //{ "define", sk_define },
     { "string?", sk_stringp },
     { "list?", sk_listp },
     { "gc", sk_gc },

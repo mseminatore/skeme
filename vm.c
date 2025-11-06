@@ -17,6 +17,14 @@ static int compare_fn(const void* a, const void* b)
     return strcmp((const char*)a, (const char*)b) == 0;
 }
 
+//--------------------------------------
+// case sensistive string compare
+//--------------------------------------
+static int intern_string_compare_fn(const void* a, const void* b)
+{
+    return strcmp(((String*)a)->value, (const char*)b) == 0;
+}
+
 //--------------------------------------------------------------
 // Initialize the VM
 //--------------------------------------------------------------
@@ -37,7 +45,7 @@ int vm_init(VM* pvm) {
 
     pvm->interned_strings = ht_create();
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
-    ht_set_compare_func(pvm->interned_strings, compare_fn);
+    ht_set_compare_func(pvm->interned_strings, intern_string_compare_fn);
 
     pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
@@ -181,6 +189,14 @@ void vm_exec(VM* pvm, int addr)
                 }
 		    }
             break;
+
+        case OP_ASSIGN:
+            VM_LOG("ASSIGN\n");
+			// TODO - implement variable assignment
+            //vm_pop(pvm);    // get value
+            //vm_pop(pvm);    // get variable name
+            vm_update_global(pvm, vm_pop(pvm), vm_pop(pvm));
+			break;
 
         default:
             printf("Unknown opcode: %d\n", addr);
@@ -503,20 +519,23 @@ Object *vm_newString(VM* pvm, const char* str)
 {
     if (!str) return NULL;
 
-    // TODO - check interned strings table first
+    // check interned strings table first
     ht_value_t val = ht_find(pvm->interned_strings, str);
     
-    // TODO - if string already exists, return it
-    // if ()
+    // if string already exists, return it
+    if (val)
+        return (Object*)val;
 
     // otherwise create new string object
-    
     Object* obj = vm_newObject(pvm, sizeof(String) + strlen(str) + 1);
     obj->type = OBJ_STRING;
 
     String* stringObj = (String*)obj;
-
     strcpy((char*)stringObj->value, str);
+
+    // add to interned strings table
+    ht_insert(pvm->interned_strings, stringObj, stringObj);
+
     return obj;
 }
 
@@ -525,7 +544,8 @@ Object *vm_newString(VM* pvm, const char* str)
 //--------------------------------------------------------------
 void vm_define_global(VM *pvm, Object* key, Object *value)
 {
-    ht_insert(pvm->global_table, key, value);
+    // use ht_insert() if we can't redefine a global
+    ht_add(pvm->global_table, key, value);
 }
 
 //--------------------------------------------------------------
