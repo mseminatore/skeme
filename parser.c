@@ -265,6 +265,14 @@ int s_expr()
 //-----------------------------------------------
 int command()
 {
+    // handle variable
+    Object* key = vm_newString(&vm, yylval.word);
+
+    match(ID);
+    vm_emit(&vm, OP_PUSH);
+    vm_emit(&vm, (VMCode_t)key);
+    vm_emit(&vm, OP_GET_VAR);
+
 	return 0;
 }
 
@@ -326,7 +334,7 @@ int lambda()
 //-----------------------------------------------
 // program := <commmand | definition>*
 //-----------------------------------------------
-int top_level()
+int expr()
 {
     Symbol_t sym;
 
@@ -387,7 +395,7 @@ static int yyparse(void)
     lookahead = yylex();
 
     // the top-level is zero or more s-expressions
-    top_level();
+    expr();
 
     return 0;
 }
@@ -694,23 +702,23 @@ int sk_error(SKState* pSK)
 //-----------------------------------------------
 // built-in function: define
 //-----------------------------------------------
-int sk_define(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    // implement define
-    Object* obj_value = vm_peek(&vm, 0);
-    const char* key = (const char*)vm_peek(&vm, 1);
-
-    Object *obj_key = vm_newString(&vm, key);
-
-    // Add the new global variable
-    vm_define_global(&vm, obj_key, obj_value);
-
-	vm_pop(&vm);
-    vm_pop(&vm);        // done with values
-    return SK_TRUE;
-}
+//int sk_define(SKState* pSK)
+//{
+//    if (!pSK) return SK_FALSE;
+//
+//    // implement define
+//    Object* obj_value = vm_peek(&vm, 0);
+//    const char* key = (const char*)vm_peek(&vm, 1);
+//
+//    Object *obj_key = vm_newString(&vm, key);
+//
+//    // Add the new global variable
+//    vm_define_global(&vm, obj_key, obj_value);
+//
+//	vm_pop(&vm);
+//    vm_pop(&vm);        // done with values
+//    return SK_TRUE;
+//}
 
 //-----------------------------------------------
 // built-in function: string?

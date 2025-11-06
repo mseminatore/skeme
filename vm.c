@@ -45,7 +45,7 @@ int vm_init(VM* pvm) {
 
     pvm->interned_strings = ht_create();
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
-    ht_set_compare_func(pvm->interned_strings, intern_string_compare_fn);
+    ht_set_compare_func(pvm->interned_strings, compare_fn);
 
     pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
@@ -192,11 +192,15 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_ASSIGN:
             VM_LOG("ASSIGN\n");
-			// TODO - implement variable assignment
-            //vm_pop(pvm);    // get value
-            //vm_pop(pvm);    // get variable name
+			// variable assignment
             vm_update_global(pvm, vm_pop(pvm), vm_pop(pvm));
 			break;
+
+        case OP_GET_VAR:
+			VM_LOG("GET_VAR\n");
+            // get variable value
+			vm_push(pvm, vm_get_global(pvm, vm_pop(pvm)));
+            break;
 
         default:
             printf("Unknown opcode: %d\n", addr);
@@ -533,8 +537,8 @@ Object *vm_newString(VM* pvm, const char* str)
     String* stringObj = (String*)obj;
     strcpy((char*)stringObj->value, str);
 
-    // add to interned strings table
-    ht_insert(pvm->interned_strings, stringObj, stringObj);
+    // and add to interned strings table
+    ht_insert(pvm->interned_strings, str, stringObj);
 
     return obj;
 }
@@ -544,8 +548,8 @@ Object *vm_newString(VM* pvm, const char* str)
 //--------------------------------------------------------------
 void vm_define_global(VM *pvm, Object* key, Object *value)
 {
-    // use ht_insert() if we can't redefine a global
-    ht_add(pvm->global_table, key, value);
+    // use ht_add() if we can redefine a global
+    ht_insert(pvm->global_table, key, value);
 }
 
 //--------------------------------------------------------------
