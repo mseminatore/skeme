@@ -17,14 +17,6 @@ static int compare_fn(const void* a, const void* b)
     return strcmp((const char*)a, (const char*)b) == 0;
 }
 
-//--------------------------------------
-// case sensistive string compare
-//--------------------------------------
-static int intern_string_compare_fn(const void* a, const void* b)
-{
-    return strcmp(((String*)a)->value, (const char*)b) == 0;
-}
-
 //--------------------------------------------------------------
 // Initialize the VM
 //--------------------------------------------------------------
@@ -177,6 +169,13 @@ void vm_exec(VM* pvm, int addr)
         case OP_FALSE:
 			vm_pushBoolean(pvm, FALSE);
             break;
+
+        case OP_GOTO:
+            {
+                VM_LOG("GOTO\n");
+                addr = (int)pvm->vm_code[addr];
+            }
+			break;
 
         case OP_NATIVE:
             {

@@ -265,13 +265,26 @@ int s_expr()
 //-----------------------------------------------
 int command()
 {
-    // handle variable
-    Object* key = vm_newString(&vm, yylval.word);
+    Symbol_t sym;
 
-    match(ID);
-    vm_emit(&vm, OP_PUSH);
-    vm_emit(&vm, (VMCode_t)key);
-    vm_emit(&vm, OP_GET_VAR);
+    sym = symbols[yylval.symbol];
+    if (sym.type == ST_NATIVE)
+    {
+        match(ID);
+        s_expr(); // parse function arguments (if any)
+        vm_emit(&vm, OP_NATIVE);
+        vm_emit(&vm, (VMCode_t)sym.func);
+    }
+    else
+    {
+        // handle variable
+        Object* key = vm_newString(&vm, yylval.word);
+
+        match(ID);
+        vm_emit(&vm, OP_PUSH);
+        vm_emit(&vm, (VMCode_t)key);
+        vm_emit(&vm, OP_GET_VAR);
+    }
 
 	return 0;
 }
@@ -1035,6 +1048,11 @@ int sk_set(SKState* pSK)
     // implement set!
     Object* obj_value = vm_peek(&vm, 0);
     Object* obj_key = vm_peek(&vm, 1);
+    if (!obj_key)
+    {
+        yyerror("valid identifier expected!");
+        return SK_FALSE;
+    }
 
     // Update the global variable
     vm_update_global(&vm, obj_key, obj_value);
