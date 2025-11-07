@@ -241,12 +241,6 @@ static void markObjects(VM* pvm) {
     VM_LOG("-- gc marking\n");
     // Recursively mark all reachable objects
 
-    // mark global objects
-    // for (int i = 0; i < pvm->globals_count; i++) 
-    // {
-    //     markObject(pvm, pvm->globals[i]);
-    // }
-
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
@@ -356,9 +350,26 @@ static void traceReferences(VM* pvm) {
 // Remove unmarked objects from the interned string table
 //--------------------------------------------------------------
 static void removeWhiteObjects(VM* pvm) {
-    // TODO - Remove unmarked strings from the interned string table here
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+    int UNUSED removed = 0;
 
-    VM_LOG("-- gc removing white objects from intern table\n");
+    // only remove unmarked strings
+    while(ht_next(pvm->interned_strings, &index, &key, &value))
+    {
+        if (!IS_OBJ((Object*)value) || ((Object*)value)->marked)
+            continue;
+
+        if (HT_OK == ht_remove(pvm->interned_strings, key))
+            removed++;
+        else
+            fprintf(stderr, "Error removing interned string during GC\n");
+
+        free((void*)key);
+    }
+
+    VM_LOG("-- gc removing (%d) white objects from intern table\n", removed);
 }
 
 //--------------------------------------------------------------
