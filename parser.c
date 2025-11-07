@@ -477,7 +477,7 @@ static void printObject(Object *obj)
 			break;
 
         case OBJ_NATIVE_FN:
-            printf("#<native fn>\n");
+            printf("#<procedure>\n");
 			break;
 
    //     case OBJ_BUILTIN_FN:
@@ -908,14 +908,17 @@ int sk_strings(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    // TODO - implement string concatenation
-    for (int i = 0; i < symbol_count; i++)
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+
+    // print interned strings
+    printf("Interned strings:\n");
+    while(ht_next(vm.interned_strings, &index, &key, &value))
     {
-        // if (symbols[i].type == ST_STRING)
-        // {
-            printf("String[%d]: '%s'\n", i, symbols[i].name);
-        // }
+        printf("  '%s'\n", (const char*)key);
     }
+
     return SK_TRUE;
 }
 
