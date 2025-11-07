@@ -190,9 +190,13 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_ASSIGN:
-            VM_LOG("ASSIGN\n");
-			// variable assignment
-            vm_update_global(pvm, vm_pop(pvm), vm_pop(pvm));
+            {
+                VM_LOG("ASSIGN\n");
+                // variable assignment
+                Object *value = vm_pop(pvm);
+                Object *key = vm_pop(pvm);
+                vm_update_global(pvm, key, value);                
+            }
 			break;
 
         case OP_GET_VAR:
