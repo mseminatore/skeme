@@ -19,11 +19,14 @@ int warn_count = 0;
 FILE *yyin = NULL;
 FILE *fout = NULL;
 extern int g_bDone;
+int g_bParseLog = FALSE;
 
 // forward declarations
 int s_expr();
 int list();
 int sk_init_builtins(SKState* pSK);
+
+#define PARSE_LOG(...) (g_bParseLog && fprintf(stderr, __VA_ARGS__))
 
 //------------------------
 // error routine
@@ -101,7 +104,7 @@ int match(int token)
 //------------------------
 // symbol comparison fn
 //------------------------
-int compare_fn(const void *a, const void *b)
+static int compare_fn(const void *a, const void *b)
 {
     Symbol_t *s1 = (Symbol_t*)a;
     Symbol_t *s2 = (Symbol_t*)b;
@@ -130,6 +133,8 @@ void dump_symbols()
 //-----------------------------------------------
 int atom()
 {
+    PARSE_LOG("atom(): lookahead = %d\n", lookahead);
+
     Symbol_t sym;
 
     switch (lookahead)
@@ -139,18 +144,23 @@ int atom()
         return 1;
 
     case TOKEN_TRUE:
+        PARSE_LOG("TOKEN_TRUE\n");
+
         vm_emit(&vm, OP_TRUE);
         match(TOKEN_TRUE);
         return 1;
 
     case TOKEN_FALSE:
+        PARSE_LOG("TOKEN_FALSE\n");
+
         vm_emit(&vm, OP_FALSE);
         match(TOKEN_FALSE);
         return 1;
 
     case NUMBER:
         // handle number
-        LOG("NUMBER: %d\n", yylval.ival);
+        PARSE_LOG("NUMBER: %d\n", yylval.ival);
+
         vm_emit(&vm, OP_NUM);
         vm_emit(&vm, yylval.ival);
         match(NUMBER);
@@ -158,14 +168,16 @@ int atom()
 
     case STRING:
         // handle string
-        LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+        PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+
 		vm_emit(&vm, OP_STRING);
 		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
         match(STRING);
         return 1;
 
     case NIL:
-        LOG("NIL\n");
+        PARSE_LOG("NIL\n");
+        
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)NULL);
         match(NIL);
@@ -174,7 +186,7 @@ int atom()
     case ID:
         // lookup symbol
         sym = symbols[yylval.symbol];
-        LOG("ID: '%s'\n", sym.name);
+        PARSE_LOG("ID: '%s'\n", sym.name);
 
         // undefined symbol error
         if (sym.type == ST_UNDEF)
@@ -206,6 +218,8 @@ int atom()
 //-----------------------------------------------
 int atoms()
 {
+    PARSE_LOG("atoms(): lookahead = %d\n", lookahead);
+
     int count = 0;
 
     while (atom())
@@ -219,6 +233,8 @@ int atoms()
 //-----------------------------------------------
 int list()
 {
+    PARSE_LOG("list(): lookahead = %d\n", lookahead);
+
     match('(');
 
     while (lookahead != ')')
@@ -236,6 +252,8 @@ int list()
 //-----------------------------------------------
 int s_expr()
 {
+    PARSE_LOG("s_expr(): lookahead = %d\n", lookahead);
+
     if (lookahead == '(')
         return list();
     else
@@ -247,6 +265,8 @@ int s_expr()
 //-----------------------------------------------
 int command()
 {
+    PARSE_LOG("command(): lookahead = %d\n", lookahead);
+
     Symbol_t sym;
 
     sym = symbols[yylval.symbol];
@@ -278,6 +298,8 @@ int command()
 //-----------------------------------------------
 int definition()
 {
+    PARSE_LOG("definition(): lookahead = %d\n", lookahead);
+
     Symbol_t sym;
 
     match(DEFINE);
@@ -321,6 +343,8 @@ int definition()
 //-----------------------------------------------
 int lambda()
 {
+    PARSE_LOG("lambda(): lookahead = %d\n", lookahead);
+
     match(LAMBDA);
 
     return 0;
@@ -331,6 +355,8 @@ int lambda()
 //-----------------------------------------------
 int expr()
 {
+    PARSE_LOG("expr(): lookahead = %d\n", lookahead);
+
     Symbol_t sym;
 
     while (lookahead != DONE)
@@ -383,6 +409,8 @@ int expr()
 //-----------------------------------------------
 int yyparse(void)
 {
+    PARSE_LOG("yyparse(): lookahead = %d\n", lookahead);
+
     if (yyin == NULL)
         return 0;
 

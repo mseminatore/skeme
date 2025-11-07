@@ -14,6 +14,7 @@ const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
 int g_bDone = FALSE;
+extern int g_bParseLog;
 
 //--------------------------------
 // print usage banner
@@ -23,7 +24,7 @@ void usage()
     printf("\nUsage: %s [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n", APP_NAME);
     printf("  -d : enable parser debug output\n");
     printf("  -i : take input from stdin\n");
-    printf("  -o : specify output file (default is a.out)\n");
+    printf("  -p : parser logging\n");
     printf("  -t : generate symbol table\n\n");
     printf("  -v : enable verbose output\n");
     exit(0);
@@ -41,6 +42,10 @@ int getopt(int n, char *args[])
         // flag for enabling verbose logging
 		if (args[i][1] == 'v')
 			g_bDebug = TRUE;
+
+        // flag for enabling parser logging
+		if (args[i][1] == 'p')
+			g_bParseLog = TRUE;
 
         // flag for parser debugging
         if (args[i][1] == 'd')
