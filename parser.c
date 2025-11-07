@@ -1036,7 +1036,21 @@ int sk_set_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    // TODO - implement set-cdr!
+    // implement set-car!
+    Object *obj = vm_peek(&vm, 1);
+    if (!obj || !IS_OBJ(obj) || obj->type != OBJ_PAIR)
+    {
+        vm_pop(&vm); // remove values
+        vm_pop(&vm);
+        yyerror("argument to 'set-cdr!' is not a pair");
+        return SK_FALSE;
+    }
+
+    Pair* pair = (Pair*)obj;
+    Object* new_cdr = vm_pop(&vm); // get new cdr value
+    pair->cdr = new_cdr;
+
+    // leave pair on stack
 
     return SK_TRUE;
 }
