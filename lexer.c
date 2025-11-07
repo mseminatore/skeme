@@ -27,7 +27,9 @@ Tokens tokens[] =
     {"()",      NIL },
 	{"nil",     NIL },
     {"#t",      TOKEN_TRUE },
+    {"true",    TOKEN_TRUE },
     {"#f",      TOKEN_FALSE },
+    {"false",   TOKEN_FALSE },
     {"define",  DEFINE},
     {"lambda",  LAMBDA},
 

@@ -21,12 +21,14 @@
 	#define SK_FALSE 0
 #endif
 
+// function set structure
 typedef struct
 {
 	char *name;
 	SKFunc func;
 } SKFuncSet;
 
+// skeme state structure
 struct SKState
 {
 	int unused;
@@ -34,13 +36,14 @@ struct SKState
 };
 
 extern VM vm;
+extern int g_bDone;
 
 //-----------------
 // function decls
 //-----------------
 void push_file_stack(const char *filename);
 void pop_file_stack(void);
-//int yyparse(void);
+int yyparse(void);
 void dump_symbols();
 
 int sk_init(SKState *pSK);
