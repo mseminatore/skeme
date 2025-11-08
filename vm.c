@@ -177,6 +177,15 @@ void vm_exec(VM* pvm, int addr)
 			vm_pushBoolean(pvm, FALSE);
             break;
 
+        case OP_CALL:
+        {
+            VM_LOG("CALL\n");
+            // TODO - call function
+            // TODO - push return address onto stack
+            // TODO - set IP to function address
+        }
+            break;
+
         case OP_GOTO:
             {
                 VM_LOG("GOTO\n");
