@@ -535,7 +535,7 @@ void vm_pushBoolean(VM* pvm, int val)
 //--------------------------------------------------------------
 Object *vm_newString(VM* pvm, const char* str)
 {
-    if (!str) return NULL;
+    if (!pvm || !str) return NULL;
 
     // check interned strings table first
     ht_value_t val = ht_find(pvm->interned_strings, str);
@@ -553,6 +553,24 @@ Object *vm_newString(VM* pvm, const char* str)
 
     // and add to interned strings table
     ht_insert(pvm->interned_strings, str, stringObj);
+
+    return obj;
+}
+
+//--------------------------------------------------------------
+// Create a new procedure object
+//--------------------------------------------------------------
+Object* vm_new_proc(VM* pvm)
+{
+    if (!pvm) return NULL;
+
+    // create new procedure object
+    Object* obj = vm_newObject(pvm, sizeof(Procedure));
+    obj->type = OBJ_FUNCTION;
+
+    Procedure* proc = AS_OBJ(Procedure, obj);
+    proc->arity = 0;
+    proc->addr = 0;
 
     return obj;
 }

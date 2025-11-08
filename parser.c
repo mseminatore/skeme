@@ -292,6 +292,24 @@ int command()
 }
 
 //-----------------------------------------------
+//  <formals> ==> (<variable>*) | <variable>
+//-----------------------------------------------
+int formals()
+{
+    return 0;
+}
+
+//-----------------------------------------------
+//  <body> ==> <definition>* <sequence>
+//  <sequence> ==> <command>* <expression>
+//  <command> ==> <expression>
+//-----------------------------------------------
+int local_body()
+{
+    return 0;
+}
+
+//-----------------------------------------------
 // defintion := '(' 'define' ( function-definition | variable-definition ) ')'
 // function-definition := '(' ID parameter* ')' s-expr
 // variable-definition := ID s-expr
@@ -311,14 +329,32 @@ int definition()
 		match('(');
         
         // function name
+        sym = symbols[yylval.symbol];
+        Object* proc_name = vm_newString(&vm, sym.name);
+        Object* proc_obj = vm_new_proc(&vm);
+        Procedure* proc = AS_OBJ(Procedure, proc_obj);
+        proc->addr = vm.vm_code_ptr; // save address of function code
+
+        vm_define_global(&vm, proc_name, proc_obj);
         match(ID);
 		
         // parameters
+        int arity = 0;
         while (lookahead == ID)
+        {
 			match(ID);
-		match(')');
+			arity++;
+		}
+		proc->arity = arity;
+        // TODO - emit code to create stack frame and store parameters
 
-		s_expr(); // function body
+        match(')');
+        
+        // function body
+		s_expr();
+
+        // return from function
+        vm_emit(&vm, OP_RET);
 	}
     else
     {
@@ -428,6 +464,7 @@ int yyparse(void)
 //-----------------------------------------------
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 {
+    // TODO - register with globals + string intern table
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
         int sym_num = add_symbol(funcs[i].name, 0);

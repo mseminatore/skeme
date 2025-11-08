@@ -90,6 +90,7 @@ static void printObject(Object *obj)
             }
 			break;
 
+        case OBJ_FUNCTION:
         case OBJ_NATIVE_FN:
             printf("#<procedure>\n");
 			break;

@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
         // REPL loop
         while (!g_bDone)
         {
-            vm_reset(&vm);
+            vm_reset(&vm);  // TODO - maybe we don't want to throw away everything each time?
 
             printf(PROMPT);
             // yyin = stdin;

@@ -96,18 +96,28 @@ enum {
 // opcode definitions
 enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_ASSIGN, OP_GET_VAR, OP_FN, OP_NATIVE, OP_RET, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
+// opcode type
 typedef intptr_t VMCode_t;
 
+// pair object
 typedef struct Pair {
 	Object base;    // base object
 	Object* car;    // first element
 	Object* cdr;    // second element
 } Pair;
 
+// string object
 typedef struct String {
     Object base;        // base object
-    const char value[];  // string value
+    const char value[]; // string value
 } String;
+
+// procedure object
+typedef struct Procedure {
+    Object base;        // base object
+	int arity;          // number of arguments
+    VMCode_t addr;      // address of the function code
+} Procedure;
 
 // Define the VM structure
 typedef struct VM {
@@ -125,11 +135,8 @@ typedef struct VM {
     int vm_code_ptr;
     VMCode_t vm_code[VM_MAX_CODE];
 
-	// int globals_count;                // Number of objects should be size_t or uint
-    // Object *globals[VM_MAX_GLOBALS];  // Head of the global objects list
     HashTable *global_table;          // Hash table for global variables
     HashTable *interned_strings;
-	// TODO - implement interned string table
 
     int grayCount;
     int grayCapacity;
@@ -155,6 +162,7 @@ Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
 Object* vm_newString(VM* pvm, const char* str);
+Object* vm_new_proc(VM* pvm);
 
 void vm_emit(VM* pvm, VMCode_t opcode);
 //void vm_emit_num(VM* pvm, int val);
