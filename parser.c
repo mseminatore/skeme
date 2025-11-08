@@ -41,7 +41,7 @@ void yyerror(const char *s)
 }
 
 //------------------------
-// error routine
+// warning routine
 //------------------------
 void yywarning(const char *s)
 {
@@ -50,6 +50,17 @@ void yywarning(const char *s)
     else
         fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
     warn_count++;
+}
+
+//------------------------
+// info routine
+//------------------------
+void yyinfo(const char *s)
+{
+    if (yyin == stdin)
+        fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
+    else
+        fprintf(stderr, TERM_GREEN"INFO: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
 }
 
 //---------------------------------------------------
@@ -177,7 +188,7 @@ int atom()
 
     case NIL:
         PARSE_LOG("NIL\n");
-        
+
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)NULL);
         match(NIL);

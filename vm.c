@@ -5,7 +5,9 @@
 #include <string.h>
 #include "vm.h"
 
-// TODO - should these be inside the VM struct?
+int g_bGCLog = FALSE;
+
+#define GC_LOG(...) (g_bGCLog && fprintf(stderr, __VA_ARGS__))
 
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 
@@ -120,6 +122,11 @@ void vm_exec(VM* pvm, int addr)
 {
     Object* obj;
 
+    if (pvm == NULL) {
+        fprintf(stderr, "VM is NULL!\n");
+        return;
+    }
+    
     if (addr < 0 || addr >= pvm->vm_code_ptr) {
         fprintf(stderr, "Invalid VM code address: %d\n", addr);
         return;
@@ -238,7 +245,7 @@ static void markObject(VM* pvm, Object* object) {
 // Mark all reachable objects
 //--------------------------------------------------------------
 static void markObjects(VM* pvm) {
-    VM_LOG("-- gc marking\n");
+    GC_LOG("-- gc marking\n");
     // Recursively mark all reachable objects
 
     size_t index = 0;
@@ -270,7 +277,7 @@ static void markObjects(VM* pvm) {
 // Sweep unmarked objects
 //--------------------------------------------------------------
 static int sweepObjects(VM* pvm) {
-    VM_LOG("-- gc sweeping\n");
+    GC_LOG("-- gc sweeping\n");
 
     int free_count = 0;
 
@@ -292,7 +299,7 @@ static int sweepObjects(VM* pvm) {
         }
     }
 
-    VM_LOG("-- gc (%d) objects freed\n", free_count);
+    GC_LOG("-- gc (%d) objects freed\n", free_count);
 
     return free_count;
 }
@@ -304,7 +311,7 @@ static void blackenObject(VM* pvm, Object* object)
 {
     // Mark the object's references and add them to the gray stack
     // if they are not already marked
-    VM_LOG("-- gc blackening object\n");
+    GC_LOG("-- gc blackening object\n");
 
     if (!IS_OBJ(object)) return;
 
@@ -337,7 +344,7 @@ static void blackenObject(VM* pvm, Object* object)
 //--------------------------------------------------------------
 static void traceReferences(VM* pvm) {
     // Trace references from the gray stack and mark reachable objects
-    VM_LOG("-- gc tracing references\n");
+    GC_LOG("-- gc tracing references\n");
 
     while (pvm->grayCount > 0) 
     {
@@ -369,7 +376,7 @@ static void removeWhiteObjects(VM* pvm) {
         free((void*)key);
     }
 
-    VM_LOG("-- gc removing (%d) white objects from intern table\n", removed);
+    GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
 }
 
 //--------------------------------------------------------------
@@ -377,7 +384,7 @@ static void removeWhiteObjects(VM* pvm) {
 // Mark-and-sweep algorithm
 //--------------------------------------------------------------
 void vm_gc(VM* pvm) {
-    VM_LOG("-- gc begin\n");
+    GC_LOG("-- gc begin\n");
 
     size_t before UNUSED = pvm->allocatedBytes;
 
@@ -394,7 +401,7 @@ void vm_gc(VM* pvm) {
 
     pvm->gc_cycles++;
     
-    VM_LOG("-- gc end [%d / %d] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+    GC_LOG("-- gc end [%d / %d] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
 }
 
 //--------------------------------------------------------------

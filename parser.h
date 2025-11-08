@@ -45,6 +45,9 @@ void push_file_stack(const char *filename);
 void pop_file_stack(void);
 int yyparse(void);
 void dump_symbols();
+void yyerror(const char *s);
+void yywarning(const char *s);
+void yyinfo(const char *s);
 
 int sk_init(SKState *pSK);
 int sk_parse();

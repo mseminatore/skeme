@@ -129,6 +129,27 @@ int sk_display(SKState *pSK)
 }
 
 //-----------------------------------------------
+// built-in function: newline
+//-----------------------------------------------
+int sk_newline(SKState *pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    puts("");   // newline
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: gclog
+//-----------------------------------------------
+int sk_gclog()
+{
+    g_bGCLog = !g_bGCLog;
+    yyinfo(g_bGCLog ? "GC logging enabled" : "GC logging disabled");
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: null?
 //-----------------------------------------------
 int sk_nullp(SKState *pSK)
@@ -725,6 +746,8 @@ static SKFuncSet built_in_funcs[] =
     { "set-car!", sk_set_car },
     { "set-cdr!", sk_set_cdr },
     { "set!", sk_set },
+    { "newline", sk_newline },
+    { "gclog", sk_gclog },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },

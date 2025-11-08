@@ -14,8 +14,8 @@
 // uncomment to enable GC stress testing (collect on every allocation)
 #define VM_STRESS_GC
 
-// uncomment to enable GC debug logging
-// #define VM_DEBUG_LOG_GC
+// uncomment to enable VM debug logging
+// #define VM_DEBUG_LOG
 
 #define VM_STACK_SIZE 256
 #define VM_FREE_LIST 128
@@ -46,12 +46,14 @@
 #   define CHECK_THAT(cond)            if (!(cond)) return VM_ERR;
 #endif
 
-#ifdef VM_DEBUG_LOG_GC
+#ifdef VM_DEBUG_LOG
 #   define VM_LOG(...) (fprintf(stderr, __VA_ARGS__))
 #else
 #   define VM_LOG(...)
 // #   define VM_LOG __noop
 #endif
+
+extern int g_bGCLog;
 
 //
 // Define the Object structure
