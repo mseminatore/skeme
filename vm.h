@@ -92,7 +92,7 @@ enum {
     OBJ_CLOSURE,
     OBJ_UPVALUE,
     OBJ_NATIVE_FN,
-    //OBJ_BUILTIN_FN,
+    OBJ_LAST
 };
 
 // opcode definitions

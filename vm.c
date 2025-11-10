@@ -34,7 +34,7 @@ int vm_init(VM* pvm) {
     pvm->gc_cycles = 0;
 
 	pvm->global_table = ht_create();
-	ht_set_hash_func(pvm->global_table, HT_HASH_STRING);
+	ht_set_hash_func(pvm->global_table, HT_HASH_STRING); // TODO - change to generic hash func?
 	ht_set_compare_func(pvm->global_table, compare_fn);
 
     pvm->interned_strings = ht_create();

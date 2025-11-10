@@ -291,12 +291,13 @@ int command()
     else
     {
         // handle variable
+        // TODO - check for undefined symbol
         Object* key = vm_newString(&vm, yylval.word);
 
         match(ID);
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)key);
-        vm_emit(&vm, OP_GET_VAR);
+        vm_emit(&vm, OP_GET_VAR);   // OP_LOAD
     }
 
 	return 0;
