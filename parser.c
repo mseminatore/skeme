@@ -26,7 +26,7 @@ int s_expr();
 int list();
 int sk_init_builtins(SKState* pSK);
 
-#define PARSE_LOG(...) (g_bParseLog && fprintf(stderr, __VA_ARGS__))
+#define PARSE_LOG(...) (void)(g_bParseLog && fprintf(stderr, __VA_ARGS__))
 
 //------------------------
 // error routine
