@@ -7,7 +7,7 @@
 
 int g_bGCLog = FALSE;
 
-#define GC_LOG(...) (g_bGCLog && fprintf(stderr, __VA_ARGS__))
+#define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 
