@@ -142,10 +142,13 @@ int sk_newline(SKState *pSK)
 //-----------------------------------------------
 // built-in function: gclog
 //-----------------------------------------------
-int sk_gclog()
+int sk_gclog(SKState* pSK)
 {
+    if (!pSK) return SK_FALSE;
+
     g_bGCLog = !g_bGCLog;
     yyinfo(g_bGCLog ? "GC logging enabled" : "GC logging disabled");
+
     return SK_TRUE;
 }
 
