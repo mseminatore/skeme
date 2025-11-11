@@ -321,6 +321,7 @@ int formals()
 //-----------------------------------------------
 int local_body()
 {
+    s_expr();
     return 0;
 }
 
@@ -333,8 +334,6 @@ int definition()
 {
     PARSE_LOG("definition(): lookahead = %d\n", lookahead);
 
-    Symbol_t sym;
-
     match(DEFINE);
 
     // look for a function definition or variable definition
@@ -344,8 +343,7 @@ int definition()
 		match('(');
         
         // function name
-        sym = symbols[yylval.symbol];
-        Object* proc_name = vm_new_string(&vm, sym.name);
+        Object* proc_name = vm_new_string(&vm, yylval.word);
         Object* proc_obj = vm_new_proc(&vm);
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
         if (proc)
@@ -369,16 +367,14 @@ int definition()
         match(')');
         
         // function body
-		s_expr();
+        local_body();
 
         // return from function
         vm_emit(&vm, OP_RET);
 	}
     else
     {
-        sym = symbols[yylval.symbol];
-
-        Object* key = vm_new_string(&vm, sym.name);
+        Object* key = vm_new_string(&vm, yylval.word);
         vm_define_global(&vm, key, NULL);
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)key);

@@ -62,6 +62,7 @@ int vm_init(VM* pvm) {
 int vm_shutdown(VM* pvm)
 {
     CHECK_THAT(pvm != NULL);
+
     vm_freeObjects(pvm);
 
     free(pvm->grayStack);
@@ -69,6 +70,9 @@ int vm_shutdown(VM* pvm)
 
 	ht_free(pvm->global_table);
 	pvm->global_table = NULL;
+
+    ht_free(pvm->interned_strings);
+	pvm->interned_strings = NULL;
 
     return VM_OK;
 }
@@ -79,7 +83,9 @@ int vm_shutdown(VM* pvm)
 int vm_clear_stack(VM* pvm)
 {
     CHECK_THAT(pvm != NULL);
+
     pvm->sp = 0;
+
     return VM_OK;
 }
 
@@ -92,6 +98,7 @@ void vm_emit(VM* pvm, VMCode_t opcode)
         fprintf(stderr, "VM code buffer overflow!\n");
         exit(1);
     }
+
     pvm->vm_code[pvm->vm_code_ptr++] = opcode;
 }
 
@@ -109,8 +116,10 @@ void vm_clear_code(VM* pvm)
 int vm_reset(VM* pvm)
 {
     CHECK_THAT(pvm != NULL);
+
     vm_clear_stack(pvm);
     vm_clear_code(pvm);
+    
     return VM_OK;
 }
 
@@ -186,32 +195,32 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_GOTO:
-            {
-                VM_LOG("GOTO\n");
-                addr = (int)pvm->vm_code[addr];
-            }
+        {
+            VM_LOG("GOTO\n");
+            addr = (int)pvm->vm_code[addr];
+        }
 			break;
 
         case OP_NATIVE:
-            {
-                VM_LOG("NATIVE FN\n");
-                SKFunc func = (SKFunc)pvm->vm_code[addr++];
-                if (func) {
-                    func((SKState*)1); // In a real implementation, pass the VM or context
-                } else {
-                    fprintf(stderr, "NULL function pointer in NATIVE call!\n");
-                }
-		    }
+        {
+            VM_LOG("NATIVE FN\n");
+            SKFunc func = (SKFunc)pvm->vm_code[addr++];
+            if (func) {
+                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+            } else {
+                fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+            }
+		}
             break;
 
         case OP_STORE:
-            {
-                VM_LOG("STORE\n");
-                // variable assignment
-                Object *value = vm_pop(pvm);
-                Object *key = vm_pop(pvm);
-                vm_update_global(pvm, key, value);                
-            }
+        {
+            VM_LOG("STORE\n");
+            // variable assignment
+            Object *value = vm_pop(pvm);
+            Object *key = vm_pop(pvm);
+            vm_update_global(pvm, key, value);                
+        }
 			break;
 
         case OP_LOAD:
