@@ -267,13 +267,6 @@ static void markObjects(VM* pvm) {
         markObject(pvm, (Object*)value);
     }
 
-    // mark interned strings
-    // index = 0;
-    // while(ht_next(pvm->interned_strings, &index, &key, &value))
-    // {
-    //     markObject(pvm, (Object*)key);
-    // }
-
     // mark stack objects
     for (int i = 0; i < pvm->sp; i++) 
     {

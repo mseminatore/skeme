@@ -121,6 +121,13 @@ typedef struct Procedure {
     VMCode_t addr;      // address of the function code
 } Procedure;
 
+// native function object
+typedef struct NativeFunction {
+    Object base;       // base object
+    SKFunc func;       // pointer to native function
+    int arity;         // number of arguments
+} NativeFunction;
+
 // Define the VM structure
 typedef struct VM {
 	int sp;                         // Stack pointer should be size_t or uint

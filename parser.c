@@ -482,6 +482,19 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
     // TODO - register with globals + string intern table
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
+#if 0
+        Object* key = vm_new_string(&vm, funcs[i].name);
+        vm_push(&vm, key);  // for GC safety
+
+        Object* native_fn = vm_newObject(&vm, sizeof(NativeFunction));
+        NativeFunction* nf = AS_OBJ(NativeFunction, native_fn);
+        nf->func = funcs[i].func;
+        nf->arity = -1; // TODO - set arity if needed
+
+        vm_define_global(&vm, vm_pop(&vm), native_fn);
+
+        LOG("Registered built-in function '%s'\n", funcs[i].name);
+#else
         int sym_num = add_symbol(funcs[i].name, 0);
 		if (sym_num == -1)
 			yyerror("symbol already defined");
@@ -489,7 +502,8 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 		symbols[sym_num].type = ST_NATIVE;
         symbols[sym_num].func = funcs[i].func;
 		LOG("Registered built-in function '%s' (index = %d)\n", funcs[i].name, sym_num);
-	}
+#endif
+    }
 
     return 0;
 }
