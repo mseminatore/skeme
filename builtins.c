@@ -577,6 +577,29 @@ static int sk_strings(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: strings
+//-----------------------------------------------
+static int sk_globals(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+
+    // print interned strings
+    printf("Global objects:\n");
+    while (ht_next(vm.global_table, &index, &key, &value))
+    {
+		String* strKey = (String*)key;
+        printf("  '%s'\t", (const char*)strKey->value);
+        printObject((Object*)value);
+        puts("");
+    }
+
+    return SK_TRUE;
+}
+//-----------------------------------------------
 // built-in function: pwd
 //-----------------------------------------------
 static int sk_pwd(SKState* pSK)
@@ -766,6 +789,7 @@ static SKFuncSet built_in_funcs[] =
     { "newline", sk_newline },
     { "gclog", sk_gclog },
 	{ "parselog", sk_parselog },
+	{ "globals", sk_globals },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },

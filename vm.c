@@ -30,13 +30,12 @@ int vm_init(VM* pvm) {
     pvm->numObjects = 0;
     pvm->nextGC = VM_INITIAL_GC_THRESHOLD; // initial threshold
     pvm->allocatedBytes = 0;
-    // pvm->globals_count = 0;
     pvm->gc_cycles = 0;
 
-	pvm->global_table = ht_create();
-	ht_set_hash_func(pvm->global_table, HT_HASH_STRING); // TODO - change to generic hash func?
-	ht_set_compare_func(pvm->global_table, compare_fn);
+	// init globals - since we use pointer keys, use default hash and compare funcs
+    pvm->global_table = ht_create();
 
+	// init interned strings table
     pvm->interned_strings = ht_create();
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
@@ -49,7 +48,7 @@ int vm_init(VM* pvm) {
     pvm->grayCapacity = 0;
     pvm->grayStack = NULL;
 
-    // init globals
+	// TODO - pair object pool init
 #ifdef VM_USE_FREE_LIST
     pvm->freeObjects = 0;
 #endif
