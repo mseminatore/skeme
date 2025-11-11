@@ -131,7 +131,7 @@ int sk_display(SKState *pSK)
 //-----------------------------------------------
 // built-in function: newline
 //-----------------------------------------------
-int sk_newline(SKState *pSK)
+static int sk_newline(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -142,7 +142,7 @@ int sk_newline(SKState *pSK)
 //-----------------------------------------------
 // built-in function: gclog
 //-----------------------------------------------
-int sk_gclog(SKState* pSK)
+static int sk_gclog(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -153,9 +153,22 @@ int sk_gclog(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: parselog
+//-----------------------------------------------
+static int sk_parselog(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    g_bParseLog = !g_bParseLog;
+    yyinfo(g_bParseLog ? "Parser logging enabled" : "Parser logging disabled");
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: null?
 //-----------------------------------------------
-int sk_nullp(SKState *pSK)
+static int sk_nullp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -172,7 +185,7 @@ int sk_nullp(SKState *pSK)
 //-----------------------------------------------
 // built-in function: eq?
 //-----------------------------------------------
-int sk_eqp(SKState *pSK)
+static int sk_eqp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -190,7 +203,7 @@ int sk_eqp(SKState *pSK)
 //-----------------------------------------------
 // built-in function: number?
 //-----------------------------------------------
-int sk_numberp(SKState *pSK)
+static int sk_numberp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -207,7 +220,7 @@ int sk_numberp(SKState *pSK)
 //-----------------------------------------------
 // built-in function: boolean?
 //-----------------------------------------------
-int sk_booleanp(SKState* pSK)
+static int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
@@ -224,7 +237,7 @@ int sk_booleanp(SKState* pSK)
 //-----------------------------------------------
 // built-in function: pair?
 //-----------------------------------------------
-int sk_pairp(SKState* pSK)
+static int sk_pairp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
@@ -241,7 +254,7 @@ int sk_pairp(SKState* pSK)
 //-----------------------------------------------
 // built-in function: cons
 //-----------------------------------------------
-int sk_cons(SKState* pSK)
+static int sk_cons(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -262,7 +275,7 @@ int sk_cons(SKState* pSK)
 //-----------------------------------------------
 // built-in function: not
 //-----------------------------------------------
-int sk_not(SKState* pSK)
+static int sk_not(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -279,7 +292,7 @@ int sk_not(SKState* pSK)
 //-----------------------------------------------
 // built-in function: car
 //-----------------------------------------------
-int sk_car(SKState* pSK)
+static int sk_car(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -298,7 +311,7 @@ int sk_car(SKState* pSK)
 //-----------------------------------------------
 // built-in function: cdr
 //-----------------------------------------------
-int sk_cdr(SKState* pSK)
+static int sk_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -317,7 +330,7 @@ int sk_cdr(SKState* pSK)
 //-----------------------------------------------
 // built-in function: exit
 //-----------------------------------------------
-int sk_exit(SKState* pSK)
+static int sk_exit(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     g_bDone = TRUE;
@@ -331,7 +344,7 @@ int sk_exit(SKState* pSK)
 //-----------------------------------------------
 // built-in function: error
 //-----------------------------------------------
-int sk_error(SKState* pSK)
+static int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -375,7 +388,7 @@ int sk_error(SKState* pSK)
 //-----------------------------------------------
 // built-in function: string?
 //-----------------------------------------------
-int sk_stringp(SKState* pSK)
+static int sk_stringp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -392,7 +405,7 @@ int sk_stringp(SKState* pSK)
 //-----------------------------------------------
 // built-in function: list?
 //-----------------------------------------------
-int sk_listp(SKState* pSK)
+static int sk_listp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -436,7 +449,7 @@ int sk_listp(SKState* pSK)
 //-----------------------------------------------
 // force a gc
 //-----------------------------------------------
-int sk_gc(SKState* pSK)
+static int sk_gc(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -448,7 +461,7 @@ int sk_gc(SKState* pSK)
 //-----------------------------------------------
 // display gc stats
 //-----------------------------------------------
-int sk_gc_stats(SKState* pSK)
+static int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -467,7 +480,7 @@ int sk_gc_stats(SKState* pSK)
 //-----------------------------------------------
 // built-in function: load
 //-----------------------------------------------
-int sk_load(SKState* pSK)
+static int sk_load(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -477,9 +490,11 @@ int sk_load(SKState* pSK)
     {
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
-		push_file_stack(filename);
+        push_file_stack(filename);
         yyparse();
     }
+    else
+        yyerror("invalid parameter");
 
     return SK_TRUE;
 }
@@ -487,7 +502,7 @@ int sk_load(SKState* pSK)
 //-----------------------------------------------
 // built-in function: if
 //-----------------------------------------------
-int sk_if(SKState* pSK)
+static int sk_if(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -499,7 +514,7 @@ int sk_if(SKState* pSK)
 //-----------------------------------------------
 // built-in function: zero?
 //-----------------------------------------------
-int sk_zerop(SKState* pSK)
+static int sk_zerop(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -516,7 +531,7 @@ int sk_zerop(SKState* pSK)
 //-----------------------------------------------
 // built-in function: <
 //-----------------------------------------------
-int sk_less(SKState* pSK)
+static int sk_less(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -543,7 +558,7 @@ int sk_less(SKState* pSK)
 //-----------------------------------------------
 // built-in function: strings
 //-----------------------------------------------
-int sk_strings(SKState* pSK)
+static int sk_strings(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -564,7 +579,7 @@ int sk_strings(SKState* pSK)
 //-----------------------------------------------
 // built-in function: pwd
 //-----------------------------------------------
-int sk_pwd(SKState* pSK)
+static int sk_pwd(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -580,7 +595,7 @@ int sk_pwd(SKState* pSK)
 //-----------------------------------------------
 // built-in function: list
 //-----------------------------------------------
-int sk_list(SKState* pSK)
+static int sk_list(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -597,7 +612,7 @@ int sk_list(SKState* pSK)
 //-----------------------------------------------
 // built-in function: length
 //-----------------------------------------------
-int sk_length(SKState* pSK)
+static int sk_length(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -645,7 +660,7 @@ int sk_length(SKState* pSK)
 //-----------------------------------------------
 // built-in function: set-car!
 //-----------------------------------------------
-int sk_set_car(SKState* pSK)
+static int sk_set_car(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -671,7 +686,7 @@ int sk_set_car(SKState* pSK)
 //-----------------------------------------------
 // built-in function: set-cdr!
 //-----------------------------------------------
-int sk_set_cdr(SKState* pSK)
+static int sk_set_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
@@ -697,7 +712,7 @@ int sk_set_cdr(SKState* pSK)
 //-----------------------------------------------
 // built-in function: set!
 //-----------------------------------------------
-int sk_set(SKState* pSK)
+static int sk_set(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
@@ -735,7 +750,6 @@ static SKFuncSet built_in_funcs[] =
     { "cdr", sk_cdr },
     { "exit", sk_exit },
 	{ "error", sk_error },
-    //{ "define", sk_define },
     { "string?", sk_stringp },
     { "list?", sk_listp },
     { "gc", sk_gc },
@@ -751,10 +765,10 @@ static SKFuncSet built_in_funcs[] =
     { "set!", sk_set },
     { "newline", sk_newline },
     { "gclog", sk_gclog },
+	{ "parselog", sk_parselog },
 
     //{ "if", sk_if },
     //{ "<", sk_less, },
-    // { "lambda", sk_lambda },
     // { "list", sk_list },
     // { "print", sk_print },
     // { "atom?", sk_atomp },

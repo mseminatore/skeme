@@ -290,14 +290,17 @@ int command()
     }
     else
     {
-        // handle variable
-        // TODO - check for undefined symbol
-        Object* key = vm_newString(&vm, yylval.word);
-
+        // handle variable and check for undefined symbol
+        Object* key = vm_get_string(&vm, yylval.word);
         match(ID);
-        vm_emit(&vm, OP_PUSH);
-        vm_emit(&vm, (VMCode_t)key);
-        vm_emit(&vm, OP_GET_VAR);   // OP_LOAD
+        if (key)
+        {
+            vm_emit(&vm, OP_PUSH);
+            vm_emit(&vm, (VMCode_t)key);
+            vm_emit(&vm, OP_LOAD);
+        }
+        else
+            yyerror("entity undefined");
     }
 
 	return 0;
@@ -342,7 +345,7 @@ int definition()
         
         // function name
         sym = symbols[yylval.symbol];
-        Object* proc_name = vm_newString(&vm, sym.name);
+        Object* proc_name = vm_new_string(&vm, sym.name);
         Object* proc_obj = vm_new_proc(&vm);
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
         proc->addr = vm.vm_code_ptr; // save address of function code
@@ -372,14 +375,14 @@ int definition()
     {
         sym = symbols[yylval.symbol];
 
-        Object* key = vm_newString(&vm, sym.name);
+        Object* key = vm_new_string(&vm, sym.name);
         vm_define_global(&vm, key, NULL);
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)key);
 
         match(ID);
         s_expr();
-        vm_emit(&vm, OP_ASSIGN);
+        vm_emit(&vm, OP_STORE);
     }
 
     return 0;

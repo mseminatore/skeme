@@ -156,7 +156,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_STRING:
             VM_LOG("STRING %s\n", (const char*)pvm->vm_code[addr]);
-            obj = vm_newString(pvm, (const char*)pvm->vm_code[addr++]);
+            obj = vm_new_string(pvm, (const char*)pvm->vm_code[addr++]);
             vm_push(pvm, obj);
             break;
 
@@ -205,9 +205,9 @@ void vm_exec(VM* pvm, int addr)
 		    }
             break;
 
-        case OP_ASSIGN:
+        case OP_STORE:
             {
-                VM_LOG("ASSIGN\n");
+                VM_LOG("STORE\n");
                 // variable assignment
                 Object *value = vm_pop(pvm);
                 Object *key = vm_pop(pvm);
@@ -215,8 +215,8 @@ void vm_exec(VM* pvm, int addr)
             }
 			break;
 
-        case OP_GET_VAR:
-			VM_LOG("GET_VAR\n");
+        case OP_LOAD:
+			VM_LOG("LOAD\n");
             // get variable value
 			vm_push(pvm, vm_get_global(pvm, vm_pop(pvm)));
             break;
@@ -547,16 +547,29 @@ void vm_pushBoolean(VM* pvm, int val)
 }
 
 //--------------------------------------------------------------
-// Create a new string object
+// Get an interned string object
 //--------------------------------------------------------------
-Object *vm_newString(VM* pvm, const char* str)
+Object *vm_get_string(VM* pvm, const char* str)
 {
     if (!pvm || !str) return NULL;
 
     // check interned strings table first
     ht_value_t val = ht_find(pvm->interned_strings, str);
+
+    return (Object*)val;
+}
+
+//--------------------------------------------------------------
+// Create a new string object
+//--------------------------------------------------------------
+Object *vm_new_string(VM* pvm, const char* str)
+{
+    if (!pvm || !str) return NULL;
+
+    // check interned strings table first
+	ht_value_t val = vm_get_string(pvm, str);
     
-    // if string already exists, return it
+    // if string obj already exists, return it
     if (val)
         return (Object*)val;
 

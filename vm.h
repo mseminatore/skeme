@@ -96,7 +96,7 @@ enum {
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_ASSIGN, OP_GET_VAR, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
 
 // opcode type
 typedef intptr_t VMCode_t;
@@ -163,8 +163,9 @@ Object* vm_newObject(VM* pvm, size_t size);
 Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
-Object* vm_newString(VM* pvm, const char* str);
+Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
+Object* vm_get_string(VM* pvm, const char* str);
 
 void vm_emit(VM* pvm, VMCode_t opcode);
 //void vm_emit_num(VM* pvm, int val);

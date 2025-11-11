@@ -37,6 +37,7 @@ struct SKState
 
 extern VM vm;
 extern int g_bDone;
+extern int g_bParseLog;
 
 //-----------------
 // function decls
