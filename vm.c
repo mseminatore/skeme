@@ -498,13 +498,14 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
 //--------------------------------------------------------------
 // Create a new object and add it to the VM's object list
 //--------------------------------------------------------------
-Object* vm_newObject(VM* pvm, size_t size) {
+Object* vm_newObject(VM* pvm, size_t size, int type)
+{
     if (size == 0)
         size = sizeof(Object);
 
     Object* obj = (Object*)vm_alloc(pvm, NULL, 0, size);
     obj->marked = 0;        // new objects are unmarked
-    obj->type = 0;          // default type
+    obj->type = type;       // default type
 	obj->size = size;       // set size
     obj->next = pvm->head;  // Insert at the head of the object list
 	pvm->head = obj;        // Update head to new object
@@ -566,8 +567,7 @@ Object *vm_new_string(VM* pvm, const char* str)
         return (Object*)val;
 
     // otherwise create new string object
-    Object* obj = vm_newObject(pvm, sizeof(String) + strlen(str) + 1);
-    obj->type = OBJ_STRING;
+    Object* obj = vm_newObject(pvm, sizeof(String) + strlen(str) + 1, OBJ_STRING);
 
     String* stringObj = (String*)obj;
     strcpy((char*)stringObj->value, str);
@@ -586,10 +586,12 @@ Object* vm_new_proc(VM* pvm)
     if (!pvm) return NULL;
 
     // create new procedure object
-    Object* obj = vm_newObject(pvm, sizeof(Procedure));
-    obj->type = OBJ_FUNCTION;
+    Object* obj = vm_newObject(pvm, sizeof(Procedure), OBJ_FUNCTION);
 
     Procedure* proc = AS_OBJ(Procedure, obj);
+    if (!proc)
+        return NULL;
+
     proc->arity = 0;
     proc->addr = 0;
 

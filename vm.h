@@ -72,6 +72,7 @@ typedef struct Object {
 #define AS_NUM(obj)    (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
 #define IS_NUM(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
 #define IS_NIL(obj)    (obj == NULL)
+#define OBJ_TYPE(obj)   (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
 
 //#define IS_BOOL(obj)    (IS_OBJ(obj) && AS_OBJ(Boolean, obj)->type == OBJ_BOOL)
 #define IS_BOOL(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x2)))
@@ -84,7 +85,10 @@ typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
 
 // object types
-enum {
+enum 
+{
+    OBJ_MARK_BIT,
+    OBJ_NULL,
     OBJ_STRING,
     OBJ_PAIR,
     // OBJ_LIST,
@@ -166,7 +170,7 @@ Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
 
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
-Object* vm_newObject(VM* pvm, size_t size);
+Object* vm_newObject(VM* pvm, size_t size, int type);
 Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);

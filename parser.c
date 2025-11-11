@@ -278,17 +278,17 @@ int command()
 {
     PARSE_LOG("command(): lookahead = %d\n", lookahead);
 
-    Symbol_t sym;
+    //Symbol_t sym;
 
-    sym = symbols[yylval.symbol];
-    if (sym.type == ST_NATIVE)
-    {
-        match(ID);
-        s_expr(); // parse function arguments (if any)
-        vm_emit(&vm, OP_NATIVE);
-        vm_emit(&vm, (VMCode_t)sym.func);
-    }
-    else
+    //sym = symbols[yylval.symbol];
+    //if (sym.type == ST_NATIVE)
+    //{
+    //    match(ID);
+    //    s_expr(); // parse function arguments (if any)
+    //    vm_emit(&vm, OP_NATIVE);
+    //    vm_emit(&vm, (VMCode_t)sym.func);
+    //}
+    //else
     {
         // handle variable and check for undefined symbol
         Object* key = vm_get_string(&vm, yylval.word);
@@ -348,7 +348,8 @@ int definition()
         Object* proc_name = vm_new_string(&vm, sym.name);
         Object* proc_obj = vm_new_proc(&vm);
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
-        proc->addr = vm.vm_code_ptr; // save address of function code
+        if (proc)
+            proc->addr = vm.vm_code_ptr; // save address of function code
 
         vm_define_global(&vm, proc_name, proc_obj);
         match(ID);
@@ -360,7 +361,9 @@ int definition()
 			match(ID);
 			arity++;
 		}
-		proc->arity = arity;
+        if (proc)
+            proc->arity = arity;
+
         // TODO - emit code to create stack frame and store parameters
 
         match(')');
@@ -408,7 +411,7 @@ int expr()
 {
     PARSE_LOG("expr(): lookahead = %d\n", lookahead);
 
-    Symbol_t sym;
+    //Symbol_t sym;
 
     while (lookahead != DONE)
     {
@@ -428,7 +431,39 @@ int expr()
                 break;
             
             default:
-                // handle native function call
+#if 1
+                {
+                    // handle native and regular function calls
+                    // handle variable and check for undefined symbol
+                    Object* key = vm_get_string(&vm, yylval.word);
+                    match(ID);
+                    if (key)
+                    {
+                        Object *proc = vm_get_global(&vm, key);
+                        if (proc && proc->type == OBJ_FUNCTION)
+						{
+							s_expr(); // parse function arguments (if any)
+							vm_emit(&vm, OP_CALL);
+							vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
+						}
+						else if (proc && proc->type == OBJ_NATIVE_FN)
+						{
+							s_expr(); // parse function arguments (if any)
+							vm_emit(&vm, OP_NATIVE);
+							vm_emit(&vm, (VMCode_t)((NativeFunction*)proc)->func);
+						}
+						else
+						{
+							yyerror("procedure expected!");
+						}
+                        //vm_emit(&vm, OP_PUSH);
+                        //vm_emit(&vm, (VMCode_t)key);
+                        //vm_emit(&vm, OP_LOAD);
+                    }
+                    else
+                        yyerror("entity undefined");
+                }
+#else
                 sym = symbols[yylval.symbol];
                 if (sym.type == ST_NATIVE)
                 {
@@ -439,7 +474,7 @@ int expr()
                 }
                 else
                     yyerror("procedure expected!");
-
+#endif
                 break;
             }
 
@@ -482,12 +517,19 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
     // TODO - register with globals + string intern table
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
-#if 0
+#if 1
         Object* key = vm_new_string(&vm, funcs[i].name);
         vm_push(&vm, key);  // for GC safety
 
-        Object* native_fn = vm_newObject(&vm, sizeof(NativeFunction));
+        Object* native_fn = vm_newObject(&vm, sizeof(NativeFunction), OBJ_NATIVE_FN);
         NativeFunction* nf = AS_OBJ(NativeFunction, native_fn);
+        if (!nf)
+        {
+            yyerror("failed to alloc object");
+            vm_pop(&vm);    // remove key
+            return SK_FALSE;
+        }
+
         nf->func = funcs[i].func;
         nf->arity = -1; // TODO - set arity if needed
 

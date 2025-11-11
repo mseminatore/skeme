@@ -92,7 +92,7 @@ static void printObject(Object *obj)
 
         case OBJ_FUNCTION:
         case OBJ_NATIVE_FN:
-            printf("#<procedure>\n");
+            printf("#<procedure>");
 			break;
 
    //     case OBJ_BUILTIN_FN:
@@ -100,7 +100,7 @@ static void printObject(Object *obj)
 			//break;
 
         default:
-            printf("#<obj type=%d>\n", obj->type);
+            printf("#<obj type=%d>", obj->type);
             break;
         }
     }
@@ -261,8 +261,7 @@ static int sk_cons(SKState* pSK)
     Object* obj2 = vm_peek(&vm, 0);     // need objects to stay live for now in case of GC
     Object* obj1 = vm_peek(&vm, 1);
 
-	Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair));    // might GC here!
-    pair->base.type = OBJ_PAIR;
+	Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);    // might GC here!
     pair->car = obj1;
     pair->cdr = obj2;
 
