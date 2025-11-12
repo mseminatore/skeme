@@ -32,6 +32,7 @@ Tokens tokens[] =
     {"false",   TOKEN_FALSE },
     {"define",  DEFINE},
     {"lambda",  LAMBDA},
+    {"list",    LIST },
 
     // { "if",      IF },
     // { "else",    ELSE },
@@ -39,8 +40,6 @@ Tokens tokens[] =
     // { "let",     LET },
     // { "begin",   BEGIN },
     // { "quote",   QUOTE },
-    // { "set!",    SET },
-    // { "list",    LIST },
     // { "symbol?", SYMBOLP },
     // { "print",   PRINT },
     // { "read",    READ },

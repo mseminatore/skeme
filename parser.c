@@ -146,7 +146,7 @@ int atom()
 {
     PARSE_LOG("atom(): lookahead = %d\n", lookahead);
 
-    Symbol_t sym;
+    //Symbol_t sym;
 
     switch (lookahead)
     {
@@ -197,6 +197,8 @@ int atom()
     case ID:
 #if 1
     {
+        PARSE_LOG("ID: '%s'\n", yylval.word);
+
         // handle variable and check for undefined symbol
         Object* key = vm_get_string(&vm, yylval.word);
         match(ID);
@@ -286,6 +288,8 @@ int s_expr()
         return atoms();
 }
 
+int expr();
+
 //-----------------------------------------------
 //
 //-----------------------------------------------
@@ -293,18 +297,56 @@ int command()
 {
     PARSE_LOG("command(): lookahead = %d\n", lookahead);
 
-    //Symbol_t sym;
-
-    //sym = symbols[yylval.symbol];
-    //if (sym.type == ST_NATIVE)
-    //{
-    //    match(ID);
-    //    s_expr(); // parse function arguments (if any)
-    //    vm_emit(&vm, OP_NATIVE);
-    //    vm_emit(&vm, (VMCode_t)sym.func);
-    //}
-    //else
+    switch (lookahead)
     {
+    case '(':
+        expr();
+        return 1;
+
+    case TOKEN_TRUE:
+        PARSE_LOG("TOKEN_TRUE\n");
+
+        vm_emit(&vm, OP_TRUE);
+        match(TOKEN_TRUE);
+        return 1;
+
+    case TOKEN_FALSE:
+        PARSE_LOG("TOKEN_FALSE\n");
+
+        vm_emit(&vm, OP_FALSE);
+        match(TOKEN_FALSE);
+        return 1;
+
+    case NUMBER:
+        // handle number
+        PARSE_LOG("NUMBER: %d\n", yylval.ival);
+
+        vm_emit(&vm, OP_NUM);
+        vm_emit(&vm, yylval.ival);
+        match(NUMBER);
+        return 1;
+
+    case STRING:
+        // handle string
+        PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+
+        vm_emit(&vm, OP_STRING);
+        vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
+        match(STRING);
+        return 1;
+
+    case NIL:
+        PARSE_LOG("NIL\n");
+
+        vm_emit(&vm, OP_PUSH);
+        vm_emit(&vm, (VMCode_t)NULL);
+        match(NIL);
+        return 1;
+
+    case ID:
+    {
+        PARSE_LOG("ID: '%s'\n", yylval.word);
+
         // handle variable and check for undefined symbol
         Object* key = vm_get_string(&vm, yylval.word);
         match(ID);
@@ -316,6 +358,7 @@ int command()
         }
         else
             yyerror("entity undefined");
+    }
     }
 
 	return 0;
@@ -416,6 +459,24 @@ int lambda()
 }
 
 //-----------------------------------------------
+//
+//-----------------------------------------------
+int parse_list()
+{
+    PARSE_LOG("parse_list(): lookahead = %d\n", lookahead);
+
+    match(LIST);
+    match('(');
+    while (lookahead != ')')
+    {
+        expr();
+    }
+    match(')');
+
+    return 0;
+}
+
+//-----------------------------------------------
 // program := <commmand | definition>*
 //-----------------------------------------------
 int expr()
@@ -440,6 +501,10 @@ int expr()
                 lambda();
                 break;
             
+            case LIST:
+                parse_list();
+                break;
+
             default:
                 {
                     // handle native and regular function calls
@@ -451,13 +516,13 @@ int expr()
                         Object *proc = vm_get_global(&vm, key);
                         if (proc && proc->type == OBJ_FUNCTION)
 						{
-							s_expr(); // parse function arguments (if any)
+							expr(); // parse function arguments (if any)
 							vm_emit(&vm, OP_CALL);
 							vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
 						}
 						else if (proc && proc->type == OBJ_NATIVE_FN)
 						{
-							s_expr(); // parse function arguments (if any)
+							expr(); // parse function arguments (if any)
 							vm_emit(&vm, OP_NATIVE);
 							vm_emit(&vm, (VMCode_t)((NativeFunction*)proc)->func);
 						}
@@ -476,6 +541,9 @@ int expr()
         }
         else
             command();
+
+        if (lookahead == ')')
+            break;
     }
 
     return 0;
