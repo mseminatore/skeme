@@ -195,6 +195,21 @@ int atom()
         return 1;
 
     case ID:
+#if 1
+    {
+        // handle variable and check for undefined symbol
+        Object* key = vm_get_string(&vm, yylval.word);
+        match(ID);
+        if (key)
+        {
+            vm_emit(&vm, OP_PUSH);
+            vm_emit(&vm, (VMCode_t)key);
+            //vm_emit(&vm, OP_LOAD);
+        }
+        else
+            yyerror("entity undefined");
+    }
+#else
         // lookup symbol
         sym = symbols[yylval.symbol];
         PARSE_LOG("ID: '%s'\n", sym.name);
@@ -217,7 +232,7 @@ int atom()
 			vm_emit(&vm, OP_NATIVE);
 			vm_emit(&vm, (VMCode_t)sym.func);
         }
-
+#endif
         return 1;
     }
 
