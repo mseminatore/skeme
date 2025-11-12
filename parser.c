@@ -411,7 +411,6 @@ int expr()
 
     while (lookahead != DONE)
     {
-#if 1
         if (lookahead == '(')
         {
             match('(');
@@ -427,7 +426,6 @@ int expr()
                 break;
             
             default:
-#if 1
                 {
                     // handle native and regular function calls
                     // handle variable and check for undefined symbol
@@ -452,25 +450,10 @@ int expr()
 						{
 							yyerror("procedure expected!");
 						}
-                        //vm_emit(&vm, OP_PUSH);
-                        //vm_emit(&vm, (VMCode_t)key);
-                        //vm_emit(&vm, OP_LOAD);
                     }
                     else
                         yyerror("entity undefined");
                 }
-#else
-                sym = symbols[yylval.symbol];
-                if (sym.type == ST_NATIVE)
-                {
-                    match(ID);
-                    s_expr(); // parse function arguments (if any)
-                    vm_emit(&vm, OP_NATIVE);
-                    vm_emit(&vm, (VMCode_t)sym.func);
-                }
-                else
-                    yyerror("procedure expected!");
-#endif
                 break;
             }
 
@@ -478,9 +461,6 @@ int expr()
         }
         else
             command();
-#else
-        s_expr();
-#endif
     }
 
     return 0;
@@ -510,10 +490,9 @@ int yyparse(void)
 //-----------------------------------------------
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 {
-    // TODO - register with globals + string intern table
+    // register with globals + string intern table
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
-#if 1
         Object* key = vm_new_string(&vm, funcs[i].name);
         vm_push(&vm, key);  // for GC safety
 
@@ -532,15 +511,6 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
         vm_define_global(&vm, vm_pop(&vm), native_fn);
 
         LOG("Registered built-in function '%s'\n", funcs[i].name);
-#else
-        int sym_num = add_symbol(funcs[i].name, 0);
-		if (sym_num == -1)
-			yyerror("symbol already defined");
-
-		symbols[sym_num].type = ST_NATIVE;
-        symbols[sym_num].func = funcs[i].func;
-		LOG("Registered built-in function '%s' (index = %d)\n", funcs[i].name, sym_num);
-#endif
     }
 
     return 0;
