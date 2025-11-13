@@ -554,7 +554,7 @@ int expr()
 //-----------------------------------------------
 int yyparse(void)
 {
-    PARSE_LOG("yyparse(): lookahead = %d\n", lookahead);
+    //PARSE_LOG("yyparse(): lookahead = %d\n", lookahead);
 
     if (yyin == NULL)
         return 0;

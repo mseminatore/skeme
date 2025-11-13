@@ -84,7 +84,7 @@ static void printObject(Object *obj)
                 if (cdr && !IS_NIL(cdr))
                 {
                     printf(" . ");
-                    printObject(pair->car); // display car
+                    printObject(pair->cdr); // display cdr
                 }
                 printf(")\n");
             }
@@ -797,9 +797,9 @@ static SKFuncSet built_in_funcs[] =
     { "gclog", sk_gclog },
 	{ "parselog", sk_parselog },
 	{ "globals", sk_globals },
+    { "<", sk_less },
 
     //{ "if", sk_if },
-    //{ "<", sk_less, },
     // { "list", sk_list },
     // { "print", sk_print },
     // { "atom?", sk_atomp },
