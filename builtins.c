@@ -528,6 +528,68 @@ static int sk_zerop(SKState* pSK)
 }
 
 //-----------------------------------------------
+//
+//-----------------------------------------------
+static int sk_binop(SKState* pSK, char op)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
+
+    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    {
+        yyerror("arguments to binop must be numbers");
+        return SK_FALSE;
+    }
+
+    switch (op)
+    {
+    case '+':
+        vm_push(&vm, MAKE_NUM(AS_NUM(obj1) + AS_NUM(obj2)));
+		break;
+
+    case '-':
+		vm_push(&vm, MAKE_NUM(AS_NUM(obj1) - AS_NUM(obj2)));
+        break;
+
+    case '*':
+        vm_push(&vm, MAKE_NUM(AS_NUM(obj1) * AS_NUM(obj2)));
+		break;
+
+    case '/':
+        if (AS_NUM(obj2) == 0)
+        {
+            yyerror("division by zero");
+            return SK_FALSE;
+        }
+	    vm_push(&vm, MAKE_NUM(AS_NUM(obj1) / AS_NUM(obj2)));
+    }
+
+    return SK_TRUE;
+}
+
+static int sk_add(SKState* pSK)
+{
+    return sk_binop(pSK, '+');
+}
+
+static int sk_subtract(SKState* pSK)
+{
+    return sk_binop(pSK, '-');
+}
+
+static int sk_multiply(SKState* pSK)
+{
+    return sk_binop(pSK, '*');
+}
+
+static int sk_divide(SKState* pSK)
+{
+    return sk_binop(pSK, '/');
+}
+
+//-----------------------------------------------
 // built-in function: <
 //-----------------------------------------------
 static int sk_less(SKState* pSK)
@@ -555,7 +617,32 @@ static int sk_less(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: <
+// built-in function: <=
+//-----------------------------------------------
+static int sk_less_equal(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
+
+    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    {
+        yyerror("arguments to '<=' must be numbers");
+        return SK_FALSE;
+    }
+
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    if (AS_NUM(obj1) <= AS_NUM(obj2))
+        bool = MAKE_TRUE();
+
+    vm_push(&vm, bool);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: >
 //-----------------------------------------------
 static int sk_greater(SKState* pSK)
 {
@@ -566,7 +653,7 @@ static int sk_greater(SKState* pSK)
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
-        yyerror("arguments to '<' must be numbers");
+        yyerror("arguments to '>' must be numbers");
         return SK_FALSE;
     }
 
@@ -576,6 +663,31 @@ static int sk_greater(SKState* pSK)
 
     vm_pop(&vm);        // done with obj
     vm_pop(&vm);        // done with obj
+    vm_push(&vm, bool);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: >
+//-----------------------------------------------
+static int sk_greater_equal(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
+
+    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    {
+        yyerror("arguments to '>=' must be numbers");
+        return SK_FALSE;
+    }
+
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    if (AS_NUM(obj1) >= AS_NUM(obj2))
+        bool = MAKE_TRUE();
+
     vm_push(&vm, bool);
 
     return SK_TRUE;
@@ -826,6 +938,13 @@ static SKFuncSet built_in_funcs[] =
 	{ "globals", sk_globals },
     { "<", sk_less },
 	{ ">", sk_greater },
+	{ "<=", sk_less_equal },
+	{ ">=", sk_greater_equal },
+    
+    { "+", sk_add },
+    { "-", sk_subtract },
+    { "*", sk_multiply },
+	{ "/", sk_divide },
 
     //{ "if", sk_if },
     // { "list", sk_list },

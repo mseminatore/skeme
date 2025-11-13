@@ -376,7 +376,10 @@ yylex01:
             ungetch(n);
 
             if (n != '$' && !isdigit(n))
+            {
+                yylval.word[0] = c; yylval.word[1] = 0;
                 return c;
+            }
         }
 
 		ungetch(c);
@@ -431,6 +434,25 @@ yylex01:
             return DONE;
 
         goto yylex01;
+    }
+
+    switch (c)
+    {
+    case '<':
+        if (follow('=', TRUE, FALSE))
+        {
+			strcpy(yylval.word, "<=");
+            return ID;
+        }
+        break;
+
+    case '>':
+        if (follow('=', TRUE, FALSE))
+        {
+            strcpy(yylval.word, ">=");
+            return ID;
+        }
+        break;
     }
 
     // return single character tokens

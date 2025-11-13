@@ -68,7 +68,7 @@ typedef struct Object {
 // macros to check and convert to object pointers
 #define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & 0x3))
 #define AS_OBJ(ObjT, obj)   (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
-#define MAKE_NUM(val)       ((Object*)((uintptr_t)(val<<2) | 0x1))
+#define MAKE_NUM(val)       ((Object*)((uintptr_t)((val)<<2) | 0x1))
 #define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
 #define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
 #define IS_NIL(obj)         (obj == NULL)
