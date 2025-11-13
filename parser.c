@@ -379,7 +379,7 @@ int formals()
 //-----------------------------------------------
 int local_body()
 {
-    s_expr();
+    expr();
     return 0;
 }
 
@@ -438,7 +438,7 @@ int definition()
         vm_emit(&vm, (VMCode_t)key);
 
         match(ID);
-        s_expr();
+        expr();
         vm_emit(&vm, OP_STORE);
     }
 
