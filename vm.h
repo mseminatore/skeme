@@ -41,9 +41,9 @@
 #endif
 
 #ifdef _DEBUG
-#   define CHECK_THAT(cond)            assert(cond); if (!(cond)) return VM_ERR;
+#   define CHECK_THAT(cond)            do { assert(cond); if (!(cond)) return VM_ERR; } while(0)
 #else
-#   define CHECK_THAT(cond)            if (!(cond)) return VM_ERR;
+#   define CHECK_THAT(cond)            do { if (!(cond)) return VM_ERR; } while(0)
 #endif
 
 #ifdef VM_DEBUG_LOG
@@ -55,26 +55,31 @@
 
 extern int g_bGCLog;
 
-//
+//-----------------------------
 // Define the Object structure
-//
+//-----------------------------
 typedef struct Object {
-    int type;               // Type of the object (e.g., integer, string, etc.)
+    uint8_t type;           // Type of the object (e.g., integer, string, etc.)
+    uint8_t marked;         // Mark flag for garbage collection
     size_t size;            // Size of the object (for strings, pairs, etc.)
-    int marked;             // Mark flag for garbage collection
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
 // macros to check and convert to object pointers
-#define IS_OBJ(obj) ((obj) != NULL && !((intptr_t)(obj) & 0x3))
-#define AS_OBJ(ObjT, obj) (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
-#define MAKE_NUM(val)   ((Object*)((uintptr_t)(val<<2) | 0x1))
-#define AS_NUM(obj)    (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
-#define IS_NUM(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
-#define IS_NIL(obj)    (obj == NULL)
-#define OBJ_TYPE(obj)   (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
+#define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & 0x3))
+#define AS_OBJ(ObjT, obj)   (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
+#define MAKE_NUM(val)       ((Object*)((uintptr_t)(val<<2) | 0x1))
+#define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
+#define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
+#define IS_NIL(obj)         (obj == NULL)
 
-//#define IS_BOOL(obj)    (IS_OBJ(obj) && AS_OBJ(Boolean, obj)->type == OBJ_BOOL)
+#define OBJ_TYPE(obj)       (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
+#define SET_TYPE(obj, t)    do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->type = (t); } while(0)
+
+#define MARK_OBJ(obj)       do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 1; } while(0)
+#define UNMARK_OBJ(obj)     do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 0; } while(0)
+#define IS_MARKED(obj)      (IS_OBJ(obj) ? AS_OBJ(Object, obj)->marked : 0)
+
 #define IS_BOOL(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x2)))
 #define IS_TRUE(obj)    (((intptr_t)(obj)) == 3)
 #define IS_FALSE(obj)   (((intptr_t)(obj)) == 2)
@@ -100,7 +105,7 @@ enum
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_HALT /*OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_PRINT */};
+enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_HALT };
 
 // opcode type
 typedef intptr_t VMCode_t;
@@ -138,7 +143,7 @@ typedef struct VM {
     VMCode_t ip;                    // Instruction pointer
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
-	int numObjects;                 // Number of allocated objects should be size_t
+    size_t numObjects;              // Number of allocated objects should be size_t
     size_t peakObjects;             // Peak number of allocated objects
 	size_t peakAllocatedBytes;      // Peak allocated bytes
     size_t nextGC;                  // Threshold to trigger next GC
@@ -149,7 +154,7 @@ typedef struct VM {
     VMCode_t vm_code[VM_MAX_CODE];
 
     HashTable *global_table;          // Hash table for global variables
-    HashTable *interned_strings;
+	HashTable* interned_strings;      // Hash table for interned strings
 
     int grayCount;
     int grayCapacity;
@@ -165,10 +170,13 @@ typedef struct VM {
 int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
+
+// stack management
 void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
 
+// object allocation
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
 Object* vm_newObject(VM* pvm, size_t size, int type);
 Object* vm_newBoolean(VM* pvm, int val);
@@ -178,14 +186,16 @@ Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
 
+// code generation and execution
 void vm_emit(VM* pvm, VMCode_t opcode);
 //void vm_emit_num(VM* pvm, int val);
 //void vm_emit_string(VM* pvm, const char *str);
-
 void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
+
+// global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);

@@ -242,9 +242,9 @@ void vm_exec(VM* pvm, int addr)
 static void markObject(VM* pvm, Object* object) {
     if (!IS_OBJ(object)) return;
 
-    if (/*object == NULL || */ object->marked) return;
+    if (IS_MARKED(object)) return;
 
-    object->marked = 1;
+	MARK_OBJ(object);
 
     if (pvm->grayCapacity < pvm->grayCount + 1) 
     {
@@ -294,7 +294,7 @@ static int sweepObjects(VM* pvm) {
     Object** obj = &pvm->head;
     while (*obj) 
     {
-        if (!(*obj)->marked) 
+        if (!IS_MARKED(*obj)) 
         {
             Object* unreached = *obj;
             *obj = unreached->next;
@@ -304,7 +304,7 @@ static int sweepObjects(VM* pvm) {
             free_count++;
         } else 
         {
-            (*obj)->marked = 0; // Reset mark for next GC cycle
+            UNMARK_OBJ(*obj);   // Reset mark for next GC cycle
             obj = &(*obj)->next;
         }
     }
@@ -375,7 +375,7 @@ static void removeWhiteObjects(VM* pvm) {
     // only remove unmarked strings
     while(ht_next(pvm->interned_strings, &index, &key, &value))
     {
-        if (!IS_OBJ((Object*)value) || ((Object*)value)->marked)
+        if (!IS_OBJ((Object*)value) || IS_MARKED((Object*)value))
             continue;
 
         if (HT_OK == ht_remove(pvm->interned_strings, key))
@@ -411,7 +411,7 @@ void vm_gc(VM* pvm) {
 
     pvm->gc_cycles++;
     
-    GC_LOG("-- gc end [%d / %d] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+    GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
 }
 
 //--------------------------------------------------------------
@@ -513,7 +513,7 @@ Object* vm_newObject(VM* pvm, size_t size, int type)
         size = sizeof(Object);
 
     Object* obj = (Object*)vm_alloc(pvm, NULL, 0, size);
-    obj->marked = 0;        // new objects are unmarked
+	UNMARK_OBJ(obj);        // new objects are unmarked
     obj->type = type;       // default type
 	obj->size = size;       // set size
     obj->next = pvm->head;  // Insert at the head of the object list
