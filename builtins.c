@@ -564,13 +564,17 @@ static int sk_strings(SKState* pSK)
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
+    int count = 0;
 
     // print interned strings
     printf("Interned strings:\n");
     while(ht_next(vm.interned_strings, &index, &key, &value))
     {
         printf("  '%s'\n", (const char*)key);
+        count++;
     }
+
+    printf("%d strings total.\n", count);
 
     return SK_TRUE;
 }
@@ -585,6 +589,7 @@ static int sk_globals(SKState* pSK)
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
+    int count = 0;
 
     // print interned strings
     printf("Global objects:\n");
@@ -594,7 +599,10 @@ static int sk_globals(SKState* pSK)
         printf("  '%s'\t", (const char*)strKey->value);
         printObject((Object*)value);
         puts("");
+        count++;
     }
+
+    printf("%d globals total.\n", count);
 
     return SK_TRUE;
 }
