@@ -510,7 +510,7 @@ int expr()
                     // handle native and regular function calls
                     // handle variable and check for undefined symbol
                     Object* key = vm_get_string(&vm, yylval.word);
-                    match(ID);
+                    match(lookahead);
                     if (key)
                     {
                         Object *proc = vm_get_global(&vm, key);

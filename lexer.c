@@ -434,5 +434,6 @@ yylex01:
     }
 
     // return single character tokens
+    yylval.word[0] = c; yylval.word[1] = 0;
     return c;
 }
