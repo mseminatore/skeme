@@ -582,7 +582,7 @@ Object *vm_new_string(VM* pvm, const char* str)
     strcpy((char*)stringObj->value, str);
 
     // and add to interned strings table
-    ht_insert(pvm->interned_strings, str, stringObj);
+    ht_insert(pvm->interned_strings, stringObj->value, stringObj);
 
     return obj;
 }
