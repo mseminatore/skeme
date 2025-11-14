@@ -288,7 +288,7 @@ int s_expr()
         return atoms();
 }
 
-int expr();
+static int expr();
 
 //-----------------------------------------------
 //
