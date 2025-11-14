@@ -499,18 +499,6 @@ static int sk_load(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: if
-//-----------------------------------------------
-static int sk_if(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    // TODO - implement if
-
-    return SK_TRUE;
-}
-
-//-----------------------------------------------
 // built-in function: zero?
 //-----------------------------------------------
 static int sk_zerop(SKState* pSK)
@@ -528,7 +516,7 @@ static int sk_zerop(SKState* pSK)
 }
 
 //-----------------------------------------------
-//
+// helper for binary ops
 //-----------------------------------------------
 static int sk_binop(SKState* pSK, char op)
 {
@@ -569,21 +557,33 @@ static int sk_binop(SKState* pSK, char op)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// built-in function: +
+//-----------------------------------------------
 static int sk_add(SKState* pSK)
 {
     return sk_binop(pSK, '+');
 }
 
+//-----------------------------------------------
+// built-in function: -
+//-----------------------------------------------
 static int sk_subtract(SKState* pSK)
 {
     return sk_binop(pSK, '-');
 }
 
+//-----------------------------------------------
+// built-in function: *
+//-----------------------------------------------
 static int sk_multiply(SKState* pSK)
 {
     return sk_binop(pSK, '*');
 }
 
+//-----------------------------------------------
+// built-in function: /
+//-----------------------------------------------
 static int sk_divide(SKState* pSK)
 {
     return sk_binop(pSK, '/');
