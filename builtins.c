@@ -596,8 +596,8 @@ static int sk_less(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_peek(&vm, 0);
-    Object* obj1 = vm_peek(&vm, 1);
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -605,12 +605,10 @@ static int sk_less(SKState* pSK)
         return SK_FALSE;
 	}
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     if (AS_NUM(obj1) < AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_pop(&vm);        // done with obj
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
 
     return SK_TRUE;
@@ -632,7 +630,7 @@ static int sk_less_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     if (AS_NUM(obj1) <= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -648,8 +646,8 @@ static int sk_greater(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_peek(&vm, 0);
-    Object* obj1 = vm_peek(&vm, 1);
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -657,7 +655,7 @@ static int sk_greater(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     if (AS_NUM(obj1) > AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -735,7 +733,7 @@ static int sk_globals(SKState* pSK)
     while (ht_next(vm.global_table, &index, &key, &value))
     {
 		String* strKey = (String*)key;
-        printf("  '%s'\t", (const char*)strKey->value);
+        printf("%10s\t", (const char*)strKey->value);
         printObject((Object*)value);
         puts("");
         count++;
