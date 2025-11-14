@@ -309,6 +309,7 @@ int getString(int delim)
     sym_num = add_symbol(buf, lineno);
 
     yylval.symbol = sym_num;
+    //strcpy(yylval.word, buf);
     LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
 
     return STRING;

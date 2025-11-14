@@ -172,7 +172,7 @@ static int sk_nullp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (IS_NIL(obj))
@@ -189,7 +189,7 @@ static int sk_eqp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj2 = vm_pop(&vm);
     Object* obj1 = vm_pop(&vm);
 
@@ -207,7 +207,7 @@ static int sk_numberp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (IS_NUM(obj))
@@ -224,7 +224,7 @@ static int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_BOOL(obj))
@@ -241,7 +241,7 @@ static int sk_pairp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
@@ -278,7 +278,7 @@ static int sk_not(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (IS_BOOL(obj) && IS_FALSE(obj))
@@ -391,7 +391,7 @@ static int sk_stringp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
@@ -408,7 +408,7 @@ static int sk_listp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
     // check for proper list (nil or chain of pairs ending in nil)
@@ -505,12 +505,29 @@ static int sk_zerop(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
     
     if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
         bool = MAKE_TRUE();
     
+    vm_push(&vm, bool);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: atom?
+//-----------------------------------------------
+int sk_atomp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* bool = vm_newBoolean(&vm, TRUE);   // default to true
+    Object* obj = vm_pop(&vm);
+    
+    if (IS_NIL(obj) || (IS_OBJ(obj) && obj->type == OBJ_PAIR))
+        bool = MAKE_FALSE();
+
     vm_push(&vm, bool);
     return SK_TRUE;
 }
@@ -682,7 +699,7 @@ static int sk_greater_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false, might GC here!
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     if (AS_NUM(obj1) >= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -923,6 +940,7 @@ static SKFuncSet built_in_funcs[] =
     { "gc-stats", sk_gc_stats },
     { "load", sk_load },
     { "zero?", sk_zerop },
+    { "atom?", sk_atomp },
     { "strings", sk_strings },
 	{ "pwd", sk_pwd },
     { "list", sk_list },
@@ -947,7 +965,6 @@ static SKFuncSet built_in_funcs[] =
     //{ "if", sk_if },
     // { "list", sk_list },
     // { "print", sk_print },
-    // { "atom?", sk_atomp },
     // { "char?", sk_charp },
 	// { "symbol?", sk_symbolp },
 	// { "read", sk_read },

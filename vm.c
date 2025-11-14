@@ -393,7 +393,7 @@ static void removeWhiteObjects(VM* pvm) {
         else
             fprintf(stderr, "Error removing interned string during GC\n");
 
-        free((void*)key);
+        //free((void*)key);
     }
 
     GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
