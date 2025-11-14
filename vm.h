@@ -15,7 +15,7 @@
 #define VM_STRESS_GC
 
 // uncomment to enable VM debug logging
-// #define VM_DEBUG_LOG
+ #define VM_DEBUG_LOG
 
 #define VM_STACK_SIZE 256
 #define VM_FREE_LIST 128
@@ -105,7 +105,7 @@ enum
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_HALT };
+enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_HALT };
 
 // opcode type
 typedef intptr_t VMCode_t;
@@ -136,6 +136,13 @@ typedef struct NativeFunction {
     SKFunc func;       // pointer to native function
     int arity;         // number of arguments
 } NativeFunction;
+
+// closure object
+typedef struct Closure {
+    Object base;            // base object
+    Object* function;       // pointer to the function object
+    // upvalues?
+} Closure;
 
 // Define the VM structure
 typedef struct VM {

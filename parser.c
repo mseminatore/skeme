@@ -87,7 +87,7 @@ void yyinfo(const char *s)
 //---------------------------------------------------
 // error message for unexpected tokens
 //---------------------------------------------------
-void expected(int token)
+static void expected(int token)
 {
 	if (token < 256)
 		yyerror("unexpected character"); //'%c'", token);
@@ -98,7 +98,7 @@ void expected(int token)
 //---------------------------------------------------
 // if token is matched continue, otherwise error
 //---------------------------------------------------
-int match(int token)
+static int match(int token)
 {
 	if (lookahead == token)
 	{
@@ -293,7 +293,7 @@ int expr();
 //-----------------------------------------------
 //
 //-----------------------------------------------
-int command()
+static int command()
 {
     PARSE_LOG("command(): lookahead = %d\n", lookahead);
 
@@ -367,7 +367,7 @@ int command()
 //-----------------------------------------------
 //  <formals> ==> (<variable>*) | <variable>
 //-----------------------------------------------
-int formals()
+static int formals()
 {
     return 0;
 }
@@ -377,7 +377,7 @@ int formals()
 //  <sequence> ==> <command>* <expression>
 //  <command> ==> <expression>
 //-----------------------------------------------
-int local_body()
+static int local_body()
 {
     expr();
     return 0;
@@ -388,7 +388,7 @@ int local_body()
 // function-definition := '(' ID parameter* ')' s-expr
 // variable-definition := ID s-expr
 //-----------------------------------------------
-int definition()
+static int definition()
 {
     PARSE_LOG("definition(): lookahead = %d\n", lookahead);
 
@@ -449,7 +449,7 @@ int definition()
 // lambda := '(' 'lambda' ( lambda-definition ) ')'
 // lambda-definition := '(' parameter* ')' s-expr
 //-----------------------------------------------
-int lambda()
+static int lambda()
 {
     PARSE_LOG("lambda(): lookahead = %d\n", lookahead);
 
@@ -461,7 +461,7 @@ int lambda()
 //-----------------------------------------------
 //
 //-----------------------------------------------
-int parse_list()
+static int parse_list()
 {
     PARSE_LOG("parse_list(): lookahead = %d\n", lookahead);
 
@@ -477,9 +477,63 @@ int parse_list()
 }
 
 //-----------------------------------------------
+// set := '(' 'set!' ID expr ')'
+//-----------------------------------------------
+static int set()
+{
+    PARSE_LOG("set(): lookahead = %d\n", lookahead);
+
+    match(SET);
+    // handle variable and check for undefined symbol
+    Object* key = vm_get_string(&vm, yylval.word);
+    if (!key)
+    {
+        yyerror("entity undefined");
+        return 0;
+    }
+
+    match(ID);
+
+    if (key)
+    {
+        vm_emit(&vm, OP_PUSH);
+        vm_emit(&vm, (VMCode_t)key);
+        expr();
+        vm_emit(&vm, OP_STORE);
+    }
+    else
+        yyerror("entity undefined");
+    return 0;
+}
+
+//-----------------------------------------------
+// if_expr := '(' 'if' expr expr expr ')'
+//-----------------------------------------------
+static int if_expr()
+{
+    PARSE_LOG("if_expr(): lookahead = %d\n", lookahead);
+
+    match(IF);
+
+    expr();                 // condition
+	vm_emit(&vm, OP_BNT);   // branch if not true
+	VMCode_t else_addr = vm.vm_code_ptr++;
+
+    expr(); // then branch
+	vm.vm_code[else_addr] = vm.vm_code_ptr; // backpatch BNT address
+	vm_emit(&vm, OP_GOTO); // jump to end
+    VMCode_t endif_addr = vm.vm_code_ptr++;
+
+    expr(); // else branch
+	vm.vm_code[endif_addr] = vm.vm_code_ptr; // backpatch GOTO address
+
+    return 0;
+}
+
+//-----------------------------------------------
 // program := <commmand | definition>*
 //-----------------------------------------------
-int expr()
+static int expr()
 {
     PARSE_LOG("expr(): lookahead = %d\n", lookahead);
 
@@ -505,7 +559,21 @@ int expr()
                 parse_list();
                 break;
 
-            default:
+            case SET:
+                set();
+                break;
+
+            case IF:
+				if_expr();
+                break;
+
+            case '+':
+            case '-':
+            case '*':
+            case '/':
+            case '<':
+            case '>':
+            case ID:
                 {
                     // handle native and regular function calls
                     // handle variable and check for undefined symbol

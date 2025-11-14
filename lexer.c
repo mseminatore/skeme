@@ -33,8 +33,9 @@ Tokens tokens[] =
     {"define",  DEFINE},
     {"lambda",  LAMBDA},
     {"list",    LIST },
+	{"set!",    SET },
+    {"if",      IF },
 
-    // { "if",      IF },
     // { "else",    ELSE },
     // { "cond",    COND },
     // { "let",     LET },

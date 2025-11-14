@@ -178,11 +178,13 @@ void vm_exec(VM* pvm, int addr)
             return;
 
         case OP_TRUE:
-			vm_pushBoolean(pvm, TRUE);
+            VM_LOG("TRUE\n");
+            vm_pushBoolean(pvm, TRUE);
             break;
 
         case OP_FALSE:
-			vm_pushBoolean(pvm, FALSE);
+            VM_LOG("FALSE\n");
+            vm_pushBoolean(pvm, FALSE);
             break;
 
         case OP_CALL:
@@ -192,6 +194,14 @@ void vm_exec(VM* pvm, int addr)
             // TODO - push return address onto stack
             // TODO - set IP to function address
         }
+            break;
+
+        case OP_BNT:
+            obj = vm_pop(pvm);
+            if (IS_FALSE(obj)) 
+            {
+                addr = (int)pvm->vm_code[addr];
+            }
             break;
 
         case OP_GOTO:
@@ -225,8 +235,8 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_LOAD:
 			VM_LOG("LOAD\n");
-            // get variable value
-			vm_push(pvm, vm_get_global(pvm, vm_pop(pvm)));
+			// variable retrieval
+            vm_push(pvm, vm_get_global(pvm, vm_pop(pvm)));
             break;
 
         default:
