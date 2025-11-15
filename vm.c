@@ -144,19 +144,19 @@ void vm_exec(VM* pvm, int addr)
 
     while(1)
     {
-        VM_LOG("IP=%d SP=%d: ", addr, pvm->sp);
+        VM_LOG("IP=%4x SP=%d: ", addr, pvm->sp);
 
         VMCode_t opcode = pvm->vm_code[addr++];
 
         switch(opcode)
         {
         case OP_PUSH:
-            VM_LOG("PUSH\n");
+            VM_LOG("PUSH obj\n");
             vm_push(pvm, (Object*)pvm->vm_code[addr++]);
             break;
 
         case OP_POP:
-            VM_LOG("POP\n");
+            VM_LOG("POP obj\n");
             break;
 
         case OP_NUM:
@@ -191,7 +191,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_CALL:
         {
-            VM_LOG("CALL\n");
+            VM_LOG("CALL %4x\n", (int)pvm->vm_code[addr]);
             // TODO - call function
             // TODO - push return address onto stack
             // TODO - set IP to function address
@@ -199,21 +199,23 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_BNT:
-            VM_LOG("BNT %d\n", (int)pvm->vm_code[addr]);
+            VM_LOG("BNT %4x\n", (int)pvm->vm_code[addr]);
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
             {
+                // branch to new address
                 addr = (int)pvm->vm_code[addr];
             }
             else 
             {
+                // move to next instruction in sequence
                 addr++;
             }
             break;
 
         case OP_GOTO:
         {
-            VM_LOG("GOTO %d\n", (int)pvm->vm_code[addr]);
+            VM_LOG("GOTO %4x\n", (int)pvm->vm_code[addr]);
             addr = (int)pvm->vm_code[addr];
         }
 			break;
@@ -232,18 +234,21 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_STORE:
         {
-            VM_LOG("STORE\n");
             // variable assignment
             Object *value = vm_pop(pvm);
             Object *key = vm_pop(pvm);
-            vm_update_global(pvm, key, value);                
+            VM_LOG("STORE '%s'\n", ((String*)key)->value);
+            vm_update_global(pvm, key, value);
         }
 			break;
 
         case OP_LOAD:
-			VM_LOG("LOAD\n");
-			// variable retrieval
-            vm_push(pvm, vm_get_global(pvm, vm_pop(pvm)));
+        {
+            Object* key = vm_pop(pvm);
+            VM_LOG("LOAD '%s'\n", ((String*)key)->value);
+            // variable retrieval
+            vm_push(pvm, vm_get_global(pvm, key));
+        }
             break;
 
         default:

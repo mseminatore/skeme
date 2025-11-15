@@ -15,7 +15,7 @@
 #define VM_STRESS_GC
 
 // uncomment to enable VM debug logging
- #define VM_DEBUG_LOG
+ //#define VM_DEBUG_LOG
 
 #define VM_STACK_SIZE 256
 #define VM_FREE_LIST 128

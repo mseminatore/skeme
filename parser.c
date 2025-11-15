@@ -551,9 +551,9 @@ static int if_expr()
 	VMCode_t else_addr = vm.vm_code_ptr++;      // reserve space for else clause address
 
     expr();                                     // then branch expression
-	vm.vm_code[else_addr] = vm.vm_code_ptr;     // backpatch BNT address
 	vm_emit(&vm, OP_GOTO);                      // jump to endif
     VMCode_t endif_addr = vm.vm_code_ptr++;     // reserve space for endif address
+    vm.vm_code[else_addr] = vm.vm_code_ptr;     // backpatch BNT address
 
     expr();                                     // else branch expression
 	vm.vm_code[endif_addr] = vm.vm_code_ptr;    // backpatch GOTO endif address
