@@ -14,6 +14,7 @@ VM vm;
 // parser tracking
 int err_count = 0;
 int warn_count = 0;
+static int indent_level = 0;
 
 // input and output files
 FILE *yyin = NULL;
@@ -22,11 +23,29 @@ extern int g_bDone;
 int g_bParseLog = FALSE;
 
 // forward declarations
-int s_expr();
-int list();
+static int s_expr();
+static int list();
 int sk_init_builtins(SKState* pSK);
 
-#define PARSE_LOG(...) (void)(g_bParseLog && fprintf(stderr, __VA_ARGS__))
+#define PARSE_LOG(...) (void)(g_bParseLog && indent() && fprintf(stderr, __VA_ARGS__))
+
+int indent()
+{
+    for (int i = 0; i < indent_level; i++)
+        fprintf(stderr, "  ");
+	fprintf(stderr, "|- ");
+    indent_level++;
+    return 1;
+}
+
+void unindent() 
+{ 
+    if (!g_bParseLog) return;
+
+    indent_level--;
+    if (indent_level < 0)
+        indent_level = 0;
+}
 
 //------------------------
 // error routine
@@ -134,159 +153,156 @@ void dump_symbols()
     puts("\nSymbol table\n------------");
     for (int i = 0; i < symbol_count; i++)
     {
-        // if (symbols[i].type == ST_LABEL)
-            printf("%10s\t%04X\n", symbols[i].name, symbols[i].value);
+        printf("%10s\t%04X\n", symbols[i].name, symbols[i].value);
     }
 }
 
 //-----------------------------------------------
 // parse an atomic value
 //-----------------------------------------------
-int atom()
-{
-    PARSE_LOG("atom(): lookahead = %d\n", lookahead);
-
-    //Symbol_t sym;
-
-    switch (lookahead)
-    {
-    case '(':
-        list();
-        return 1;
-
-    case TOKEN_TRUE:
-        PARSE_LOG("TOKEN_TRUE\n");
-
-        vm_emit(&vm, OP_TRUE);
-        match(TOKEN_TRUE);
-        return 1;
-
-    case TOKEN_FALSE:
-        PARSE_LOG("TOKEN_FALSE\n");
-
-        vm_emit(&vm, OP_FALSE);
-        match(TOKEN_FALSE);
-        return 1;
-
-    case NUMBER:
-        // handle number
-        PARSE_LOG("NUMBER: %d\n", yylval.ival);
-
-        vm_emit(&vm, OP_NUM);
-        vm_emit(&vm, yylval.ival);
-        match(NUMBER);
-        return 1;
-
-    case STRING:
-        // handle string
-        PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
-
-		vm_emit(&vm, OP_STRING);
-		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
-        match(STRING);
-        return 1;
-
-    case NIL:
-        PARSE_LOG("NIL\n");
-
-        vm_emit(&vm, OP_PUSH);
-        vm_emit(&vm, (VMCode_t)NULL);
-        match(NIL);
-        return 1;
-
-    case ID:
-#if 1
-    {
-        PARSE_LOG("ID: '%s'\n", yylval.word);
-
-        // handle variable and check for undefined symbol
-        Object* key = vm_get_string(&vm, yylval.word);
-        match(ID);
-        if (key)
-        {
-            vm_emit(&vm, OP_PUSH);
-            vm_emit(&vm, (VMCode_t)key);
-            //vm_emit(&vm, OP_LOAD);
-        }
-        else
-            yyerror("entity undefined");
-    }
-#else
-        // lookup symbol
-        sym = symbols[yylval.symbol];
-        PARSE_LOG("ID: '%s'\n", sym.name);
-
-        // undefined symbol error
-        if (sym.type == ST_UNDEF)
-        {
-            //yywarning("symbol is undefined");
-            match(ID);
-			vm_emit(&vm, OP_PUSH);
-			vm_emit(&vm, (VMCode_t)sym.name);
-		}
-
-        // handle native function call
-        if (sym.type == ST_NATIVE)
-        {
-			sym = symbols[yylval.symbol];
-            match(ID);
-            s_expr(); // parse function arguments (if any)
-			vm_emit(&vm, OP_NATIVE);
-			vm_emit(&vm, (VMCode_t)sym.func);
-        }
-#endif
-        return 1;
-    }
-
-    return 0;
-}
-
-//-----------------------------------------------
-// parse multiple atomic values
-//-----------------------------------------------
-int atoms()
-{
-    PARSE_LOG("atoms(): lookahead = %d\n", lookahead);
-
-    int count = 0;
-
-    while (atom())
-        count++;
-
-    return count;
-}
-
-//-----------------------------------------------
-// parse a list
-//-----------------------------------------------
-int list()
-{
-    PARSE_LOG("list(): lookahead = %d\n", lookahead);
-
-    match('(');
-
-    while (lookahead != ')')
-    {
-        s_expr();
-    }
-
-    match(')');
-
-    return 1;
-}
-
-//-----------------------------------------------
-// parse a single s-expression
-//-----------------------------------------------
-int s_expr()
-{
-    PARSE_LOG("s_expr(): lookahead = %d\n", lookahead);
-
-    if (lookahead == '(')
-        return list();
-    else
-        return atoms();
-}
+//static int atom()
+//{
+//    PARSE_LOG("atom(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+//
+//    switch (lookahead)
+//    {
+//    case '(':
+//        list();
+//        return 1;
+//
+//    case TOKEN_TRUE:
+//        PARSE_LOG("TOKEN_TRUE\n");
+//
+//        vm_emit(&vm, OP_TRUE);
+//        match(TOKEN_TRUE);
+//        return 1;
+//
+//    case TOKEN_FALSE:
+//        PARSE_LOG("TOKEN_FALSE\n");
+//
+//        vm_emit(&vm, OP_FALSE);
+//        match(TOKEN_FALSE);
+//        return 1;
+//
+//    case NUMBER:
+//        // handle number
+//        PARSE_LOG("NUMBER: %d\n", yylval.ival);
+//
+//        vm_emit(&vm, OP_NUM);
+//        vm_emit(&vm, yylval.ival);
+//        match(NUMBER);
+//        return 1;
+//
+//    case STRING:
+//        // handle string
+//        PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+//
+//		vm_emit(&vm, OP_STRING);
+//		vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
+//        match(STRING);
+//        return 1;
+//
+//    case NIL:
+//        PARSE_LOG("NIL\n");
+//
+//        vm_emit(&vm, OP_PUSH);
+//        vm_emit(&vm, (VMCode_t)NULL);
+//        match(NIL);
+//        return 1;
+//
+//    case ID:
+//#if 1
+//    {
+//        PARSE_LOG("ID: '%s'\n", yylval.word);
+//
+//        // handle variable and check for undefined symbol
+//        Object* key = vm_get_string(&vm, yylval.word);
+//        match(ID);
+//        if (key)
+//        {
+//            vm_emit(&vm, OP_PUSH);
+//            vm_emit(&vm, (VMCode_t)key);
+//            //vm_emit(&vm, OP_LOAD);
+//        }
+//        else
+//            yyerror("entity undefined");
+//    }
+//#else
+//        // lookup symbol
+//        sym = symbols[yylval.symbol];
+//        PARSE_LOG("ID: '%s'\n", sym.name);
+//
+//        // undefined symbol error
+//        if (sym.type == ST_UNDEF)
+//        {
+//            //yywarning("symbol is undefined");
+//            match(ID);
+//			vm_emit(&vm, OP_PUSH);
+//			vm_emit(&vm, (VMCode_t)sym.name);
+//		}
+//
+//        // handle native function call
+//        if (sym.type == ST_NATIVE)
+//        {
+//			sym = symbols[yylval.symbol];
+//            match(ID);
+//            s_expr(); // parse function arguments (if any)
+//			vm_emit(&vm, OP_NATIVE);
+//			vm_emit(&vm, (VMCode_t)sym.func);
+//        }
+//#endif
+//        return 1;
+//    }
+//
+//    return 0;
+//}
+//
+////-----------------------------------------------
+//// parse multiple atomic values
+////-----------------------------------------------
+//static int atoms()
+//{
+//    PARSE_LOG("atoms(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+//
+//    int count = 0;
+//
+//    while (atom())
+//        count++;
+//
+//    return count;
+//}
+//
+////-----------------------------------------------
+//// parse a list
+////-----------------------------------------------
+//static int list()
+//{
+//    PARSE_LOG("list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+//
+//    match('(');
+//
+//    while (lookahead != ')')
+//    {
+//        s_expr();
+//    }
+//
+//    match(')');
+//
+//    return 1;
+//}
+//
+////-----------------------------------------------
+//// parse a single s-expression
+////-----------------------------------------------
+//static int s_expr()
+//{
+//    PARSE_LOG("s_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+//
+//    if (lookahead == '(')
+//        return list();
+//    else
+//        return atoms();
+//}
 
 static int expr();
 
@@ -295,27 +311,29 @@ static int expr();
 //-----------------------------------------------
 static int command()
 {
-    PARSE_LOG("command(): lookahead = %d\n", lookahead);
+    PARSE_LOG("command(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     switch (lookahead)
     {
     case '(':
         expr();
-        return 1;
+        break;
 
     case TOKEN_TRUE:
         PARSE_LOG("TOKEN_TRUE\n");
 
         vm_emit(&vm, OP_TRUE);
         match(TOKEN_TRUE);
-        return 1;
+        unindent();
+        break;
 
     case TOKEN_FALSE:
         PARSE_LOG("TOKEN_FALSE\n");
 
         vm_emit(&vm, OP_FALSE);
         match(TOKEN_FALSE);
-        return 1;
+        unindent();
+        break;
 
     case NUMBER:
         // handle number
@@ -324,7 +342,8 @@ static int command()
         vm_emit(&vm, OP_NUM);
         vm_emit(&vm, yylval.ival);
         match(NUMBER);
-        return 1;
+        unindent();
+        break;
 
     case STRING:
         // handle string
@@ -333,7 +352,8 @@ static int command()
         vm_emit(&vm, OP_STRING);
         vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
         match(STRING);
-        return 1;
+        unindent();
+        break;
 
     case NIL:
         PARSE_LOG("NIL\n");
@@ -341,27 +361,32 @@ static int command()
         vm_emit(&vm, OP_PUSH);
         vm_emit(&vm, (VMCode_t)NULL);
         match(NIL);
-        return 1;
+        unindent();
+        break;
 
     case ID:
-    {
-        PARSE_LOG("ID: '%s'\n", yylval.word);
-
-        // handle variable and check for undefined symbol
-        Object* key = vm_get_string(&vm, yylval.word);
-        match(ID);
-        if (key)
         {
-            vm_emit(&vm, OP_PUSH);
-            vm_emit(&vm, (VMCode_t)key);
-            vm_emit(&vm, OP_LOAD);
+            PARSE_LOG("ID: '%s'\n", yylval.word);
+
+            // handle variable and check for undefined symbol
+            Object* key = vm_get_string(&vm, yylval.word);
+            match(ID);
+            if (key)
+            {
+                vm_emit(&vm, OP_PUSH);
+                vm_emit(&vm, (VMCode_t)key);
+                vm_emit(&vm, OP_LOAD);
+            }
+            else
+                yyerror("entity undefined");
+
+            unindent();
         }
-        else
-            yyerror("entity undefined");
-    }
+        break;
     }
 
-	return 0;
+    unindent();
+    return 0;
 }
 
 //-----------------------------------------------
@@ -390,7 +415,7 @@ static int local_body()
 //-----------------------------------------------
 static int definition()
 {
-    PARSE_LOG("definition(): lookahead = %d\n", lookahead);
+    PARSE_LOG("definition(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     match(DEFINE);
 
@@ -442,6 +467,7 @@ static int definition()
         vm_emit(&vm, OP_STORE);
     }
 
+    unindent();
     return 0;
 }
 
@@ -451,10 +477,11 @@ static int definition()
 //-----------------------------------------------
 static int lambda()
 {
-    PARSE_LOG("lambda(): lookahead = %d\n", lookahead);
+    PARSE_LOG("lambda(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     match(LAMBDA);
 
+    unindent();
     return 0;
 }
 
@@ -463,7 +490,7 @@ static int lambda()
 //-----------------------------------------------
 static int parse_list()
 {
-    PARSE_LOG("parse_list(): lookahead = %d\n", lookahead);
+    PARSE_LOG("parse_list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     match(LIST);
     match('(');
@@ -473,6 +500,7 @@ static int parse_list()
     }
     match(')');
 
+    unindent();
     return 0;
 }
 
@@ -481,7 +509,7 @@ static int parse_list()
 //-----------------------------------------------
 static int set()
 {
-    PARSE_LOG("set(): lookahead = %d\n", lookahead);
+    PARSE_LOG("set(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     match(SET);
     // handle variable and check for undefined symbol
@@ -489,6 +517,7 @@ static int set()
     if (!key)
     {
         yyerror("entity undefined");
+        unindent();
         return 0;
     }
 
@@ -503,6 +532,8 @@ static int set()
     }
     else
         yyerror("entity undefined");
+    
+    unindent();
     return 0;
 }
 
@@ -511,22 +542,23 @@ static int set()
 //-----------------------------------------------
 static int if_expr()
 {
-    PARSE_LOG("if_expr(): lookahead = %d\n", lookahead);
+    PARSE_LOG("if_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     match(IF);
 
-    expr();                 // condition
-	vm_emit(&vm, OP_BNT);   // branch if not true
-	VMCode_t else_addr = vm.vm_code_ptr++;
+    expr();                                     // condition
+	vm_emit(&vm, OP_BNT);                       // branch if not true
+	VMCode_t else_addr = vm.vm_code_ptr++;      // reserve space for else clause address
 
-    expr(); // then branch
-	vm.vm_code[else_addr] = vm.vm_code_ptr; // backpatch BNT address
-	vm_emit(&vm, OP_GOTO); // jump to end
-    VMCode_t endif_addr = vm.vm_code_ptr++;
+    expr();                                     // then branch expression
+	vm.vm_code[else_addr] = vm.vm_code_ptr;     // backpatch BNT address
+	vm_emit(&vm, OP_GOTO);                      // jump to endif
+    VMCode_t endif_addr = vm.vm_code_ptr++;     // reserve space for endif address
 
-    expr(); // else branch
-	vm.vm_code[endif_addr] = vm.vm_code_ptr; // backpatch GOTO address
+    expr();                                     // else branch expression
+	vm.vm_code[endif_addr] = vm.vm_code_ptr;    // backpatch GOTO endif address
 
+    unindent();
     return 0;
 }
 
@@ -535,9 +567,7 @@ static int if_expr()
 //-----------------------------------------------
 static int expr()
 {
-    PARSE_LOG("expr(): lookahead = %d\n", lookahead);
-
-    //Symbol_t sym;
+    PARSE_LOG("expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     while (lookahead != DONE)
     {
@@ -614,6 +644,7 @@ static int expr()
             break;
     }
 
+    unindent();
     return 0;
 }
 
@@ -622,13 +653,15 @@ static int expr()
 //-----------------------------------------------
 int yyparse(void)
 {
-    //PARSE_LOG("yyparse(): lookahead = %d\n", lookahead);
+    //PARSE_LOG("yyparse(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     if (yyin == NULL)
         return 0;
 
     // prime the pump
     lookahead = yylex();
+
+    indent_level = 0;
 
     // the top-level is zero or more s-expressions
     expr();

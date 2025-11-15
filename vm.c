@@ -294,6 +294,25 @@ static void markObjects(VM* pvm) {
 }
 
 //--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+static void freeObject(VM* pvm, Object* object)
+{
+	GC_LOG("-- gc freeing object of type %d\n", OBJ_TYPE(object));
+
+	// clean up based on object type
+    switch (OBJ_TYPE(object))
+    {
+    default:
+        // nothing to do!
+        break;
+    }
+
+    // Free the memory associated with the object
+    vm_alloc(pvm, object, object->size, 0);
+}
+
+//--------------------------------------------------------------
 // Sweep unmarked objects
 //--------------------------------------------------------------
 static int sweepObjects(VM* pvm) {

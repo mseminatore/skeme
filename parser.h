@@ -26,6 +26,7 @@ typedef struct
 {
 	char *name;
 	SKFunc func;
+	//int arity;
 } SKFuncSet;
 
 // skeme state structure

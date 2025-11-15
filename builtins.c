@@ -896,26 +896,26 @@ static int sk_set_cdr(SKState* pSK)
 //-----------------------------------------------
 // built-in function: set!
 //-----------------------------------------------
-static int sk_set(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-    
-    // implement set!
-    Object* obj_value = vm_peek(&vm, 0);
-    Object* obj_key = vm_peek(&vm, 1);
-    if (!IS_OBJ(obj_key))
-    {
-        yyerror("valid identifier expected!");
-        return SK_FALSE;
-    }
-
-    // Update the global variable
-    vm_update_global(&vm, obj_key, obj_value);
-    vm_pop(&vm);
-    vm_pop(&vm);        // done with values
-
-    return SK_TRUE;
-}
+//static int sk_set(SKState* pSK)
+//{
+//    if (!pSK) return SK_FALSE;
+//    
+//    // implement set!
+//    Object* obj_value = vm_peek(&vm, 0);
+//    Object* obj_key = vm_peek(&vm, 1);
+//    if (!IS_OBJ(obj_key))
+//    {
+//        yyerror("valid identifier expected!");
+//        return SK_FALSE;
+//    }
+//
+//    // Update the global variable
+//    vm_update_global(&vm, obj_key, obj_value);
+//    vm_pop(&vm);
+//    vm_pop(&vm);        // done with values
+//
+//    return SK_TRUE;
+//}
 
 //-----------------------------------------------
 // built-in functions
@@ -947,7 +947,7 @@ static SKFuncSet built_in_funcs[] =
     { "length", sk_length },
     { "set-car!", sk_set_car },
     { "set-cdr!", sk_set_cdr },
-    { "set!", sk_set },
+    //{ "set!", sk_set },
     { "newline", sk_newline },
     { "gclog", sk_gclog },
 	{ "parselog", sk_parselog },
