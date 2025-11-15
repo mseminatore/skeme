@@ -309,9 +309,9 @@ static int expr();
 //-----------------------------------------------
 //
 //-----------------------------------------------
-static int command()
+static int atom()
 {
-    PARSE_LOG("command(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("atom(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     switch (lookahead)
     {
@@ -563,6 +563,14 @@ static int if_expr()
 }
 
 //-----------------------------------------------
+//
+//-----------------------------------------------
+static int expr_tail()
+{
+
+}
+
+//-----------------------------------------------
 // program := <commmand | definition>*
 //-----------------------------------------------
 static int expr()
@@ -638,7 +646,7 @@ static int expr()
             match(')');
         }
         else
-            command();
+            atom();
 
         if (lookahead == ')')
             break;

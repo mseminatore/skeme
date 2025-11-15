@@ -777,23 +777,6 @@ static int sk_pwd(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: list
-//-----------------------------------------------
-static int sk_list(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    // TODO - implement list creation
-    // pop the number of elements from the stack
-    // int count = vm_pop(&vm) ? AS_NUM(vm_pop(&vm)) : 0;
-    
-    // create a linked list of pairs
-    // push the list object onto the stack
-
-    return SK_TRUE;
-}
-
-//-----------------------------------------------
 // built-in function: length
 //-----------------------------------------------
 static int sk_length(SKState* pSK)
@@ -894,30 +877,6 @@ static int sk_set_cdr(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: set!
-//-----------------------------------------------
-//static int sk_set(SKState* pSK)
-//{
-//    if (!pSK) return SK_FALSE;
-//    
-//    // implement set!
-//    Object* obj_value = vm_peek(&vm, 0);
-//    Object* obj_key = vm_peek(&vm, 1);
-//    if (!IS_OBJ(obj_key))
-//    {
-//        yyerror("valid identifier expected!");
-//        return SK_FALSE;
-//    }
-//
-//    // Update the global variable
-//    vm_update_global(&vm, obj_key, obj_value);
-//    vm_pop(&vm);
-//    vm_pop(&vm);        // done with values
-//
-//    return SK_TRUE;
-//}
-
-//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -943,11 +902,9 @@ static SKFuncSet built_in_funcs[] =
     { "atom?", sk_atomp },
     { "strings", sk_strings },
 	{ "pwd", sk_pwd },
-    { "list", sk_list },
     { "length", sk_length },
     { "set-car!", sk_set_car },
     { "set-cdr!", sk_set_cdr },
-    //{ "set!", sk_set },
     { "newline", sk_newline },
     { "gclog", sk_gclog },
 	{ "parselog", sk_parselog },
@@ -962,8 +919,6 @@ static SKFuncSet built_in_funcs[] =
     { "*", sk_multiply },
 	{ "/", sk_divide },
 
-    //{ "if", sk_if },
-    // { "list", sk_list },
     // { "print", sk_print },
     // { "char?", sk_charp },
 	// { "symbol?", sk_symbolp },
