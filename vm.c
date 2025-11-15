@@ -144,6 +144,8 @@ void vm_exec(VM* pvm, int addr)
 
     while(1)
     {
+        VM_LOG("IP=%d SP=%d: ", addr, pvm->sp);
+
         VMCode_t opcode = pvm->vm_code[addr++];
 
         switch(opcode)
@@ -163,7 +165,7 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_STRING:
-            VM_LOG("STRING %s\n", (const char*)pvm->vm_code[addr]);
+            VM_LOG("STRING '%s'\n", (const char*)pvm->vm_code[addr]);
             obj = vm_new_string(pvm, (const char*)pvm->vm_code[addr++]);
             vm_push(pvm, obj);
             break;
@@ -197,16 +199,21 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_BNT:
+            VM_LOG("BNT %d\n", (int)pvm->vm_code[addr]);
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
             {
                 addr = (int)pvm->vm_code[addr];
             }
+            else 
+            {
+                addr++;
+            }
             break;
 
         case OP_GOTO:
         {
-            VM_LOG("GOTO\n");
+            VM_LOG("GOTO %d\n", (int)pvm->vm_code[addr]);
             addr = (int)pvm->vm_code[addr];
         }
 			break;

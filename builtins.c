@@ -676,8 +676,6 @@ static int sk_greater(SKState* pSK)
     if (AS_NUM(obj1) > AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_pop(&vm);        // done with obj
-    vm_pop(&vm);        // done with obj
     vm_push(&vm, bool);
 
     return SK_TRUE;

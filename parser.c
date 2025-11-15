@@ -486,7 +486,7 @@ static int lambda()
 }
 
 //-----------------------------------------------
-//
+// list := '(' expr* ')'
 //-----------------------------------------------
 static int parse_list()
 {
@@ -563,11 +563,19 @@ static int if_expr()
 }
 
 //-----------------------------------------------
-//
+// expr_tail := expr*
 //-----------------------------------------------
 static int expr_tail()
 {
+    int count = 0;
 
+    while (lookahead != DONE && lookahead != ')')
+    {
+        expr();
+        count++;
+    }
+
+    return count;
 }
 
 //-----------------------------------------------
@@ -577,80 +585,74 @@ static int expr()
 {
     PARSE_LOG("expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
-    while (lookahead != DONE)
+    if (lookahead == '(')
     {
-        if (lookahead == '(')
+        match('(');
+
+        switch (lookahead)
         {
-            match('(');
+        case DEFINE:
+            definition();
+            break;
 
-            switch (lookahead)
+        case LAMBDA:
+            lambda();
+            break;
+        
+        case LIST:
+            parse_list();
+            break;
+
+        case SET:
+            set();
+            break;
+
+        case IF:
+            if_expr();
+            break;
+
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+        case '<':
+        case '>':
+        case ID:
             {
-            case DEFINE:
-                definition();
-                break;
-
-            case LAMBDA:
-                lambda();
-                break;
-            
-            case LIST:
-                parse_list();
-                break;
-
-            case SET:
-                set();
-                break;
-
-            case IF:
-				if_expr();
-                break;
-
-            case '+':
-            case '-':
-            case '*':
-            case '/':
-            case '<':
-            case '>':
-            case ID:
+                // handle native and regular function calls
+                // handle variable and check for undefined symbol
+                Object* key = vm_get_string(&vm, yylval.word);
+                match(lookahead);
+                if (key)
                 {
-                    // handle native and regular function calls
-                    // handle variable and check for undefined symbol
-                    Object* key = vm_get_string(&vm, yylval.word);
-                    match(lookahead);
-                    if (key)
+                    Object *proc = vm_get_global(&vm, key);
+                    if (proc && proc->type == OBJ_FUNCTION)
                     {
-                        Object *proc = vm_get_global(&vm, key);
-                        if (proc && proc->type == OBJ_FUNCTION)
-						{
-							expr(); // parse function arguments (if any)
-							vm_emit(&vm, OP_CALL);
-							vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
-						}
-						else if (proc && proc->type == OBJ_NATIVE_FN)
-						{
-							expr(); // parse function arguments (if any)
-							vm_emit(&vm, OP_NATIVE);
-							vm_emit(&vm, (VMCode_t)((NativeFunction*)proc)->func);
-						}
-						else
-						{
-							yyerror("procedure expected!");
-						}
+                        expr_tail(); // parse function arguments (if any)
+                        vm_emit(&vm, OP_CALL);
+                        vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
+                    }
+                    else if (proc && proc->type == OBJ_NATIVE_FN)
+                    {
+                        expr_tail(); // parse function arguments (if any)
+                        vm_emit(&vm, OP_NATIVE);
+                        vm_emit(&vm, (VMCode_t)((NativeFunction*)proc)->func);
                     }
                     else
-                        yyerror("entity undefined");
+                    {
+                        yyerror("procedure expected!");
+                    }
                 }
-                break;
+                else
+                    yyerror("entity undefined");
             }
-
-            match(')');
-        }
-        else
-            atom();
-
-        if (lookahead == ')')
             break;
+        }
+
+        match(')');
     }
+    else
+        atom();
 
     unindent();
     return 0;
