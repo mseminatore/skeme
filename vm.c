@@ -254,6 +254,29 @@ void vm_exec(VM* pvm, int addr)
         }
             break;
 
+        case OP_LIST:
+        {
+            VM_LOG("LIST\n");
+            Pair* alist = NULL;
+            Pair* pair = NULL;
+
+            obj = vm_pop(pvm);
+			int nargs = AS_NUM(obj);
+            for (int i = 0; i < nargs; i++)
+            {
+                vm_push(pvm, (Object*)pair);    // stash pair on stack to prevent premature GC
+                alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+                vm_pop(pvm);                    // discard stashed pair
+                alist->car = vm_pop(pvm);
+                alist->cdr = (Object*)pair;
+                pair = alist;
+            }
+
+			// push the constructed list onto the stack
+            vm_push(pvm, (Object*)alist);
+        }
+            break;
+
         default:
             printf("Unknown opcode: %d\n", addr);
             break;

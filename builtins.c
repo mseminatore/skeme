@@ -58,7 +58,7 @@ static void printObject(Object *obj)
 
     if (IS_OBJ(obj))
     {
-        switch (obj->type)
+        switch (OBJ_TYPE(obj))
         {
         case OBJ_STRING:
             {
@@ -75,7 +75,7 @@ static void printObject(Object *obj)
                 printObject(pair->car); // display car
 
                 Object* cdr = pair->cdr;
-                while (cdr && IS_OBJ(cdr) && cdr->type == OBJ_PAIR)
+                while (cdr && IS_OBJ(cdr) && OBJ_TYPE(cdr) == OBJ_PAIR)
                 {
                     pair = (Pair*)cdr;
                     printf(" ");
@@ -88,7 +88,7 @@ static void printObject(Object *obj)
                     printf(" . ");
                     printObject(pair->cdr); // display cdr
                 }
-                printf(")\n");
+                printf(")");
             }
 			break;
 
@@ -102,7 +102,7 @@ static void printObject(Object *obj)
 			//break;
 
         default:
-            printf("#<obj type=%d>", obj->type);
+            printf("#<obj type=%d>", OBJ_TYPE(obj));
             break;
         }
     }
@@ -258,7 +258,7 @@ static int sk_pairp(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
@@ -312,7 +312,7 @@ static int sk_car(SKState* pSK)
     Object* obj = vm_pop(&vm);
     Object* result = NULL;
 
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         result = ((Pair*)obj)->car;
     else
         yyerror("argument to 'car' is not a pair");
@@ -331,7 +331,7 @@ static int sk_cdr(SKState* pSK)
     Object* obj = vm_pop(&vm);
     Object* result = NULL;
 
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_PAIR)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         result = ((Pair*)obj)->cdr;
     else
         yyerror("argument to 'cdr' is not a pair");
@@ -365,7 +365,7 @@ static int sk_error(SKState* pSK)
 
 	// get error message from stack
     Object* obj = vm_pop(&vm);
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
     {
         // Get the error message from the string object
         error_msg = ((String*)obj)->value;
@@ -408,7 +408,7 @@ static int sk_stringp(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
     Object* obj = vm_pop(&vm);
 
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
         bool = MAKE_TRUE();
 
     vm_push(&vm, bool);
@@ -436,7 +436,7 @@ static int sk_listp(SKState* pSK)
         int is_list = FALSE;
         while (current && IS_OBJ(current))
         {
-            if (current->type == OBJ_PAIR)
+            if (OBJ_TYPE(current) == OBJ_PAIR)
             {
                 current = ((Pair*)current)->cdr;
                 if (IS_NIL(current))
@@ -499,7 +499,7 @@ static int sk_load(SKState* pSK)
 
     // implement load
 	Object* obj = vm_pop(&vm);
-    if (obj && IS_OBJ(obj) && obj->type == OBJ_STRING)
+    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
     {
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
@@ -539,7 +539,7 @@ int sk_atomp(SKState* pSK)
     Object* bool = vm_newBoolean(&vm, TRUE);   // default to true
     Object* obj = vm_pop(&vm);
     
-    if (IS_NIL(obj) || (IS_OBJ(obj) && obj->type == OBJ_PAIR))
+    if (IS_NIL(obj) || (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR))
         bool = MAKE_FALSE();
 
     vm_push(&vm, bool);
@@ -807,17 +807,17 @@ static int sk_length(SKState* pSK)
 
     if (IS_OBJ(obj))
     {
-        if (obj->type == OBJ_PAIR)
+        if (OBJ_TYPE(obj) == OBJ_PAIR)
         {
             // count list elements
             Object* current = obj;
-            while (current && IS_OBJ(current) && current->type == OBJ_PAIR)
+            while (current && IS_OBJ(current) && OBJ_TYPE(current) == OBJ_PAIR)
             {
                 count++;
                 current = ((Pair*)current)->cdr;
             }
         }
-        else if (obj->type == OBJ_STRING)
+        else if (OBJ_TYPE(obj) == OBJ_STRING)
         {
             String* strObj = (String*)obj;
             count = (int)strlen(strObj->value);
@@ -845,7 +845,7 @@ static int sk_set_car(SKState* pSK)
 
     // implement set-car!
     Object *obj = vm_peek(&vm, 1);
-    if (!obj || !IS_OBJ(obj) || obj->type != OBJ_PAIR)
+    if (!obj || !IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
         vm_pop(&vm); // remove values
         vm_pop(&vm);
@@ -871,7 +871,7 @@ static int sk_set_cdr(SKState* pSK)
 
     // implement set-car!
     Object *obj = vm_peek(&vm, 1);
-    if (!obj || !IS_OBJ(obj) || obj->type != OBJ_PAIR)
+    if (!obj || !IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
         vm_pop(&vm); // remove values
         vm_pop(&vm);

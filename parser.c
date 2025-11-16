@@ -499,20 +499,19 @@ static int parse_list()
     PARSE_LOG("parse_list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
     Object* obj;
+    int nargs = 0;
 
     match(LIST);
 
     while (lookahead != ')')
     {
-		//obj = vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
-		//Pair* pair = AS_OBJ(Pair, obj);
-		//pair->car = NULL; // TODO - set car
-		//pair->cdr = NULL; // TODO - set cdr
-
-        expr(); // 
-		// TODO - build up list structure
-
+        expr();
+        nargs++;
     }
+
+    vm_emit(&vm, OP_NUM);
+    vm_emit(&vm, nargs);
+    vm_emit(&vm, OP_LIST);
 
     unindent();
     return 0;
