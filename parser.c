@@ -35,7 +35,10 @@ int sk_init_builtins(SKState* pSK);
 int indent()
 {
     for (int i = 0; i < indent_level; i++)
+    {
         fprintf(stderr, "  ");
+    }
+    
 	fprintf(stderr, "|- ");
     indent_level++;
     return 1;
