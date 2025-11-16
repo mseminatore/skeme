@@ -501,7 +501,6 @@ static int parse_list()
 {
     PARSE_LOG("parse_list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
-    Object* obj;
     int nargs = 0;
 
     match(LIST);
