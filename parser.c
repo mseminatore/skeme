@@ -23,12 +23,15 @@ extern int g_bDone;
 int g_bParseLog = FALSE;
 
 // forward declarations
-static int s_expr();
-static int list();
+//static int s_expr();
+//static int list();
 int sk_init_builtins(SKState* pSK);
 
 #define PARSE_LOG(...) (void)(g_bParseLog && indent() && fprintf(stderr, __VA_ARGS__))
 
+//------------------------
+// pretty print parse tree
+//------------------------
 int indent()
 {
     for (int i = 0; i < indent_level; i++)
@@ -38,6 +41,9 @@ int indent()
     return 1;
 }
 
+//------------------------
+// parse tree indent
+//------------------------
 void unindent() 
 { 
     if (!g_bParseLog) return;
@@ -492,13 +498,21 @@ static int parse_list()
 {
     PARSE_LOG("parse_list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
+    Object* obj;
+
     match(LIST);
-    match('(');
+
     while (lookahead != ')')
     {
-        expr();
+		//obj = vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
+		//Pair* pair = AS_OBJ(Pair, obj);
+		//pair->car = NULL; // TODO - set car
+		//pair->cdr = NULL; // TODO - set cdr
+
+        expr(); // 
+		// TODO - build up list structure
+
     }
-    match(')');
 
     unindent();
     return 0;

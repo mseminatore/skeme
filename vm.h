@@ -46,12 +46,12 @@
 #   define CHECK_THAT(cond)            do { if (!(cond)) return VM_ERR; } while(0)
 #endif
 
-#ifdef VM_DEBUG_LOG
-#   define VM_LOG(...) (fprintf(stderr, __VA_ARGS__))
-#else
-#   define VM_LOG(...)
-// #   define VM_LOG __noop
-#endif
+//#ifdef VM_DEBUG_LOG
+//#   define VM_LOG(...) (fprintf(stderr, __VA_ARGS__))
+//#else
+//#   define VM_LOG(...)
+//// #   define VM_LOG __noop
+//#endif
 
 extern int g_bGCLog;
 

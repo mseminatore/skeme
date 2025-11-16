@@ -6,8 +6,11 @@
 #include "vm.h"
 
 int g_bGCLog = FALSE;
+int g_bVMLog = FALSE;
+int g_bGCStress = FALSE;
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
+#define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
 
 #define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
 

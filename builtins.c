@@ -27,6 +27,8 @@
     #define getcwd _getcwd
 #endif
 
+extern int g_bVMLog;
+
 //
 //[]-----------------------------------------------
 //  built-in functions
@@ -165,6 +167,18 @@ static int sk_parselog(SKState* pSK)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// built-in function: vmloh
+//-----------------------------------------------
+static int sk_vmlog(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    g_bVMLog = !g_bVMLog;
+    yyinfo(g_bVMLog ? "VM logging enabled" : "VM logging disabled");
+
+    return SK_TRUE;
+}
 //-----------------------------------------------
 // built-in function: null?
 //-----------------------------------------------
@@ -906,6 +920,7 @@ static SKFuncSet built_in_funcs[] =
     { "newline", sk_newline },
     { "gclog", sk_gclog },
 	{ "parselog", sk_parselog },
+	{ "vmlog", sk_vmlog },
 	{ "globals", sk_globals },
     { "<", sk_less },
 	{ ">", sk_greater },
