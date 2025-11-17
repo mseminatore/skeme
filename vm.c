@@ -354,11 +354,14 @@ static void markObjects(VM* pvm) {
 }
 
 //--------------------------------------------------------------
-//
+// Free an object
 //--------------------------------------------------------------
 static void freeObject(VM* pvm, Object* object)
 {
 	GC_LOG("-- gc freeing object of type %d\n", OBJ_TYPE(object));
+
+    if (!IS_OBJ(object))
+		return;
 
 	// clean up based on object type
     switch (OBJ_TYPE(object))
@@ -388,7 +391,8 @@ static int sweepObjects(VM* pvm) {
             Object* unreached = *obj;
             *obj = unreached->next;
 
-            vm_alloc(pvm, unreached, unreached->size, 0);
+            freeObject(pvm, unreached);
+            //vm_alloc(pvm, unreached, unreached->size, 0);
             pvm->numObjects--;
             free_count++;
         } else 
@@ -410,7 +414,7 @@ static void blackenObject(VM* pvm, Object* object)
 {
     // Mark the object's references and add them to the gray stack
     // if they are not already marked
-    GC_LOG("-- gc blackening object\n");
+    //GC_LOG("-- gc blackening object\n");
 
     if (!IS_OBJ(object)) return;
 
