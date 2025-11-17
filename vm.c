@@ -414,7 +414,7 @@ static void blackenObject(VM* pvm, Object* object)
 {
     // Mark the object's references and add them to the gray stack
     // if they are not already marked
-    //GC_LOG("-- gc blackening object\n");
+    //GC(_LOG("-- gc blackening object\n");
 
     if (!IS_OBJ(object)) return;
 
