@@ -605,13 +605,16 @@ static int and_expr()
 
     match(AND);
 
+    vm_emit(&vm, OP_PUSH);   // push a nil value onto the stack
+    vm_emit(&vm, (VMCode_t)NULL);
+
     while (lookahead != DONE && lookahead != ')')
     {
+        vm_emit(&vm, OP_POP);  // pop the duplicated value
         expr();
 		vm_emit(&vm, OP_DUP);       // duplicate the value for testing
         vm_emit(&vm, OP_BNT);
         addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
-		vm_emit(&vm, OP_POP);  // pop the duplicated value
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'and' expression");
@@ -619,7 +622,7 @@ static int and_expr()
 		}
     }
 
-	vm_emit(&vm, OP_TRUE);  // TODO - should return last expr value
+	//vm_emit(&vm, OP_TRUE);  // TODO - should return last expr value
     vm_emit(&vm, OP_HALT);  // TODO - should be a RET
 
     // backpatch branch addresses
