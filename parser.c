@@ -570,8 +570,35 @@ static int if_expr()
     VMCode_t endif_addr = vm.vm_code_ptr++;     // reserve space for endif address
     vm.vm_code[else_addr] = vm.vm_code_ptr;     // backpatch BNT address
 
+#ifdef IF_ELSE_REQUIRED
     expr();                                     // else branch expression
-	vm.vm_code[endif_addr] = vm.vm_code_ptr;    // backpatch GOTO endif address
+#else
+    if (lookahead != ')')
+    {
+        expr();                                 // else branch expression
+    }
+#endif
+
+    vm.vm_code[endif_addr] = vm.vm_code_ptr;    // backpatch GOTO endif address
+
+    unindent();
+    return 0;
+}
+
+//-----------------------------------------------
+// cond_expr := '(' 'cond' ( expr expr )* ')'
+//-----------------------------------------------
+static int cond_expr()
+{
+    PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+
+    match(COND);
+
+    while (lookahead != ')')
+    {
+        expr(); // condition
+        expr(); // consequence
+    }
 
     unindent();
     return 0;

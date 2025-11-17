@@ -5,6 +5,7 @@
 #include "vm.h"
 
 #define MAX_REL_CLAUSES 16
+//#define IF_ELSE_REQUIRED
 
 //-----------------
 // constant decls

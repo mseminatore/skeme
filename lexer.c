@@ -37,9 +37,9 @@ Tokens tokens[] =
     {"if",      IF },
     {"and",     AND },
     {"or",      OR },
+    {"cond",    COND },
+    {"else",    ELSE },
 
-    // { "else",    ELSE },
-    // { "cond",    COND },
     // { "let",     LET },
     // { "begin",   BEGIN },
     // { "quote",   QUOTE },
