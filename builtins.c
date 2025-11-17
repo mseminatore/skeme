@@ -556,7 +556,7 @@ static int sk_binop(SKState* pSK, char op)
     Object* obj2 = vm_pop(&vm);
     Object* obj1 = vm_pop(&vm);
 
-    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    if (!IS_NUM(obj1) || !IS_NUM(obj2))
     {
         yyerror("arguments to binop must be numbers");
         return SK_FALSE;
@@ -583,6 +583,16 @@ static int sk_binop(SKState* pSK, char op)
             return SK_FALSE;
         }
 	    vm_push(&vm, MAKE_NUM(AS_NUM(obj1) / AS_NUM(obj2)));
+        break;
+
+    case '=':
+        {
+            Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+            if (AS_NUM(obj1) == AS_NUM(obj2))
+                bool = MAKE_TRUE();
+            vm_push(&vm, bool);
+        }
+		break;
     }
 
     return SK_TRUE;
@@ -643,6 +653,14 @@ static int sk_less(SKState* pSK)
     vm_push(&vm, bool);
 
     return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: =
+//-----------------------------------------------
+static int sk_equalnum(SKState* pSK)
+{
+    return sk_binop(pSK, '=');
 }
 
 //-----------------------------------------------
@@ -926,7 +944,7 @@ static SKFuncSet built_in_funcs[] =
 	{ ">", sk_greater },
 	{ "<=", sk_less_equal },
 	{ ">=", sk_greater_equal },
-    
+    { "=", sk_equalnum },
     { "+", sk_add },
     { "-", sk_subtract },
     { "*", sk_multiply },

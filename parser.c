@@ -731,6 +731,7 @@ static int expr()
         case '/':
         case '<':
         case '>':
+        case '=':
         case ID:
             {
                 // handle native and regular function calls
