@@ -4,6 +4,8 @@
 #include "lexer.h"
 #include "vm.h"
 
+#define MAX_REL_CLAUSES 16
+
 //-----------------
 // constant decls
 //-----------------

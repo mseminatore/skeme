@@ -594,6 +594,84 @@ static int expr_tail()
 }
 
 //-----------------------------------------------
+// and_expr := '(' 'and' expr* ')'
+//-----------------------------------------------
+static int and_expr()
+{
+    PARSE_LOG("and_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    int addr_list[MAX_REL_CLAUSES];
+
+    int terms = 0;
+
+    match(AND);
+
+    while (lookahead != DONE && lookahead != ')')
+    {
+        expr();
+		vm_emit(&vm, OP_DUP);       // duplicate the value for testing
+        vm_emit(&vm, OP_BNT);
+        addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
+		vm_emit(&vm, OP_POP);  // pop the duplicated value
+        if (terms >= MAX_REL_CLAUSES)
+        {
+            yyerror("too many terms in 'and' expression");
+            break;
+		}
+    }
+
+	vm_emit(&vm, OP_TRUE);  // should return last expr value
+    vm_emit(&vm, OP_HALT);
+
+    // backpatch branch addresses
+    for (int i = 0; i < terms; i++)
+    {
+        vm.vm_code[addr_list[i]] = vm.vm_code_ptr;
+    }
+
+    vm_emit(&vm, OP_POP);  // pop the duplicated value
+    vm_emit(&vm, OP_FALSE);
+    return 0;
+}
+
+//-----------------------------------------------
+// or_expr := '(' 'or' expr* ')'
+//-----------------------------------------------
+static int or_expr()
+{
+    PARSE_LOG("or_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    int addr_list[MAX_REL_CLAUSES];
+
+    int terms = 0;
+
+    match(OR);
+
+    while (lookahead != DONE && lookahead != ')')
+    {
+        expr();
+        vm_emit(&vm, OP_BNF);
+        addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
+        if (terms >= MAX_REL_CLAUSES)
+        {
+            yyerror("too many terms in 'or' expression");
+            break;
+        }
+    }
+
+	vm_emit(&vm, OP_FALSE);
+    vm_emit(&vm, OP_HALT);
+
+    // backpatch branch addresses
+    for (int i = 0; i < terms; i++)
+    {
+        vm.vm_code[addr_list[i]] = vm.vm_code_ptr;
+    }
+
+    vm_emit(&vm, OP_TRUE);  // should return last expr value?
+
+    return 0;
+}
+
+//-----------------------------------------------
 // program := <commmand | definition>*
 //-----------------------------------------------
 static int expr()
@@ -624,6 +702,14 @@ static int expr()
 
         case IF:
             if_expr();
+            break;
+
+        case AND:
+            and_expr();
+            break;
+
+        case OR:
+            or_expr();
             break;
 
         case '+':

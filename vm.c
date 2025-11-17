@@ -147,7 +147,7 @@ void vm_exec(VM* pvm, int addr)
 
     while(1)
     {
-        VM_LOG("IP=%4x SP=%d: ", addr, pvm->sp);
+        VM_LOG("IP=%04X SP=%d: ", addr, pvm->sp);
 
         VMCode_t opcode = pvm->vm_code[addr++];
 
@@ -160,7 +160,14 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_POP:
             VM_LOG("POP obj\n");
+            vm_pop(pvm);
             break;
+
+        case OP_DUP:
+            VM_LOG("DUP\n");
+            obj = vm_peek(pvm, 0);
+            vm_push(pvm, obj);
+			break;
 
         case OP_NUM:
             VM_LOG("NUM %zu\n", pvm->vm_code[addr]);
@@ -194,7 +201,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_CALL:
         {
-            VM_LOG("CALL %4x\n", (int)pvm->vm_code[addr]);
+            VM_LOG("CALL %04X\n", (int)pvm->vm_code[addr]);
             // TODO - call function
             // TODO - push return address onto stack
             // TODO - set IP to function address
@@ -202,7 +209,7 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         case OP_BNT:
-            VM_LOG("BNT %4x\n", (int)pvm->vm_code[addr]);
+            VM_LOG("BNT %04X\n", (int)pvm->vm_code[addr]);
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
             {
@@ -216,9 +223,24 @@ void vm_exec(VM* pvm, int addr)
             }
             break;
 
+        case OP_BNF:
+            VM_LOG("BNF %04X\n", (int)pvm->vm_code[addr]);
+            obj = vm_pop(pvm);
+            if (!IS_FALSE(obj))
+            {
+                // branch to new address
+                addr = (int)pvm->vm_code[addr];
+            }
+            else
+            {
+                // move to next instruction in sequence
+                addr++;
+            }
+            break;
+
         case OP_GOTO:
         {
-            VM_LOG("GOTO %4x\n", (int)pvm->vm_code[addr]);
+            VM_LOG("GOTO %04X\n", (int)pvm->vm_code[addr]);
             addr = (int)pvm->vm_code[addr];
         }
 			break;
