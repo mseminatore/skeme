@@ -619,8 +619,8 @@ static int and_expr()
 		}
     }
 
-	vm_emit(&vm, OP_TRUE);  // should return last expr value
-    vm_emit(&vm, OP_HALT);
+	vm_emit(&vm, OP_TRUE);  // TODO - should return last expr value
+    vm_emit(&vm, OP_HALT);  // TODO - should be a RET
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
@@ -658,7 +658,7 @@ static int or_expr()
     }
 
 	vm_emit(&vm, OP_FALSE);
-    vm_emit(&vm, OP_HALT);
+    vm_emit(&vm, OP_HALT);      // TODO - should be a RET
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
