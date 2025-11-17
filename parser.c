@@ -605,15 +605,18 @@ static int and_expr()
 
     match(AND);
 
-    vm_emit(&vm, OP_PUSH);   // push a nil value onto the stack
+    vm_emit(&vm, OP_PUSH);   // push a dummy nil value onto the stack
     vm_emit(&vm, (VMCode_t)NULL);
 
     while (lookahead != DONE && lookahead != ')')
     {
-        vm_emit(&vm, OP_POP);  // pop the duplicated value
+        vm_emit(&vm, OP_POP);       // pop the duplicated value
+        
         expr();
-		vm_emit(&vm, OP_DUP);       // duplicate the value for testing
-        vm_emit(&vm, OP_BNT);
+
+        vm_emit(&vm, OP_DUP);       // duplicate the value for testing
+		vm_emit(&vm, OP_BNT);       // if any term is false, branch to end
+
         addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
@@ -622,7 +625,7 @@ static int and_expr()
 		}
     }
 
-	//vm_emit(&vm, OP_TRUE);  // TODO - should return last expr value
+	// return last expr value
     vm_emit(&vm, OP_HALT);  // TODO - should be a RET
 
     // backpatch branch addresses
@@ -648,11 +651,19 @@ static int or_expr()
 
     match(OR);
 
+    vm_emit(&vm, OP_PUSH);   // push a dummy nil value onto the stack
+    vm_emit(&vm, (VMCode_t)NULL);
+
     while (lookahead != DONE && lookahead != ')')
     {
+        vm_emit(&vm, OP_POP);       // pop the duplicated value
+        
         expr();
-        vm_emit(&vm, OP_BNF);
-        addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
+        
+        vm_emit(&vm, OP_DUP);       // duplicate the value for testing
+		vm_emit(&vm, OP_BNF);       // if any term is not false, branch to end
+
+        addr_list[terms++] = vm.vm_code_ptr++;  // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'or' expression");
@@ -669,8 +680,7 @@ static int or_expr()
         vm.vm_code[addr_list[i]] = vm.vm_code_ptr;
     }
 
-    vm_emit(&vm, OP_TRUE);  // should return last expr value?
-
+    // return last expr value
     return 0;
 }
 
