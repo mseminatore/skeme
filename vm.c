@@ -550,6 +550,18 @@ Object* vm_pop(VM* pvm) {
 }
 
 //--------------------------------------------------------------
+// Pop n objects from the stack
+//--------------------------------------------------------------
+void vm_pop_n(VM* pvm, int n)
+{
+    if (pvm->sp - n < 0) {
+        fprintf(stderr, "Stack underflow on pop_n!\n");
+        return;
+    }
+    pvm->sp -= n;
+}
+
+//--------------------------------------------------------------
 // Peek at an object on the stack without popping it
 //--------------------------------------------------------------
 Object* vm_peek(VM* pvm, int distance) {

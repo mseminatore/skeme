@@ -354,6 +354,30 @@ static int sk_exit(SKState* pSK)
     return SK_TRUE;
 }
 
+static void error_helper()
+{
+    const char* msg;
+
+    // get message from stack
+    Object* raw_n = vm_pop(&vm);
+    int n = AS_NUM(raw_n);
+
+    for (int i = n - 1; i >= 0; i--)
+    {
+        Object* obj = vm_peek(&vm, i);
+        if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
+        {
+            // Get the error message from the string object
+            msg = ((String*)obj)->value;
+            fprintf(stderr, "%s ", msg);
+        }
+    }
+
+    vm_pop_n(&vm, n); // remove message strings from stack
+
+    fputs("\n\n"TERM_RESET, stderr);
+}
+
 //-----------------------------------------------
 // built-in function: error
 //-----------------------------------------------
@@ -361,29 +385,8 @@ static int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    const char* error_msg = "error called";
-
-	// get error message from stack
-    int raw_n = vm_pop(&vm);
-	int n = AS_NUM(raw_n);
-
-	fprintf(stderr, "Error: ");
-    for (int i = 0; i < n; i++)
-    {
-        Object* obj = vm_pop(&vm);
-        if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
-        {
-            // Get the error message from the string object
-            error_msg = ((String*)obj)->value;
-			fprintf(stderr, "%s ", error_msg);
-        }
-    }
-
-	fputs("\n", stderr);
-
-    // simply raise a parser error for now
-    //yyerror(error_msg);
-    
+	fprintf(stderr, TERM_RED"Error: ");
+    error_helper();
     return SK_TRUE;
 }
 
@@ -394,15 +397,20 @@ static int sk_warn(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    const char* error_msg = "warn called";
+    fprintf(stderr, TERM_YELLOW"Warning: ");
+    error_helper();
+    return SK_TRUE;
+}
 
-    Object* obj = vm_pop(&vm);
-    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
-    {
-        const char* warning_msg = ((String*)obj)->value;
-        fprintf(stderr, "Warning: %s\n", warning_msg);
-    }
+//-----------------------------------------------
+// built-in function: warn
+//-----------------------------------------------
+static int sk_info(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
 
+    fprintf(stderr, TERM_GREEN"Inof: ");
+    error_helper();
     return SK_TRUE;
 }
 
@@ -923,6 +931,7 @@ static SKFuncSet built_in_funcs[] =
     { "display", sk_display, ARITY_ONE_OR_MORE },
     { "newline", sk_newline, 0 },
 	{ "error", sk_error, ARITY_ONE_OR_MORE },
+	{ "warn", sk_warn, ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 
     // predicate functions

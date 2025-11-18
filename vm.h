@@ -186,6 +186,7 @@ void vm_gc(VM* pvm);
 void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
+void vm_pop_n(VM* pvm, int n);
 
 // object allocation
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
