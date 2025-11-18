@@ -258,15 +258,17 @@ void vm_exec(VM* pvm, int addr)
                 int arity = proc->arity;
                 if (arity >= 0)
                 {
-                    int nargs = AS_NUM(vm_pop(pvm));
+                    int n = vm_pop(pvm);
+                    int nargs = AS_NUM(n);
                     if (nargs != arity)
                     {
                         yyerror("incorrect number of arguments to native function");
                         // TODO - clear stack or handle error?
                     }
-                    else
-                        func((SKState*)1); // TODO - In a real implementation, pass the VM or context
                 }
+
+                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+
             } else {
                 fprintf(stderr, "NULL function pointer in NATIVE call!\n");
             }

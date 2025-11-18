@@ -364,16 +364,45 @@ static int sk_error(SKState* pSK)
     const char* error_msg = "error called";
 
 	// get error message from stack
+    int raw_n = vm_pop(&vm);
+	int n = AS_NUM(raw_n);
+
+	fprintf(stderr, "Error: ");
+    for (int i = 0; i < n; i++)
+    {
+        Object* obj = vm_pop(&vm);
+        if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
+        {
+            // Get the error message from the string object
+            error_msg = ((String*)obj)->value;
+			fprintf(stderr, "%s ", error_msg);
+        }
+    }
+
+	fputs("\n", stderr);
+
+    // simply raise a parser error for now
+    //yyerror(error_msg);
+    
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: warn
+//-----------------------------------------------
+static int sk_warn(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    const char* error_msg = "warn called";
+
     Object* obj = vm_pop(&vm);
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
     {
-        // Get the error message from the string object
-        error_msg = ((String*)obj)->value;
+        const char* warning_msg = ((String*)obj)->value;
+        fprintf(stderr, "Warning: %s\n", warning_msg);
     }
 
-    // simply raise a parser error for now
-    yyerror(error_msg);
-    
     return SK_TRUE;
 }
 
