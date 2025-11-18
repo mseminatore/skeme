@@ -258,12 +258,14 @@ void vm_exec(VM* pvm, int addr)
                 int arity = proc->arity;
                 if (arity >= 0)
                 {
-                    int n = vm_pop(pvm);
+                    Object* n = vm_pop(pvm);
                     int nargs = AS_NUM(n);
                     if (nargs != arity)
                     {
                         yyerror("incorrect number of arguments to native function");
-                        // TODO - clear stack or handle error?
+                        // clear stack
+                        vm_pop_n(pvm, nargs);
+                        break;
                     }
                 }
 

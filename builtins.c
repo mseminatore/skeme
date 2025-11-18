@@ -354,6 +354,9 @@ static int sk_exit(SKState* pSK)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// error message helper
+//-----------------------------------------------
 static void error_helper()
 {
     const char* msg;
@@ -565,50 +568,70 @@ int sk_atomp(SKState* pSK)
 //-----------------------------------------------
 // helper for binary ops
 //-----------------------------------------------
-static int sk_binop(SKState* pSK, char op)
+static int sk_mathop(SKState* pSK, char op)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* raw_n = vm_pop(&vm);
+    int n = AS_NUM(raw_n);
 
-    if (!IS_NUM(obj1) || !IS_NUM(obj2))
+    Object * obj1 = vm_peek(&vm, n - 1);   // get first term
+    int result = AS_NUM(obj1);
+    if (!IS_NUM(obj1))
     {
-        yyerror("arguments to binop must be numbers");
+        yyerror("arguments to mathop must be numbers");
         return SK_FALSE;
-    }
+	}
 
-    switch (op)
+    for (int i = n - 2; i >= 0; i--)
     {
-    case '+':
-        vm_push(&vm, MAKE_NUM(AS_NUM(obj1) + AS_NUM(obj2)));
-		break;
-
-    case '-':
-		vm_push(&vm, MAKE_NUM(AS_NUM(obj1) - AS_NUM(obj2)));
-        break;
-
-    case '*':
-        vm_push(&vm, MAKE_NUM(AS_NUM(obj1) * AS_NUM(obj2)));
-		break;
-
-    case '/':
-        if (AS_NUM(obj2) == 0)
+        Object* obj2 = vm_peek(&vm, i);
+        if (!IS_NUM(obj2))
         {
-            yyerror("division by zero");
+            yyerror("arguments to mathop must be numbers");
             return SK_FALSE;
         }
-	    vm_push(&vm, MAKE_NUM(AS_NUM(obj1) / AS_NUM(obj2)));
-        break;
 
-    case '=':
+        switch (op)
         {
-            Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-            if (AS_NUM(obj1) == AS_NUM(obj2))
-                bool = MAKE_TRUE();
-            vm_push(&vm, bool);
+        case '+':
+			result = result + AS_NUM(obj2);
+            break;
+
+        case '-':
+            result = result - AS_NUM(obj2);
+            break;
+
+        case '*':
+            result = result * AS_NUM(obj2);
+            break;
+
+        case '/':
+            if (AS_NUM(obj2) == 0)
+            {
+                yyerror("division by zero");
+                return SK_FALSE;
+            }
+            result = result / AS_NUM(obj2);
+            break;
+
+        case '=':
+            {
+                if (result != AS_NUM(obj2))
+                {
+                    result = FALSE;
+                }
+            }
+            break;
         }
-		break;
+	}
+
+    vm_pop_n(&vm, n); // remove all args from stack
+    if (op != '=')
+		vm_push(&vm, MAKE_NUM(result));
+    else
+    {
+        vm_push(&vm, result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
     }
 
     return SK_TRUE;
@@ -619,7 +642,7 @@ static int sk_binop(SKState* pSK, char op)
 //-----------------------------------------------
 static int sk_add(SKState* pSK)
 {
-    return sk_binop(pSK, '+');
+    return sk_mathop(pSK, '+');
 }
 
 //-----------------------------------------------
@@ -627,7 +650,7 @@ static int sk_add(SKState* pSK)
 //-----------------------------------------------
 static int sk_subtract(SKState* pSK)
 {
-    return sk_binop(pSK, '-');
+    return sk_mathop(pSK, '-');
 }
 
 //-----------------------------------------------
@@ -635,7 +658,7 @@ static int sk_subtract(SKState* pSK)
 //-----------------------------------------------
 static int sk_multiply(SKState* pSK)
 {
-    return sk_binop(pSK, '*');
+    return sk_mathop(pSK, '*');
 }
 
 //-----------------------------------------------
@@ -643,7 +666,7 @@ static int sk_multiply(SKState* pSK)
 //-----------------------------------------------
 static int sk_divide(SKState* pSK)
 {
-    return sk_binop(pSK, '/');
+    return sk_mathop(pSK, '/');
 }
 
 //-----------------------------------------------
@@ -676,7 +699,7 @@ static int sk_less(SKState* pSK)
 //-----------------------------------------------
 static int sk_equalnum(SKState* pSK)
 {
-    return sk_binop(pSK, '=');
+    return sk_mathop(pSK, '=');
 }
 
 //-----------------------------------------------
@@ -879,7 +902,7 @@ static int sk_set_car(SKState* pSK)
 
     // implement set-car!
     Object *obj = vm_peek(&vm, 1);
-    if (!obj || !IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
         vm_pop(&vm); // remove values
         vm_pop(&vm);
@@ -905,7 +928,7 @@ static int sk_set_cdr(SKState* pSK)
 
     // implement set-car!
     Object *obj = vm_peek(&vm, 1);
-    if (!obj || !IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
         vm_pop(&vm); // remove values
         vm_pop(&vm);
@@ -971,13 +994,13 @@ static SKFuncSet built_in_funcs[] =
 	{ ">", sk_greater, 2 },
 	{ "<=", sk_less_equal, 2 },
 	{ ">=", sk_greater_equal, 2 },
-    { "=", sk_equalnum, 2 },
 
     // arithmetic operators
-    { "+", sk_add, 2 },
-    { "-", sk_subtract, 2 },
-    { "*", sk_multiply, 2 },
-	{ "/", sk_divide, 2 },
+    { "+", sk_add, ARITY_TWO_OR_MORE },
+    { "-", sk_subtract, ARITY_TWO_OR_MORE },
+    { "*", sk_multiply, ARITY_TWO_OR_MORE },
+	{ "/", sk_divide, ARITY_TWO_OR_MORE },
+    { "=", sk_equalnum, ARITY_TWO_OR_MORE },
 
     // { "print", sk_print },
     // { "char?", sk_charp },
