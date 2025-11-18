@@ -378,27 +378,6 @@ static int sk_error(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: define
-//-----------------------------------------------
-//int sk_define(SKState* pSK)
-//{
-//    if (!pSK) return SK_FALSE;
-//
-//    // implement define
-//    Object* obj_value = vm_peek(&vm, 0);
-//    const char* key = (const char*)vm_peek(&vm, 1);
-//
-//    Object *obj_key = vm_newString(&vm, key);
-//
-//    // Add the new global variable
-//    vm_define_global(&vm, obj_key, obj_value);
-//
-//	vm_pop(&vm);
-//    vm_pop(&vm);        // done with values
-//    return SK_TRUE;
-//}
-
-//-----------------------------------------------
 // built-in function: string?
 //-----------------------------------------------
 static int sk_stringp(SKState* pSK)
@@ -911,44 +890,56 @@ static int sk_set_cdr(SKState* pSK)
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
 {
-    { "display", sk_display },
-    { "null?", sk_nullp },
-    { "eq?", sk_eqp },
-    { "number?", sk_numberp },
-    { "boolean?", sk_booleanp },
-    { "pair?", sk_pairp },
-    { "cons", sk_cons },
-    { "not", sk_not },
-    { "car", sk_car },
-    { "cdr", sk_cdr },
-    { "exit", sk_exit },
-	{ "error", sk_error },
-    { "string?", sk_stringp },
-    { "list?", sk_listp },
-    { "gc", sk_gc },
-    { "gc-stats", sk_gc_stats },
-    { "load", sk_load },
-    { "zero?", sk_zerop },
-    { "atom?", sk_atomp },
-    { "strings", sk_strings },
-	{ "pwd", sk_pwd },
-    { "length", sk_length },
-    { "set-car!", sk_set_car },
-    { "set-cdr!", sk_set_cdr },
-    { "newline", sk_newline },
-    { "gclog", sk_gclog },
-	{ "parselog", sk_parselog },
-	{ "vmlog", sk_vmlog },
+    // I/O functions
+    { "display", sk_display, ARITY_ONE_OR_MORE },
+    { "newline", sk_newline, 0 },
+	{ "error", sk_error, ARITY_ONE_OR_MORE },
+    { "load", sk_load, 1 },
+
+    // predicate functions
+    { "null?", sk_nullp, 1 },
+    { "eq?", sk_eqp, 2},
+    { "number?", sk_numberp, 1 },
+    { "boolean?", sk_booleanp, 1 },
+    { "pair?", sk_pairp, 1},
+    { "string?", sk_stringp, 1 },
+    { "list?", sk_listp, 1 },
+    { "zero?", sk_zerop, 1 },
+    { "atom?", sk_atomp, 1 },
+
+    // list functions
+    { "length", sk_length, 1 },
+    { "set-car!", sk_set_car, 2 },
+    { "set-cdr!", sk_set_cdr, 2 },
+    { "cons", sk_cons, 2 },
+    { "not", sk_not, 1 },
+    { "car", sk_car, 1 },
+    { "cdr", sk_cdr, 1 },
+
+    { "exit", sk_exit, 0 },
+    { "gc", sk_gc, 0 },
+	{ "pwd", sk_pwd, 0 },
+
+    // logging functions
+    { "gclog", sk_gclog, 0 },
+	{ "parselog", sk_parselog, 0 },
+	{ "vmlog", sk_vmlog, 0 },
+    { "strings", sk_strings, 0 },
 	{ "globals", sk_globals },
-    { "<", sk_less },
-	{ ">", sk_greater },
-	{ "<=", sk_less_equal },
-	{ ">=", sk_greater_equal },
-    { "=", sk_equalnum },
-    { "+", sk_add },
-    { "-", sk_subtract },
-    { "*", sk_multiply },
-	{ "/", sk_divide },
+    { "gc-stats", sk_gc_stats, 0 },
+
+    // comparison operators
+    { "<", sk_less, 2 },
+	{ ">", sk_greater, 2 },
+	{ "<=", sk_less_equal, 2 },
+	{ ">=", sk_greater_equal, 2 },
+    { "=", sk_equalnum, 2 },
+
+    // arithmetic operators
+    { "+", sk_add, 2 },
+    { "-", sk_subtract, 2 },
+    { "*", sk_multiply, 2 },
+	{ "/", sk_divide, 2 },
 
     // { "print", sk_print },
     // { "char?", sk_charp },

@@ -24,12 +24,16 @@
 	#define SK_FALSE 0
 #endif
 
+#define ARITY_ANY -1
+#define ARITY_ONE_OR_MORE -2
+#define ARITY_TWO_OR_MORE -3
+
 // function set structure
 typedef struct
 {
 	char *name;
 	SKFunc func;
-	//int arity;
+	int arity;
 } SKFuncSet;
 
 // skeme state structure

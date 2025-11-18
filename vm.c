@@ -250,9 +250,23 @@ void vm_exec(VM* pvm, int addr)
         case OP_NATIVE:
         {
             VM_LOG("NATIVE FN\n");
-            SKFunc func = (SKFunc)pvm->vm_code[addr++];
-            if (func) {
-                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+            NativeFunction* proc = (NativeFunction*)pvm->vm_code[addr++];
+            SKFunc func = (SKFunc)proc->func;
+
+            if (func) 
+            {
+                int arity = proc->arity;
+                if (arity >= 0)
+                {
+                    int nargs = AS_NUM(vm_pop(pvm));
+                    if (nargs != arity)
+                    {
+                        yyerror("incorrect number of arguments to native function");
+                        // TODO - clear stack or handle error?
+                    }
+                    else
+                        func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+                }
             } else {
                 fprintf(stderr, "NULL function pointer in NATIVE call!\n");
             }

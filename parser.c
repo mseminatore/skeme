@@ -460,7 +460,10 @@ static int expr_tail()
         count++;
     }
 
-	// TODO - push number of arguments onto stack
+	// push number of arguments onto stack
+    vm_emit(&vm, OP_NUM);
+    vm_emit(&vm, count);
+
     return count;
 }
 
@@ -619,14 +622,16 @@ static int expr()
                     if (proc && proc->type == OBJ_FUNCTION)
                     {
                         expr_tail(); // parse function arguments (if any)
+
                         vm_emit(&vm, OP_CALL);
                         vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
                     }
                     else if (proc && proc->type == OBJ_NATIVE_FN)
                     {
                         expr_tail(); // parse function arguments (if any)
+
                         vm_emit(&vm, OP_NATIVE);
-                        vm_emit(&vm, (VMCode_t)((NativeFunction*)proc)->func);
+                        vm_emit(&vm, (VMCode_t)proc);
                     }
                     else
                     {
@@ -693,8 +698,8 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
         }
 
         nf->func = funcs[i].func;
-        nf->arity = -1; // TODO - set arity if needed
-
+        nf->arity = funcs[i].arity;
+    
         vm_define_global(&vm, vm_pop(&vm), native_fn);
 
         LOG("Registered built-in function '%s'\n", funcs[i].name);

@@ -54,6 +54,7 @@
 //#endif
 
 extern int g_bGCLog;
+void yyerror(const char *s);
 
 //-----------------------------
 // Define the Object structure
