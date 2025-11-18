@@ -1,8 +1,10 @@
 ; a number
-5
+; 5
 
 ; an empty list
-()
+; ()
+
+(vmlog)
 
 ; construct a pair
 (cons 1 2)

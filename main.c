@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <assert.h>
 #include "parser.h"
 #include "term_colors.h"
 
@@ -127,6 +128,7 @@ int main(int argc, char *argv[])
             {
                 sk_display(&sk);
                 puts("");
+                assert(0 == vm.sp);
                 LOG("%d items left on stack.\n", vm.sp);
             }
         }

@@ -182,6 +182,8 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_RET:
             VM_LOG("RET\n");
+			return; // TODO - hack for now
+
             // TODO - set IP to return address
             break;
 
