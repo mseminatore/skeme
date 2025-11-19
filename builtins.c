@@ -70,7 +70,7 @@ static void printObject(Object *obj)
         case OBJ_PAIR:
             {
                 Pair* pair = (Pair*)obj;
-                printf("(");
+                printf("'(");
 
                 printObject(pair->car); // display car
 
@@ -412,7 +412,7 @@ static int sk_info(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, TERM_GREEN"Inof: ");
+    fprintf(stderr, TERM_GREEN"Info: ");
     error_helper();
     return SK_TRUE;
 }
@@ -955,6 +955,7 @@ static SKFuncSet built_in_funcs[] =
     { "newline", sk_newline, 0 },
 	{ "error", sk_error, ARITY_ONE_OR_MORE },
 	{ "warn", sk_warn, ARITY_ONE_OR_MORE },
+	{ "info", sk_info, ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 
     // predicate functions
