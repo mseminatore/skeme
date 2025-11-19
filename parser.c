@@ -178,8 +178,7 @@ static int atom()
         // handle number
         PARSE_LOG("NUMBER: %d\n", yylval.ival);
 
-        vm_emit(&vm, OP_NUM);
-        vm_emit(&vm, yylval.ival);
+		vm_emit_number(&vm, yylval.ival);
         match(NUMBER);
         unindent();
         break;
@@ -188,8 +187,7 @@ static int atom()
         // handle string
         PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
 
-        vm_emit(&vm, OP_STRING);
-        vm_emit(&vm, (VMCode_t)symbols[yylval.symbol].name);
+		vm_emit_string(&vm, symbols[yylval.symbol].name);
         match(STRING);
         unindent();
         break;
@@ -197,8 +195,7 @@ static int atom()
     case NIL:
         PARSE_LOG("NIL\n");
 
-        vm_emit(&vm, OP_PUSH);
-        vm_emit(&vm, (VMCode_t)NULL);
+		vm_emit_object(&vm, NULL);
         match(NIL);
         unindent();
         break;
@@ -212,8 +209,7 @@ static int atom()
             match(ID);
             if (key)
             {
-                vm_emit(&vm, OP_PUSH);
-                vm_emit(&vm, (VMCode_t)key);
+                vm_emit_object(&vm, key);
                 vm_emit(&vm, OP_LOAD);
             }
             else
@@ -231,8 +227,20 @@ static int atom()
 //-----------------------------------------------
 //  <formals> ==> (<variable>*) | <variable>
 //-----------------------------------------------
-static int formals()
+static int formals(Procedure* proc)
 {
+	PARSE_LOG("formals(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+
+    int arity = 0;
+    while (lookahead == ID)
+    {
+        match(ID);
+        arity++;
+    }
+    if (proc)
+        proc->arity = arity;
+	
+    unindent();
     return 0;
 }
 
@@ -243,7 +251,11 @@ static int formals()
 //-----------------------------------------------
 static int local_body()
 {
+	PARSE_LOG("local_body(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    
     expr();
+
+	unindent();
     return 0;
 }
 
@@ -266,7 +278,10 @@ static int definition()
         
         // function name
         Object* proc_name = vm_new_string(&vm, yylval.word);
-        Object* proc_obj = vm_new_proc(&vm);
+		vm_push(&vm, proc_name);                    // stash function name on stack in case of GC
+            Object* proc_obj = vm_new_proc(&vm);
+		vm_pop(&vm);                                // remove function name from stack
+
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
         if (proc)
             proc->addr = vm.vm_code_ptr; // save address of function code
@@ -275,14 +290,7 @@ static int definition()
         match(ID);
 		
         // parameters
-        int arity = 0;
-        while (lookahead == ID)
-        {
-			match(ID);
-			arity++;
-		}
-        if (proc)
-            proc->arity = arity;
+        formals(proc);
 
         // TODO - emit code to create stack frame and store parameters
 
@@ -298,9 +306,8 @@ static int definition()
     {
 		// variable definition
         Object* key = vm_new_string(&vm, yylval.word);
-        vm_define_global(&vm, key, NULL);
-        vm_emit(&vm, OP_PUSH);
-        vm_emit(&vm, (VMCode_t)key);
+		vm_define_global(&vm, key, NULL);   // needs to be in global table before expr() in case of GC
+        vm_emit_object(&vm, key);
 
         match(ID);
         expr();
@@ -342,8 +349,7 @@ static int parse_list()
         nargs++;
     }
 
-    vm_emit(&vm, OP_NUM);
-    vm_emit(&vm, nargs);
+    vm_emit_number(&vm, nargs);
     vm_emit(&vm, OP_LIST);
 
     unindent();
@@ -371,8 +377,7 @@ static int set()
 
     if (key)
     {
-        vm_emit(&vm, OP_PUSH);
-        vm_emit(&vm, (VMCode_t)key);
+        vm_emit_object(&vm, key);
         expr();
         vm_emit(&vm, OP_STORE);
     }
@@ -461,8 +466,7 @@ static int expr_tail()
     }
 
 	// push number of arguments onto stack
-    vm_emit(&vm, OP_NUM);
-    vm_emit(&vm, count);
+    vm_emit_number(&vm, count);
 
     return count;
 }
@@ -479,8 +483,7 @@ static int and_expr()
 
     match(AND);
 
-    vm_emit(&vm, OP_PUSH);   // push a dummy nil value onto the stack
-    vm_emit(&vm, (VMCode_t)NULL);
+    vm_emit_object(&vm, NULL);  // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {
@@ -525,8 +528,7 @@ static int or_expr()
 
     match(OR);
 
-    vm_emit(&vm, OP_PUSH);   // push a dummy nil value onto the stack
-    vm_emit(&vm, (VMCode_t)NULL);
+    vm_emit_object(&vm, NULL);      // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {

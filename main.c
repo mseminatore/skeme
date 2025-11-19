@@ -118,9 +118,6 @@ int main(int argc, char *argv[])
             vm_reset(&vm);  // TODO - maybe we don't want to throw away everything each time?
 
             printf(PROMPT);
-            // yyin = stdin;
-            // lineno = 1;
-            // CURRENT_LINENO = 1;
 
             sk_parse();
             vm_exec(&vm, 0);

@@ -106,6 +106,33 @@ void vm_emit(VM* pvm, VMCode_t opcode)
 }
 
 //--------------------------------------------------------------
+// Emit a numeric value as bytecode
+//--------------------------------------------------------------
+void vm_emit_number(VM* pvm, int val)
+{
+    vm_emit(pvm, OP_NUM);
+    vm_emit(pvm, (VMCode_t)val);
+}
+
+//--------------------------------------------------------------
+// Emit a string value as bytecode
+//--------------------------------------------------------------
+void vm_emit_string(VM* pvm, const char* str)
+{
+    vm_emit(pvm, OP_STRING);
+    vm_emit(pvm, (VMCode_t)str);
+}
+
+//--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+void vm_emit_object(VM* pvm, Object* obj)
+{
+    vm_emit(pvm, OP_PUSH);
+    vm_emit(pvm, (VMCode_t)obj);
+}
+
+//--------------------------------------------------------------
 // Clear the VM code buffer
 //--------------------------------------------------------------
 void vm_clear_code(VM* pvm)

@@ -200,8 +200,10 @@ Object* vm_get_string(VM* pvm, const char* str);
 
 // code generation and execution
 void vm_emit(VM* pvm, VMCode_t opcode);
-//void vm_emit_num(VM* pvm, int val);
-//void vm_emit_string(VM* pvm, const char *str);
+void vm_emit_number(VM* pvm, int val);
+void vm_emit_string(VM* pvm, const char *str);
+void vm_emit_object(VM* pvm, Object* obj);
+
 void vm_exec(VM* pvm, int addr);
 int vm_clear_stack(VM* pvm);
 void vm_clear_code(VM* pvm);
