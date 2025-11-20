@@ -411,6 +411,14 @@ static void freeObject(VM* pvm, Object* object)
 	// clean up based on object type
     switch (OBJ_TYPE(object))
     {
+    case OBJ_FUNCTION:
+        {
+            // free function-specific resources
+            Procedure * proc = (Procedure*)object;
+			vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
+        }
+		break;
+
     default:
         // nothing to do!
         break;
@@ -738,6 +746,17 @@ Object *vm_new_string(VM* pvm, const char* str)
 }
 
 //--------------------------------------------------------------
+// Initialize a code chunk
+//--------------------------------------------------------------
+static void init_chunk(CodeChunk* chunk)
+{
+    chunk->count = 0;
+    chunk->capacity = 0;
+    chunk->code = NULL;
+    //chunk->lines = NULL;
+}
+
+//--------------------------------------------------------------
 // Create a new procedure object
 //--------------------------------------------------------------
 Object* vm_new_proc(VM* pvm)
@@ -753,6 +772,8 @@ Object* vm_new_proc(VM* pvm)
 
     proc->arity = 0;
     proc->addr = 0;
+
+	init_chunk(&proc->chunk);
 
     return obj;
 }

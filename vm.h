@@ -141,6 +141,7 @@ typedef struct String {
 typedef struct Procedure {
     Object base;        // base object
 	int arity;          // number of arguments
+	CodeChunk chunk;    // code chunk
     VMCode_t addr;      // address of the function code
 } Procedure;
 
