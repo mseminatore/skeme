@@ -168,7 +168,7 @@ void vm_exec(VM* pvm, int addr)
         return;
     }
 
-    VM_LOG("\n---- VM Execution Start ----\n");
+    VM_LOG("\n---- VM Execution Trace ----\n");
 
     while(1)
     {
@@ -195,12 +195,12 @@ void vm_exec(VM* pvm, int addr)
 			break;
 
         case OP_NUM:
-            VM_LOG("NUM %zu\n", pvm->vm_code[addr]);
+            VM_LOG("PUSH NUM %zu\n", pvm->vm_code[addr]);
             vm_push(pvm, MAKE_NUM(pvm->vm_code[addr++]));
             break;
 
         case OP_STRING:
-            VM_LOG("STRING '%s'\n", (const char*)pvm->vm_code[addr]);
+            VM_LOG("PUSH STRING '%s'\n", (const char*)pvm->vm_code[addr]);
             obj = vm_new_string(pvm, (const char*)pvm->vm_code[addr++]);
             vm_push(pvm, obj);
             break;
@@ -217,12 +217,12 @@ void vm_exec(VM* pvm, int addr)
             return;
 
         case OP_TRUE:
-            VM_LOG("TRUE\n");
+            VM_LOG("PUSH TRUE\n");
             vm_pushBoolean(pvm, TRUE);
             break;
 
         case OP_FALSE:
-            VM_LOG("FALSE\n");
+            VM_LOG("PUSH FALSE\n");
             vm_pushBoolean(pvm, FALSE);
             break;
 
