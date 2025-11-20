@@ -114,6 +114,13 @@ enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
 // opcode type
 typedef intptr_t VMCode_t;
 
+// code chunk structure
+typedef struct CodeChunk {
+    VMCode_t* code;
+    size_t count;
+    size_t capacity;
+} CodeChunk;
+
 // pair object
 typedef struct Pair {
 	Object base;    // base object
