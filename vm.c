@@ -156,7 +156,83 @@ int vm_reset(VM* pvm)
 //---------------------------------------------------------------
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 {
-
+    for (int i = 0; i < chunk->count; i++)
+    {
+        VMCode_t instruction = chunk->code[i];
+        printf("%04d ", i);
+        switch (instruction)
+        {
+        case OP_PUSH:
+            printf("OP_PUSH\n");
+            i++;
+            printf("       %p\n", (Object*)chunk->code[i]);
+            break;
+        case OP_POP:
+            printf("OP_POP\n");
+            break;
+        case OP_NUM:
+            printf("OP_NUM\n");
+            i++;
+            printf("       %d\n", (int)chunk->code[i]);
+            break;
+        case OP_STRING:
+            printf("OP_STRING\n");
+            i++;
+            printf("       '%s'\n", (const char*)chunk->code[i]);
+            break;
+        case OP_TRUE:
+            printf("OP_TRUE\n");
+            break;
+        case OP_FALSE:
+            printf("OP_FALSE\n");
+            break;
+        case OP_STORE:
+            printf("OP_STORE\n");
+            break;
+        case OP_LOAD:
+            printf("OP_LOAD\n");
+            break;
+        case OP_DUP:
+            printf("OP_DUP\n");
+            break;
+        case OP_FN:
+            printf("OP_FN\n");
+            break;
+        case OP_NATIVE:
+            printf("OP_NATIVE\n");
+            break;
+        case OP_RET:
+            printf("OP_RET\n");
+            break;
+        case OP_CALL:
+            printf("OP_CALL\n");
+            break;
+        case OP_GOTO:
+            printf("OP_GOTO\n");
+            i++;
+            printf("       %04d\n", (int)chunk->code[i]);
+            break;
+        case OP_BNT:
+            printf("OP_BNT\n");
+            i++;
+            printf("       %04d\n", (int)chunk->code[i]);
+            break;
+        case OP_BNF:
+            printf("OP_BNF\n");
+            i++;
+            printf("       %04d\n", (int)chunk->code[i]);
+            break;
+        case OP_HALT:
+            printf("OP_HALT\n");
+            break;
+        case OP_LIST:
+            printf("OP_LIST\n");
+            break;
+        default:
+            printf("Unknown opcode: %ld\n", instruction);
+            break;
+        }
+    }
 }
 
 //---------------------------------------------------------------
