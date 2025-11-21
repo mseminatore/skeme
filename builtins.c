@@ -93,8 +93,11 @@ static void printObject(Object *obj)
 			break;
 
         case OBJ_FUNCTION:
-        case OBJ_NATIVE_FN:
             printf("#<procedure>");
+			break;
+
+        case OBJ_NATIVE_FN:
+            printf("#<native_fn>");
 			break;
 
    //     case OBJ_BUILTIN_FN:
@@ -946,6 +949,26 @@ static int sk_set_cdr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: disasm
+//-----------------------------------------------
+static int sk_disasm(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&vm);
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_FUNCTION)
+    {
+        yyerror("argument to 'disasm' is not a function");
+        return SK_FALSE;
+    }
+
+    Procedure* proc = (Procedure*)obj;
+    vm_disassemble_chunk(&vm, &proc->chunk, "function");
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1002,6 +1025,8 @@ static SKFuncSet built_in_funcs[] =
     { "*", sk_multiply, ARITY_TWO_OR_MORE },
 	{ "/", sk_divide, ARITY_TWO_OR_MORE },
     { "=", sk_equalnum, ARITY_TWO_OR_MORE },
+
+    { "disasm", sk_disasm, 1 },
 
     // { "print", sk_print },
     // { "char?", sk_charp },

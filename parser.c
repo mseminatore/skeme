@@ -38,7 +38,7 @@ static int indent()
         fprintf(stderr, "  ");
     }
     
-	fprintf(stderr, "|- ");
+	fprintf(stderr, "|_ ");
     indent_level++;
     return 1;
 }

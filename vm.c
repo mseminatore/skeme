@@ -152,6 +152,14 @@ int vm_reset(VM* pvm)
 }
 
 //---------------------------------------------------------------
+// Disassemble a code chunk for debugging
+//---------------------------------------------------------------
+void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
+{
+
+}
+
+//---------------------------------------------------------------
 // Execute the VM code starting from the given address
 //---------------------------------------------------------------
 void vm_exec(VM* pvm, int addr)
