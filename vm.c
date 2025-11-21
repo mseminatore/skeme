@@ -27,6 +27,8 @@ int vm_init(VM* pvm) {
     CHECK_THAT(pvm != NULL);
 
     pvm->sp = 0;
+    pvm->ip = 0;
+    pvm->return_sp = 0;
     pvm->head = NULL;
     pvm->numObjects = 0;
     pvm->nextGC = VM_INITIAL_GC_THRESHOLD; // initial threshold

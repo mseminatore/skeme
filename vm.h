@@ -178,6 +178,9 @@ typedef struct VM {
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings
 
+    VMCode_t return_addresses[VM_STACK_SIZE]; // Return address stack
+    int return_sp;                        // Return address stack pointer
+    
     int grayCount;
     int grayCapacity;
     Object** grayStack;
