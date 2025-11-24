@@ -500,7 +500,7 @@ static int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, "\tLive objects: %zu (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\tGC passes: %zu\n\tNext GC at %zu bytes\n",
+    fprintf(stderr, "\t Live objects: %zu (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\t    GC passes: %zu\n\t   Next GC at: %zu bytes\n",
         vm.numObjects,
         vm.peakObjects,
         vm.allocatedBytes,

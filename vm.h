@@ -110,7 +110,7 @@ enum
 
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
-    OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF,
+    OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF,
     OP_LIST
 };
 
@@ -142,7 +142,6 @@ typedef struct Procedure {
     Object base;        // base object
 	int arity;          // number of arguments
 	CodeChunk chunk;    // code chunk
-    //VMCode_t addr;      // address of the function code
     //Object *name;      // function name
 } Procedure;
 

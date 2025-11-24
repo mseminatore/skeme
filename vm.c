@@ -214,7 +214,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 
     VMCode_t* ip = chunk->code;
 
-    for (; ip < &chunk->code[chunk->count]; ip++)
+    for (; ip < &chunk->code[chunk->count];)
     {
         printf("%p ", ip);
         VMCode_t instruction = *ip++;
@@ -230,7 +230,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_NUM:
-            printf("NUM %zd\n", *ip++);
+            printf("PUSH NUM %zd\n", *ip++);
             break;
 
         case OP_STRING:
@@ -258,7 +258,8 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_NATIVE:
-            printf("NATIVE FN\n");
+            printf("CALL NATIVE FN\n");
+            ip++;  // skip native function pointer
             break;
 
         case OP_RET:
@@ -266,8 +267,11 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_CALL:
-            printf("CALL %p\n", (VMCode_t*)*ip);
+        {
+            Procedure* proc = (Procedure*)*ip;
+            printf("CALL %p\n", proc->chunk.code);
             ip++;
+        }
             break;
 
         case OP_GOTO:
@@ -376,11 +380,10 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_CALL:
         {
-            VM_LOG("CALL %p\n", (VMCode_t*)*pvm->ip);
             Procedure* proc = (Procedure*)*pvm->ip;
+            VM_LOG("CALL %p\n", proc->chunk.code);
 
             Object* n = vm_pop(pvm);
-
         	int nargs = AS_NUM(n);
 
             if (proc->arity != nargs)
@@ -437,7 +440,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_NATIVE:
         {
-            VM_LOG("NATIVE FN\n");
+            VM_LOG("CALL NATIVE FN\n");
             NativeFunction* proc = (NativeFunction*)*pvm->ip++;
             SKFunc func = (SKFunc)proc->func;
 
@@ -486,7 +489,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_LIST:
         {
-            VM_LOG("MAKELIST\n");
+            VM_LOG("MAKE_LIST\n");
             Pair* alist = NULL;
             Pair* pair = NULL;
 
