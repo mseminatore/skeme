@@ -117,7 +117,7 @@ int vm_clear_stack(VM* pvm)
 }
 
 //--------------------------------------------------------------
-//
+// Get the current instruction pointer in the current code chunk
 //--------------------------------------------------------------
 VMCode_t* vm_get_chunk_ip()
 {
@@ -129,14 +129,6 @@ VMCode_t* vm_get_chunk_ip()
 //--------------------------------------------------------------
 VMCode_t *vm_emit(VM* pvm, VMCode_t opcode)
 {
-#if 0
-    if (pvm->vm_code_ptr >= VM_MAX_CODE) {
-        fprintf(stderr, "VM code buffer overflow!\n");
-        exit(1);
-    }
-
-    pvm->vm_code[pvm->vm_code_ptr++] = opcode;
-#else
     if (g_current_chunk == NULL) {
 		fprintf(stderr, "No current code chunk set for VM emit!\n");
 		exit(1);
@@ -163,7 +155,6 @@ VMCode_t *vm_emit(VM* pvm, VMCode_t opcode)
 	}
 	chunk->lines.data[chunk->count - 1] = line;
 	*/
-#endif
 }
 
 //--------------------------------------------------------------
@@ -185,7 +176,7 @@ void vm_emit_string(VM* pvm, const char* str)
 }
 
 //--------------------------------------------------------------
-//
+// Emit an object as bytecode
 //--------------------------------------------------------------
 void vm_emit_object(VM* pvm, Object* obj)
 {
@@ -219,80 +210,88 @@ int vm_reset(VM* pvm)
 //---------------------------------------------------------------
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 {
-    for (int i = 0; i < chunk->count; i++)
+    printf("== Disassembly of %s ==\n", name);
+
+    VMCode_t* ip = chunk->code;
+
+    for (; ip < &chunk->code[chunk->count]; ip++)
     {
-        VMCode_t instruction = chunk->code[i];
-        printf("%04d ", i);
+        printf("%p ", ip);
+        VMCode_t instruction = *ip++;
+
         switch (instruction)
         {
         case OP_PUSH:
-            printf("OP_PUSH\n");
-            i++;
-            printf("       %p\n", (Object*)chunk->code[i]);
+            printf("PUSH %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_POP:
-            printf("OP_POP\n");
+            printf("POP\n");
             break;
+
         case OP_NUM:
-            printf("OP_NUM\n");
-            i++;
-            printf("       %d\n", (int)chunk->code[i]);
+            printf("NUM %zd\n", *ip++);
             break;
+
         case OP_STRING:
-            printf("OP_STRING\n");
-            i++;
-            printf("       '%s'\n", (const char*)chunk->code[i]);
+            printf("STRING '%s'\n", (const char*)*ip++);
             break;
+
         case OP_TRUE:
-            printf("OP_TRUE\n");
+            printf("PUSH TRUE\n");
             break;
+
         case OP_FALSE:
-            printf("OP_FALSE\n");
+            printf("PUSH FALSE\n");
             break;
+
         case OP_STORE:
-            printf("OP_STORE\n");
+            printf("STORE\n");
             break;
+
         case OP_LOAD:
-            printf("OP_LOAD\n");
+            printf("LOAD\n");
             break;
+
         case OP_DUP:
-            printf("OP_DUP\n");
+            printf("DUP\n");
             break;
-        case OP_FN:
-            printf("OP_FN\n");
-            break;
+
         case OP_NATIVE:
-            printf("OP_NATIVE\n");
+            printf("NATIVE FN\n");
             break;
+
         case OP_RET:
-            printf("OP_RET\n");
+            printf("RET\n");
             break;
+
         case OP_CALL:
-            printf("OP_CALL\n");
+            printf("CALL %p\n", (VMCode_t*)*ip);
+            ip++;
             break;
+
         case OP_GOTO:
-            printf("OP_GOTO\n");
-            i++;
-            printf("       %p\n", (VMCode_t*)chunk->code[i]);
+            printf("GOTO %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_BNT:
-            printf("OP_BNT\n");
-            i++;
-            printf("       %p\n", (VMCode_t*)chunk->code[i]);
+            printf("BNT %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_BNF:
-            printf("OP_BNF\n");
-            i++;
-            printf("       %p\n", (VMCode_t*)chunk->code[i]);
+            printf("BNF %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_HALT:
-            printf("OP_HALT\n");
+            printf("HALT\n");
             break;
+
         case OP_LIST:
-            printf("OP_LIST\n");
+            printf("MAKE_LIST\n");
             break;
+
         default:
-            printf("Unknown opcode: %zd\n", instruction);
+            printf("Unknown opcode: %zd\n", (VMCode_t)*ip++);
             break;
         }
     }
