@@ -109,8 +109,8 @@ enum
 };
 
 // opcode definitions
-enum { OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
-    OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF, OP_HALT,
+enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
+    OP_LOAD, OP_FN, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF,
     OP_LIST
 };
 
@@ -142,7 +142,8 @@ typedef struct Procedure {
     Object base;        // base object
 	int arity;          // number of arguments
 	CodeChunk chunk;    // code chunk
-    VMCode_t addr;      // address of the function code
+    //VMCode_t addr;      // address of the function code
+    //Object *name;      // function name
 } Procedure;
 
 // native function object
@@ -150,7 +151,14 @@ typedef struct NativeFunction {
     Object base;       // base object
     SKFunc func;       // pointer to native function
     int arity;         // number of arguments
+    //Object *name;      // function name
 } NativeFunction;
+
+// environment object
+typedef struct Environment {
+    Object base;            // base object
+    //HashTable env;
+} Environment;
 
 // closure object
 typedef struct Closure {
@@ -162,7 +170,7 @@ typedef struct Closure {
 // Define the VM structure
 typedef struct VM {
 	int sp;                         // Stack pointer should be size_t or uint
-    VMCode_t ip;                    // Instruction pointer
+    VMCode_t *ip;                   // Instruction pointer
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
     size_t numObjects;              // Number of allocated objects should be size_t
@@ -172,13 +180,13 @@ typedef struct VM {
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
 
-    int vm_code_ptr;
-    VMCode_t vm_code[VM_MAX_CODE];
+    //int vm_code_ptr;
+    //VMCode_t vm_code[VM_MAX_CODE];
 
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings
 
-    VMCode_t return_addresses[VM_STACK_SIZE]; // Return address stack
+    VMCode_t *return_stack[VM_STACK_SIZE]; // Return address stack
     int return_sp;                        // Return address stack pointer
     
     int grayCount;
@@ -213,16 +221,23 @@ Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
 
 // code generation and execution
-void vm_emit(VM* pvm, VMCode_t opcode);
+VMCode_t* vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
 void vm_emit_object(VM* pvm, Object* obj);
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
+CodeChunk* vm_get_current_chunk();
+CodeChunk* vm_set_current_chunk(CodeChunk* chunk);
+void vm_init_chunk(CodeChunk* chunk);
+void vm_free_chunk(VM* pvm, CodeChunk* chunk);
+VMCode_t* vm_get_chunk_ip();
 
-void vm_exec(VM* pvm, int addr);
+void vm_exec(VM* pvm, VMCode_t *addr);
 int vm_clear_stack(VM* pvm);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
+void vm_push_ip(VM* pvm, VMCode_t* ip);
+VMCode_t* vm_pop_ip(VM* pvm);
 
 // global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);

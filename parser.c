@@ -237,6 +237,7 @@ static int formals(Procedure* proc)
         match(ID);
         arity++;
     }
+
     if (proc)
         proc->arity = arity;
 	
@@ -283,8 +284,8 @@ static int definition()
 		vm_pop(&vm);                                // remove function name from stack
 
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
-        if (proc)
-            proc->addr = vm.vm_code_ptr; // save address of function code
+
+        CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
         vm_define_global(&vm, proc_name, proc_obj);
         match(ID);
@@ -301,6 +302,7 @@ static int definition()
 
         // return from function
         vm_emit(&vm, OP_RET);
+        vm_set_current_chunk(prev_chunk);
 	}
     else
     {
@@ -399,12 +401,12 @@ static int if_expr()
 
     expr();                                     // condition
 	vm_emit(&vm, OP_BNT);                       // branch if not true
-	VMCode_t else_addr = vm.vm_code_ptr++;      // reserve space for else clause address
+	VMCode_t *else_addr = vm_emit(&vm, 0);      // reserve space for else clause address
 
     expr();                                     // then branch expression
 	vm_emit(&vm, OP_GOTO);                      // jump to endif
-    VMCode_t endif_addr = vm.vm_code_ptr++;     // reserve space for endif address
-    vm.vm_code[else_addr] = vm.vm_code_ptr;     // backpatch BNT address
+    VMCode_t *endif_addr = vm_emit(&vm, 0);     // reserve space for endif address
+    *else_addr = (VMCode_t)vm_get_chunk_ip();             // backpatch BNT address
 
 #ifdef IF_ELSE_REQUIRED
     expr();                                     // else branch expression
@@ -415,7 +417,7 @@ static int if_expr()
     }
 #endif
 
-    vm.vm_code[endif_addr] = vm.vm_code_ptr;    // backpatch GOTO endif address
+    *endif_addr = (VMCode_t)vm_get_chunk_ip();         // backpatch GOTO endif address
 
     unindent();
     return 0;
@@ -434,9 +436,9 @@ static int cond_expr()
     {
         match('(');
 
-        expr(); // test/condition
+        expr();                                     // test/condition
         vm_emit(&vm, OP_BNT);                       // branch if not true
-		VMCode_t next_addr = vm.vm_code_ptr++;      // reserve space for next clause address
+		VMCode_t *next_addr = vm_emit(&vm, 0);      // reserve space for next clause address
 
         expr(); // action/consequence
 
@@ -445,7 +447,7 @@ static int cond_expr()
 
         match(')');
 
-        vm.vm_code[next_addr] = vm.vm_code_ptr;     // backpatch BNT address
+        *next_addr = (VMCode_t)vm_get_chunk_ip();     // backpatch BNT address
     }
 
     unindent();
@@ -477,7 +479,7 @@ static int expr_tail()
 static int and_expr()
 {
     PARSE_LOG("and_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
-    int addr_list[MAX_REL_CLAUSES];
+    VMCode_t* addr_list[MAX_REL_CLAUSES];
 
     int terms = 0;
 
@@ -494,7 +496,7 @@ static int and_expr()
         vm_emit(&vm, OP_DUP);       // duplicate the value for testing
 		vm_emit(&vm, OP_BNT);       // if any term is false, branch to end
 
-        addr_list[terms++] = vm.vm_code_ptr++;      // reserve space for branch address
+        addr_list[terms++] = vm_emit(&vm, 0);      // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'and' expression");
@@ -508,7 +510,7 @@ static int and_expr()
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
     {
-        vm.vm_code[addr_list[i]] = vm.vm_code_ptr;
+        *addr_list[i] = (VMCode_t)vm_get_chunk_ip();
     }
 
     vm_emit(&vm, OP_POP);  // pop the duplicated value
@@ -522,7 +524,7 @@ static int and_expr()
 static int or_expr()
 {
     PARSE_LOG("or_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
-    int addr_list[MAX_REL_CLAUSES];
+    VMCode_t* addr_list[MAX_REL_CLAUSES];
 
     int terms = 0;
 
@@ -539,7 +541,7 @@ static int or_expr()
         vm_emit(&vm, OP_DUP);       // duplicate the value for testing
 		vm_emit(&vm, OP_BNF);       // if any term is not false, branch to end
 
-        addr_list[terms++] = vm.vm_code_ptr++;  // reserve space for branch address
+        addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'or' expression");
@@ -553,7 +555,7 @@ static int or_expr()
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
     {
-        vm.vm_code[addr_list[i]] = vm.vm_code_ptr;
+        *addr_list[i] = (VMCode_t)vm_get_chunk_ip();
     }
 
     // return last expr value
@@ -626,7 +628,7 @@ static int expr()
                         expr_tail(); // parse function arguments (if any)
 
                         vm_emit(&vm, OP_CALL);
-                        vm_emit(&vm, (VMCode_t)((Procedure*)proc)->addr);
+                        vm_emit(&vm, (VMCode_t)proc);
                     }
                     else if (proc && proc->type == OBJ_NATIVE_FN)
                     {
