@@ -142,7 +142,7 @@ typedef struct Procedure {
     Object base;        // base object
 	int arity;          // number of arguments
 	CodeChunk chunk;    // code chunk
-    //Object *name;      // function name
+    Object *name;      // function name
 } Procedure;
 
 // native function object
@@ -150,7 +150,7 @@ typedef struct NativeFunction {
     Object base;       // base object
     SKFunc func;       // pointer to native function
     int arity;         // number of arguments
-    //Object *name;      // function name
+    Object *name;      // function name
 } NativeFunction;
 
 // environment object

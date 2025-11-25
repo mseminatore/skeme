@@ -284,6 +284,7 @@ static int definition()
 		vm_pop(&vm);                                // remove function name from stack
 
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
+        proc->name = proc_name;               // set function name
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
@@ -464,7 +465,7 @@ static int cond_expr()
             // backpatch BNT address
             vm_get_current_chunk()->code[next_addr] = vm_get_current_chunk()->count - next_addr;
         }
-        
+
         match(')');
     }
 
@@ -733,7 +734,8 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 
         nf->func = funcs[i].func;
         nf->arity = funcs[i].arity;
-    
+        nf->name = key;
+        
         vm_define_global(&vm, vm_pop(&vm), native_fn);
 
         LOG("Registered built-in function '%s'\n", funcs[i].name);

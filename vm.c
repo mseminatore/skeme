@@ -258,7 +258,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_NATIVE:
-            printf("CALL NATIVE FN\n");
+            printf("CALL NATIVE FN '%s'\n", ((String*)((NativeFunction*)*ip)->name)->value);
             ip++;  // skip native function pointer
             break;
 
@@ -269,7 +269,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         case OP_CALL:
         {
             Procedure* proc = (Procedure*)*ip;
-            printf("CALL %p\n", proc->chunk.code);
+            printf("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
             ip++;
         }
             break;
@@ -385,7 +385,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         case OP_CALL:
         {
             Procedure* proc = (Procedure*)*pvm->ip;
-            VM_LOG("CALL %p\n", proc->chunk.code);
+            VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
 
             Object* n = vm_pop(pvm);
         	int nargs = AS_NUM(n);
@@ -449,8 +449,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_NATIVE:
         {
-            VM_LOG("CALL NATIVE FN\n");
             NativeFunction* proc = (NativeFunction*)*pvm->ip++;
+            VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
             SKFunc func = (SKFunc)proc->func;
 
             if (func) 
@@ -661,7 +661,27 @@ static void blackenObject(VM* pvm, Object* object)
         break;
 
     case OBJ_NATIVE_FN:
-        // Native functions have no references to mark
+        {
+            NativeFunction* nativeFn = (NativeFunction*)object;
+
+            // mark the function name
+            markObject(pvm, nativeFn->name);
+
+            // If the native function has any references, mark them here
+            // (not implemented here as NativeFunction does not hold Object references)
+        }
+        break;
+
+    case OBJ_FUNCTION:
+        {
+            Procedure* proc = (Procedure*)object;
+
+            // mark the function's name
+            markObject(pvm, proc->name);
+
+            // mark any constants or references in the function's code chunk if needed
+            // (not implemented here as CodeChunk does not hold Object references)
+        }
         break;
 
     default:
