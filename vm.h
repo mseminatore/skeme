@@ -110,7 +110,7 @@ enum
 
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
-    OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF,
+    OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_GOTO, OP_BNT, OP_BNF, OP_NOP,
     OP_LIST
 };
 
@@ -220,7 +220,7 @@ Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
 
 // code generation and execution
-VMCode_t* vm_emit(VM* pvm, VMCode_t opcode);
+int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
 void vm_emit_object(VM* pvm, Object* obj);

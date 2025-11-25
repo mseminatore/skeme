@@ -401,12 +401,12 @@ static int if_expr()
 
     expr();                                     // condition
 	vm_emit(&vm, OP_BNT);                       // branch if not true
-	VMCode_t *else_addr = vm_emit(&vm, 0);      // reserve space for else clause address
+	int else_addr = vm_emit(&vm, 0);      // reserve space for else clause address
 
     expr();                                     // then branch expression
 	vm_emit(&vm, OP_GOTO);                      // jump to endif
-    VMCode_t *endif_addr = vm_emit(&vm, 0);     // reserve space for endif address
-    *else_addr = (VMCode_t)vm_get_chunk_ip();             // backpatch BNT address
+    int endif_addr = vm_emit(&vm, 0);     // reserve space for endif address
+    vm_get_current_chunk()->code[else_addr] = vm_get_current_chunk()->count - else_addr;
 
 #ifdef IF_ELSE_REQUIRED
     expr();                                     // else branch expression
@@ -417,7 +417,8 @@ static int if_expr()
     }
 #endif
 
-    *endif_addr = (VMCode_t)vm_get_chunk_ip();         // backpatch GOTO endif address
+    // backpatch BNT address
+    vm_get_current_chunk()->code[endif_addr] = vm_get_current_chunk()->count - endif_addr;
 
     unindent();
     return 0;
@@ -429,6 +430,8 @@ static int if_expr()
 static int cond_expr()
 {
     PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    int addr_list[MAX_REL_CLAUSES];
+    int terms = 0;
 
     match(COND);
 
@@ -438,16 +441,29 @@ static int cond_expr()
 
         expr();                                     // test/condition
         vm_emit(&vm, OP_BNT);                       // branch if not true
-		VMCode_t *next_addr = vm_emit(&vm, 0);      // reserve space for next clause address
+		int next_addr = vm_emit(&vm, 0);      // reserve space for next clause address
 
         expr(); // action/consequence
 
         // return last expr value
-		vm_emit(&vm, OP_RET);  // return from function
+        vm_emit(&vm, OP_GOTO);                      // jump to end
+        addr_list[terms++] = vm_emit(&vm, 0);     // reserve space for endif address
+        if (terms >= MAX_REL_CLAUSES)
+        {
+            yyerror("too many terms in 'and' expression");
+            break;
+        }
 
         match(')');
 
-        *next_addr = (VMCode_t)vm_get_chunk_ip();     // backpatch BNT address
+        // backpatch BNT address
+        vm_get_current_chunk()->code[next_addr] = vm_get_current_chunk()->count - next_addr;
+    }
+
+    // backpatch GOTO address
+    for (int i = 0; i < terms; i++)
+    {
+        vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
     }
 
     unindent();
@@ -479,8 +495,7 @@ static int expr_tail()
 static int and_expr()
 {
     PARSE_LOG("and_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
-    VMCode_t* addr_list[MAX_REL_CLAUSES];
-
+    int addr_list[MAX_REL_CLAUSES];
     int terms = 0;
 
     match(AND);
@@ -505,16 +520,21 @@ static int and_expr()
     }
 
 	// return last expr value
-	vm_emit(&vm, OP_RET);  // return from function
+	vm_emit(&vm, OP_GOTO);
+    int end_addr = vm_emit(&vm, 0);     // reserve space for end address
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
     {
-        *addr_list[i] = (VMCode_t)vm_get_chunk_ip();
+        vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
     }
 
     vm_emit(&vm, OP_POP);  // pop the duplicated value
     vm_emit(&vm, OP_FALSE);
+
+    vm_get_current_chunk()->code[end_addr] = vm_get_current_chunk()->count - end_addr;
+    vm_emit(&vm, OP_NOP);
+
     return 0;
 }
 
@@ -524,7 +544,7 @@ static int and_expr()
 static int or_expr()
 {
     PARSE_LOG("or_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
-    VMCode_t* addr_list[MAX_REL_CLAUSES];
+    int addr_list[MAX_REL_CLAUSES];
 
     int terms = 0;
 
@@ -549,14 +569,16 @@ static int or_expr()
         }
     }
 
-	vm_emit(&vm, OP_FALSE);
-	vm_emit(&vm, OP_RET);      // return from function
+    vm_emit(&vm, OP_POP);      // discard the duplicated value
+    vm_emit(&vm, OP_FALSE);
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
     {
-        *addr_list[i] = (VMCode_t)vm_get_chunk_ip();
+        vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
     }
+
+    vm_emit(&vm, OP_NOP);
 
     // return last expr value
     return 0;

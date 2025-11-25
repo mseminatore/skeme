@@ -121,13 +121,13 @@ int vm_clear_stack(VM* pvm)
 //--------------------------------------------------------------
 VMCode_t* vm_get_chunk_ip()
 {
-	return &(g_current_chunk->code[g_current_chunk->count]);
+	return &(g_current_chunk->code[g_current_chunk->count-1]);
 }
 
 //--------------------------------------------------------------
 // Emit a bytecode instruction
 //--------------------------------------------------------------
-VMCode_t *vm_emit(VM* pvm, VMCode_t opcode)
+int vm_emit(VM* pvm, VMCode_t opcode)
 {
     if (g_current_chunk == NULL) {
 		fprintf(stderr, "No current code chunk set for VM emit!\n");
@@ -144,7 +144,7 @@ VMCode_t *vm_emit(VM* pvm, VMCode_t opcode)
 	}
 
 	chunk->code[chunk->count++] = opcode;
-    return &chunk->code[chunk->count-1];
+    return chunk->count-1;
 
 	// TODO - line number tracking
 	/*
@@ -274,6 +274,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         }
             break;
 
+        case OP_NOP:
+            printf("NOP\n");
+			break;
+
         case OP_GOTO:
             printf("GOTO %p\n", (VMCode_t*)*ip++);
             break;
@@ -402,12 +406,12 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             break;
 
         case OP_BNT:
-            VM_LOG("BNT %p\n", (VMCode_t*)*pvm->ip);
+            VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
             {
                 // branch to new address
-                pvm->ip = (VMCode_t*)*pvm->ip;
+                pvm->ip += *pvm->ip;
             }
             else 
             {
@@ -417,12 +421,12 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             break;
 
         case OP_BNF:
-            VM_LOG("BNF %p\n", (VMCode_t*)*pvm->ip);
+            VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (!IS_FALSE(obj))
             {
                 // branch to new address
-                pvm->ip = (VMCode_t*)*pvm->ip;
+                pvm->ip += *pvm->ip;
             }
             else
             {
@@ -431,10 +435,15 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             }
             break;
 
+        case OP_NOP:
+            VM_LOG("NOP\n");
+            // do nothing!
+            break;
+
         case OP_GOTO:
         {
-            VM_LOG("GOTO %p\n", (VMCode_t*)*pvm->ip);
-            pvm->ip = (VMCode_t*)*pvm->ip;
+            VM_LOG("GOTO %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+            pvm->ip += *pvm->ip;
         }
 			break;
 
