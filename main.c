@@ -5,7 +5,7 @@
 #include "parser.h"
 #include "term_colors.h"
 
-#define PROMPT TERM_BRIGHT_GREEN"sk> "TERM_RESET
+#define PROMPT TERM_BRIGHT_GREEN"skeme> "TERM_RESET
 
 SKState sk;
 
@@ -16,6 +16,8 @@ int yydebug = FALSE;
 int g_bSymbols = FALSE;
 int g_bDone = FALSE;
 extern int g_bParseLog;
+
+CodeChunk repl_chunk;
 
 //--------------------------------
 // print usage banner
@@ -97,6 +99,7 @@ int main(int argc, char *argv[])
     {
         push_file_stack(argv[iFirstArg]);
         strcpy(infile, argv[iFirstArg]);
+
         // parse the input file
         sk_parse();
         vm_exec(&vm, 0);
@@ -112,6 +115,9 @@ int main(int argc, char *argv[])
     }
     else
     {
+        vm_init_chunk(&repl_chunk);
+		vm_set_current_chunk(&repl_chunk);
+
         // REPL loop
         while (!g_bDone)
         {
@@ -120,7 +126,7 @@ int main(int argc, char *argv[])
             printf(PROMPT);
 
             sk_parse();
-            vm_exec(&vm, 0);
+            vm_exec(&vm, repl_chunk.code);
             if (vm.sp)
             {
                 sk_display(&sk);
@@ -129,6 +135,8 @@ int main(int argc, char *argv[])
                 LOG("%d items left on stack.\n", vm.sp);
             }
         }
+
+        vm_free_chunk(&vm, &repl_chunk);
     }
 
     if (g_bSymbols)

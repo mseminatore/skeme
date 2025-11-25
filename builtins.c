@@ -93,16 +93,12 @@ static void printObject(Object *obj)
 			break;
 
         case OBJ_FUNCTION:
-            printf("#<procedure>");
+            printf("#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
 			break;
 
         case OBJ_NATIVE_FN:
-            printf("#<native_fn>");
+            printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
 			break;
-
-   //     case OBJ_BUILTIN_FN:
-			//printf("#<builtin fn>\n");
-			//break;
 
         default:
             printf("#<obj type=%d>", OBJ_TYPE(obj));
@@ -500,7 +496,7 @@ static int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, "\tLive objects: %zu (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\tGC passes: %zu\n\tNext GC at %zu bytes\n",
+    fprintf(stderr, "\t Live objects: %zu (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\t    GC passes: %zu\n\t   Next GC at: %zu bytes\n",
         vm.numObjects,
         vm.peakObjects,
         vm.allocatedBytes,

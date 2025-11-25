@@ -1,4 +1,6 @@
+//--------------------------------------------------------------
 // vm.c
+//--------------------------------------------------------------
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -11,6 +13,28 @@ int g_bGCStress = FALSE;
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
+
+CodeChunk* g_current_chunk = NULL;
+
+//--------------------------------------
+// Get the current code chunk
+//--------------------------------------
+CodeChunk* vm_get_current_chunk()
+{
+	return g_current_chunk;
+}
+
+//--------------------------------------
+//
+//--------------------------------------
+CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
+{
+    assert(chunk);
+
+    CodeChunk* previous_chunk = g_current_chunk;
+    g_current_chunk = chunk;
+    return previous_chunk;
+}
 
 //--------------------------------------
 // case sensistive string compare
@@ -43,7 +67,7 @@ int vm_init(VM* pvm) {
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
 
-    pvm->vm_code_ptr = 0;
+    //pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
 
@@ -93,16 +117,44 @@ int vm_clear_stack(VM* pvm)
 }
 
 //--------------------------------------------------------------
+// Get the current instruction pointer in the current code chunk
+//--------------------------------------------------------------
+VMCode_t* vm_get_chunk_ip()
+{
+	return &(g_current_chunk->code[g_current_chunk->count-1]);
+}
+
+//--------------------------------------------------------------
 // Emit a bytecode instruction
 //--------------------------------------------------------------
-void vm_emit(VM* pvm, VMCode_t opcode) 
+int vm_emit(VM* pvm, VMCode_t opcode)
 {
-    if (pvm->vm_code_ptr >= VM_MAX_CODE) {
-        fprintf(stderr, "VM code buffer overflow!\n");
-        exit(1);
-    }
+    if (g_current_chunk == NULL) {
+		fprintf(stderr, "No current code chunk set for VM emit!\n");
+		exit(1);
+	}
 
-    pvm->vm_code[pvm->vm_code_ptr++] = opcode;
+    CodeChunk* chunk = g_current_chunk;
+
+    // grow chunk if necessary
+	if (chunk->capacity < chunk->count + 1) {
+		size_t old_capacity = chunk->capacity;
+		chunk->capacity = GROW_CAPACITY(old_capacity);
+		chunk->code = (VMCode_t*)vm_alloc(pvm, chunk->code, old_capacity * sizeof(VMCode_t), chunk->capacity * sizeof(VMCode_t));
+	}
+
+	chunk->code[chunk->count++] = opcode;
+    return chunk->count-1;
+
+	// TODO - line number tracking
+	/*
+	if (chunk->lines.capacity < chunk->count + 1) {
+		int old_capacity = chunk->lines.capacity;
+		chunk->lines.capacity = GROW_CAPACITY(old_capacity);
+		chunk->lines.data = (int*)realloc(chunk->lines.data, sizeof(int) * chunk->lines.capacity);
+	}
+	chunk->lines.data[chunk->count - 1] = line;
+	*/
 }
 
 //--------------------------------------------------------------
@@ -124,7 +176,7 @@ void vm_emit_string(VM* pvm, const char* str)
 }
 
 //--------------------------------------------------------------
-//
+// Emit an object as bytecode
 //--------------------------------------------------------------
 void vm_emit_object(VM* pvm, Object* obj)
 {
@@ -137,7 +189,7 @@ void vm_emit_object(VM* pvm, Object* obj)
 //--------------------------------------------------------------
 void vm_clear_code(VM* pvm)
 {
-    pvm->vm_code_ptr = 0;
+    g_current_chunk->count = 0;
 }
 
 //--------------------------------------------------------------
@@ -158,80 +210,96 @@ int vm_reset(VM* pvm)
 //---------------------------------------------------------------
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 {
-    for (int i = 0; i < chunk->count; i++)
+    printf("== Disassembly of %s ==\n", name);
+
+    VMCode_t* ip = chunk->code;
+
+    for (; ip < &chunk->code[chunk->count];)
     {
-        VMCode_t instruction = chunk->code[i];
-        printf("%04d ", i);
+        printf("%p ", ip);
+        VMCode_t instruction = *ip++;
+
         switch (instruction)
         {
         case OP_PUSH:
-            printf("OP_PUSH\n");
-            i++;
-            printf("       %p\n", (Object*)chunk->code[i]);
+            printf("PUSH %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_POP:
-            printf("OP_POP\n");
+            printf("POP\n");
             break;
+
         case OP_NUM:
-            printf("OP_NUM\n");
-            i++;
-            printf("       %d\n", (int)chunk->code[i]);
+            printf("PUSH NUM %zd\n", *ip++);
             break;
+
         case OP_STRING:
-            printf("OP_STRING\n");
-            i++;
-            printf("       '%s'\n", (const char*)chunk->code[i]);
+            printf("STRING '%s'\n", (const char*)*ip++);
             break;
+
         case OP_TRUE:
-            printf("OP_TRUE\n");
+            printf("PUSH TRUE\n");
             break;
+
         case OP_FALSE:
-            printf("OP_FALSE\n");
+            printf("PUSH FALSE\n");
             break;
+
         case OP_STORE:
-            printf("OP_STORE\n");
+            printf("STORE\n");
             break;
+
         case OP_LOAD:
-            printf("OP_LOAD\n");
+            printf("LOAD\n");
             break;
+
         case OP_DUP:
-            printf("OP_DUP\n");
+            printf("DUP\n");
             break;
-        case OP_FN:
-            printf("OP_FN\n");
-            break;
+
         case OP_NATIVE:
-            printf("OP_NATIVE\n");
+            printf("CALL NATIVE FN '%s'\n", ((String*)((NativeFunction*)*ip)->name)->value);
+            ip++;  // skip native function pointer
             break;
+
         case OP_RET:
-            printf("OP_RET\n");
+            printf("RET\n");
             break;
+
         case OP_CALL:
-            printf("OP_CALL\n");
+        {
+            Procedure* proc = (Procedure*)*ip;
+            printf("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+            ip++;
+        }
             break;
-        case OP_GOTO:
-            printf("OP_GOTO\n");
-            i++;
-            printf("       %04d\n", (int)chunk->code[i]);
+
+        case OP_NOP:
+            printf("NOP\n");
+			break;
+
+        case OP_BRA:
+            printf("BRA %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_BNT:
-            printf("OP_BNT\n");
-            i++;
-            printf("       %04d\n", (int)chunk->code[i]);
+            printf("BNT %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_BNF:
-            printf("OP_BNF\n");
-            i++;
-            printf("       %04d\n", (int)chunk->code[i]);
+            printf("BNF %p\n", (VMCode_t*)*ip++);
             break;
+
         case OP_HALT:
-            printf("OP_HALT\n");
+            printf("HALT\n");
             break;
+
         case OP_LIST:
-            printf("OP_LIST\n");
+            printf("MAKE_LIST\n");
             break;
+
         default:
-            printf("Unknown opcode: %ld\n", instruction);
+            printf("Unknown opcode: %zd\n", (VMCode_t)*ip++);
             break;
         }
     }
@@ -240,7 +308,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address
 //---------------------------------------------------------------
-void vm_exec(VM* pvm, int addr)
+void vm_exec(VM* pvm, VMCode_t *addr)
 {
     Object* obj;
 
@@ -249,24 +317,26 @@ void vm_exec(VM* pvm, int addr)
         return;
     }
     
-    if (addr < 0 || addr >= pvm->vm_code_ptr) {
-        fprintf(stderr, "Invalid VM code address: %d\n", addr);
+    if (!addr) {
+        fprintf(stderr, "Invalid VM code address: %p\n", addr);
         return;
     }
 
     VM_LOG("\n---- VM Execution Trace ----\n");
 
+    pvm->ip = addr;
+
     while(1)
     {
-        VM_LOG("IP=%04X SP=%d: ", addr, pvm->sp);
+        VM_LOG("IP=%p SP=%d: ", pvm->ip, pvm->sp);
 
-        VMCode_t opcode = pvm->vm_code[addr++];
+        VMCode_t opcode = *pvm->ip++;
 
         switch(opcode)
         {
         case OP_PUSH:
             VM_LOG("PUSH obj\n");
-            vm_push(pvm, (Object*)pvm->vm_code[addr++]);
+            vm_push(pvm, (Object*)*pvm->ip++);
             break;
 
         case OP_POP:
@@ -281,21 +351,21 @@ void vm_exec(VM* pvm, int addr)
 			break;
 
         case OP_NUM:
-            VM_LOG("PUSH NUM %zu\n", pvm->vm_code[addr]);
-            vm_push(pvm, MAKE_NUM(pvm->vm_code[addr++]));
+            VM_LOG("PUSH NUM %zu\n", *pvm->ip);
+            vm_push(pvm, MAKE_NUM(*pvm->ip++));
             break;
 
         case OP_STRING:
-            VM_LOG("PUSH STRING '%s'\n", (const char*)pvm->vm_code[addr]);
-            obj = vm_new_string(pvm, (const char*)pvm->vm_code[addr++]);
+            VM_LOG("PUSH STRING '%s'\n", (const char*)*pvm->ip);
+            obj = vm_new_string(pvm, (const char*)*pvm->ip++);
             vm_push(pvm, obj);
             break;
 
         case OP_RET:
             VM_LOG("RET\n");
-			return; // TODO - hack for now
 
-            // TODO - set IP to return address
+            // set IP to return address
+            pvm->ip = vm_pop_ip(pvm);
             break;
 
         case OP_HALT:
@@ -314,54 +384,73 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_CALL:
         {
-            VM_LOG("CALL %04X\n", (int)pvm->vm_code[addr]);
-            // TODO - call function
-            // TODO - push return address onto stack
-            // TODO - set IP to function address
+            Procedure* proc = (Procedure*)*pvm->ip;
+            VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+
+            Object* n = vm_pop(pvm);
+        	int nargs = AS_NUM(n);
+
+            if (proc->arity != nargs)
+            {
+                yyerror("incorrect number of arguments to function");
+                // clear args from stack
+                vm_pop_n(pvm, nargs);
+                break;
+            }
+
+            // call function by setting IP to function address
+            vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
+
+            pvm->ip = proc->chunk.code;
         }
             break;
 
         case OP_BNT:
-            VM_LOG("BNT %04X\n", (int)pvm->vm_code[addr]);
+            VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
             {
                 // branch to new address
-                addr = (int)pvm->vm_code[addr];
+                pvm->ip += *pvm->ip;
             }
             else 
             {
                 // move to next instruction in sequence
-                addr++;
+                pvm->ip++;
             }
             break;
 
         case OP_BNF:
-            VM_LOG("BNF %04X\n", (int)pvm->vm_code[addr]);
+            VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (!IS_FALSE(obj))
             {
                 // branch to new address
-                addr = (int)pvm->vm_code[addr];
+                pvm->ip += *pvm->ip;
             }
             else
             {
                 // move to next instruction in sequence
-                addr++;
+                pvm->ip++;
             }
             break;
 
-        case OP_GOTO:
+        case OP_NOP:
+            VM_LOG("NOP\n");
+            // do nothing!
+            break;
+
+        case OP_BRA:
         {
-            VM_LOG("GOTO %04X\n", (int)pvm->vm_code[addr]);
-            addr = (int)pvm->vm_code[addr];
+            VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+            pvm->ip += *pvm->ip;
         }
 			break;
 
         case OP_NATIVE:
         {
-            VM_LOG("NATIVE FN\n");
-            NativeFunction* proc = (NativeFunction*)pvm->vm_code[addr++];
+            NativeFunction* proc = (NativeFunction*)*pvm->ip++;
+            VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
             SKFunc func = (SKFunc)proc->func;
 
             if (func) 
@@ -409,7 +498,7 @@ void vm_exec(VM* pvm, int addr)
 
         case OP_LIST:
         {
-            VM_LOG("LIST\n");
+            VM_LOG("MAKE_LIST\n");
             Pair* alist = NULL;
             Pair* pair = NULL;
 
@@ -431,7 +520,7 @@ void vm_exec(VM* pvm, int addr)
             break;
 
         default:
-            printf("Unknown opcode: %d\n", addr);
+            printf("Unknown opcode: %zu\n", opcode);
             break;
         }
     }
@@ -572,7 +661,27 @@ static void blackenObject(VM* pvm, Object* object)
         break;
 
     case OBJ_NATIVE_FN:
-        // Native functions have no references to mark
+        {
+            NativeFunction* nativeFn = (NativeFunction*)object;
+
+            // mark the function name
+            markObject(pvm, nativeFn->name);
+
+            // If the native function has any references, mark them here
+            // (not implemented here as NativeFunction does not hold Object references)
+        }
+        break;
+
+    case OBJ_FUNCTION:
+        {
+            Procedure* proc = (Procedure*)object;
+
+            // mark the function's name
+            markObject(pvm, proc->name);
+
+            // mark any constants or references in the function's code chunk if needed
+            // (not implemented here as CodeChunk does not hold Object references)
+        }
         break;
 
     default:
@@ -644,6 +753,32 @@ void vm_gc(VM* pvm) {
     pvm->gc_cycles++;
     
     GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+}
+
+//--------------------------------------------------------------
+// Push a return address onto the return stack
+//--------------------------------------------------------------
+void vm_push_ip(VM* pvm, VMCode_t *ip)
+{
+	if (pvm->return_sp >= VM_STACK_SIZE) {
+		fprintf(stderr, "Return stack overflow!\n");
+		return;
+	}
+
+	pvm->return_stack[pvm->return_sp++] = ip;
+}
+
+//--------------------------------------------------------------
+// Pop a return address from the return stack
+//--------------------------------------------------------------
+VMCode_t* vm_pop_ip(VM* pvm) 
+{
+	if (pvm->return_sp <= 0) {
+		fprintf(stderr, "Return stack underflow!\n");
+		return NULL;
+	}
+
+	return pvm->return_stack[--pvm->return_sp];
 }
 
 //--------------------------------------------------------------
@@ -834,12 +969,23 @@ Object *vm_new_string(VM* pvm, const char* str)
 //--------------------------------------------------------------
 // Initialize a code chunk
 //--------------------------------------------------------------
-static void init_chunk(CodeChunk* chunk)
+void vm_init_chunk(CodeChunk* chunk)
 {
     chunk->count = 0;
     chunk->capacity = 0;
     chunk->code = NULL;
     //chunk->lines = NULL;
+}
+
+//--------------------------------------------------------------
+// Free a code chunk
+//--------------------------------------------------------------
+void vm_free_chunk(VM* pvm, CodeChunk* chunk)
+{
+	vm_alloc(pvm, chunk->code, chunk->capacity * sizeof(VMCode_t), 0);
+	chunk->code = NULL;
+	chunk->count = 0;
+	chunk->capacity = 0;
 }
 
 //--------------------------------------------------------------
@@ -857,9 +1003,8 @@ Object* vm_new_proc(VM* pvm)
         return NULL;
 
     proc->arity = 0;
-    proc->addr = 0;
 
-	init_chunk(&proc->chunk);
+	vm_init_chunk(&proc->chunk);
 
     return obj;
 }
@@ -912,5 +1057,4 @@ void vm_freeObjects(VM* pvm) {
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
 }
-
 
