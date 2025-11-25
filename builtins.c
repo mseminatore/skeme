@@ -1025,6 +1025,9 @@ static SKFuncSet built_in_funcs[] =
     { "disasm", sk_disasm, 1 },
 
     // { "print", sk_print },
+    // { "integer?", sk_integerp },
+    // { "real?", sk_realp },
+    // { "float?", sk_floatp },
     // { "char?", sk_charp },
 	// { "symbol?", sk_symbolp },
 	// { "read", sk_read },
