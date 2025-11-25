@@ -210,7 +210,7 @@ int vm_reset(VM* pvm)
 //---------------------------------------------------------------
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 {
-    printf("== Disassembly of %s ==\n", name);
+    printf("== Disassembly of function '%s' ==\n", name);
 
     VMCode_t* ip = chunk->code;
 

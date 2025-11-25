@@ -959,7 +959,7 @@ static int sk_disasm(SKState* pSK)
     }
 
     Procedure* proc = (Procedure*)obj;
-    vm_disassemble_chunk(&vm, &proc->chunk, "function");
+    vm_disassemble_chunk(&vm, &proc->chunk, proc->name ? ((String*)proc->name)->value : "<anonymous>");
 
     return SK_TRUE;
 }
