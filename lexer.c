@@ -39,11 +39,11 @@ Tokens tokens[] =
     {"or",      OR },
     {"cond",    COND },
     {"else",    ELSE },
-
+    
+    // { "case",    CASE_TOKEN },
     // { "let",     LET },
     // { "begin",   BEGIN },
     // { "quote",   QUOTE },
-    // { "symbol?", SYMBOLP },
     // { "print",   PRINT },
     // { "read",    READ },
     // { "eval",    EVAL },

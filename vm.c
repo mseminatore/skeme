@@ -278,8 +278,8 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("NOP\n");
 			break;
 
-        case OP_GOTO:
-            printf("GOTO %p\n", (VMCode_t*)*ip++);
+        case OP_BRA:
+            printf("BRA %p\n", (VMCode_t*)*ip++);
             break;
 
         case OP_BNT:
@@ -440,9 +440,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             // do nothing!
             break;
 
-        case OP_GOTO:
+        case OP_BRA:
         {
-            VM_LOG("GOTO %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+            VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             pvm->ip += *pvm->ip;
         }
 			break;

@@ -399,21 +399,21 @@ static int if_expr()
 
     match(IF);
 
-    expr();                                     // condition
-	vm_emit(&vm, OP_BNT);                       // branch if not true
-	int else_addr = vm_emit(&vm, 0);      // reserve space for else clause address
+    expr();                                 // condition
+	vm_emit(&vm, OP_BNT);                   // branch if not true
+	int else_addr = vm_emit(&vm, 0);        // reserve space for else clause address
 
-    expr();                                     // then branch expression
-	vm_emit(&vm, OP_GOTO);                      // jump to endif
-    int endif_addr = vm_emit(&vm, 0);     // reserve space for endif address
+    expr();                                 // then branch expression
+	vm_emit(&vm, OP_BRA);                   // jump to endif
+    int endif_addr = vm_emit(&vm, 0);       // reserve space for endif address
     vm_get_current_chunk()->code[else_addr] = vm_get_current_chunk()->count - else_addr;
 
 #ifdef IF_ELSE_REQUIRED
-    expr();                                     // else branch expression
+    expr();                                 // else branch expression
 #else
     if (lookahead != ')')
     {
-        expr();                                 // else branch expression
+        expr();                             // else branch expression
     }
 #endif
 
@@ -439,15 +439,19 @@ static int cond_expr()
     {
         match('(');
 
-        expr();                                     // test/condition
-        vm_emit(&vm, OP_BNT);                       // branch if not true
-		int next_addr = vm_emit(&vm, 0);      // reserve space for next clause address
+        // if (lookahead == ELSE)
+        // {
+        //     match(ELSE);
+        // }
+        expr();                                // test/condition
+        vm_emit(&vm, OP_BNT);                  // branch if not true
+		int next_addr = vm_emit(&vm, 0);       // reserve space for next clause address
 
-        expr(); // action/consequence
+        expr();                                // action/consequence
 
         // return last expr value
-        vm_emit(&vm, OP_GOTO);                      // jump to end
-        addr_list[terms++] = vm_emit(&vm, 0);     // reserve space for endif address
+        vm_emit(&vm, OP_BRA);                  // jump to end
+        addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for endif address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'and' expression");
@@ -520,7 +524,7 @@ static int and_expr()
     }
 
 	// return last expr value
-	vm_emit(&vm, OP_GOTO);
+	vm_emit(&vm, OP_BRA);
     int end_addr = vm_emit(&vm, 0);     // reserve space for end address
 
     // backpatch branch addresses
