@@ -439,29 +439,33 @@ static int cond_expr()
     {
         match('(');
 
-        // if (lookahead == ELSE)
-        // {
-        //     match(ELSE);
-        // }
-        expr();                                // test/condition
-        vm_emit(&vm, OP_BNT);                  // branch if not true
-		int next_addr = vm_emit(&vm, 0);       // reserve space for next clause address
-
-        expr();                                // action/consequence
-
-        // return last expr value
-        vm_emit(&vm, OP_BRA);                  // jump to end
-        addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for endif address
-        if (terms >= MAX_REL_CLAUSES)
+        if (lookahead == ELSE)
         {
-            yyerror("too many terms in 'and' expression");
-            break;
+            match(ELSE);
+            expr();                                // action/consequence
         }
+        else
+        {
+            expr();                                // test/condition
+            vm_emit(&vm, OP_BNT);                  // branch if not true
+            int next_addr = vm_emit(&vm, 0);       // reserve space for next clause address
 
+            expr();                                // action/consequence
+
+            // return last expr value
+            vm_emit(&vm, OP_BRA);                  // jump to end
+            addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for endif address
+            if (terms >= MAX_REL_CLAUSES)
+            {
+                yyerror("too many terms in 'and' expression");
+                break;
+            }
+
+            // backpatch BNT address
+            vm_get_current_chunk()->code[next_addr] = vm_get_current_chunk()->count - next_addr;
+        }
+        
         match(')');
-
-        // backpatch BNT address
-        vm_get_current_chunk()->code[next_addr] = vm_get_current_chunk()->count - next_addr;
     }
 
     // backpatch GOTO address
