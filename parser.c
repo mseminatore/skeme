@@ -330,6 +330,7 @@ static int definition()
 //-----------------------------------------------
 // lambda := '(' 'lambda' ( lambda-definition ) ')'
 // lambda-definition := '(' parameter* ')' s-expr
+// test: (define a (lambda (x) (* 2 2)))
 //-----------------------------------------------
 static int lambda()
 {
@@ -339,7 +340,12 @@ static int lambda()
 
     Object* proc_obj = vm_new_proc(&vm);
 
+    // put the procedure object on the stack for GC safety
+    vm_push(&vm, proc_obj);
+
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
+	proc->name = vm_new_string(&vm, "<lambda>");
+
     CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
     if (lookahead == '(')
@@ -366,11 +372,13 @@ static int lambda()
     // function body
     local_body();
 
+    vm_emit_object(&vm, proc_obj);
+
     // return from function
     vm_emit(&vm, OP_RET);
     vm_set_current_chunk(prev_chunk);
 
-    // vm_push(&vm, proc_obj);
+    vm_pop(&vm);    // remove proc_obj from stack
 
     unindent();
     return 0;

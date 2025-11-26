@@ -664,11 +664,10 @@ static void blackenObject(VM* pvm, Object* object)
         {
             NativeFunction* nativeFn = (NativeFunction*)object;
 
-            // mark the function name
-            markObject(pvm, nativeFn->name);
-
             // If the native function has any references, mark them here
-            // (not implemented here as NativeFunction does not hold Object references)
+
+            // mark the function name object
+            markObject(pvm, nativeFn->name);
         }
         break;
 
@@ -676,11 +675,10 @@ static void blackenObject(VM* pvm, Object* object)
         {
             Procedure* proc = (Procedure*)object;
 
-            // mark the function's name
-            markObject(pvm, proc->name);
-
             // mark any constants or references in the function's code chunk if needed
-            // (not implemented here as CodeChunk does not hold Object references)
+
+            // mark the function's name object
+            markObject(pvm, proc->name);
         }
         break;
 
