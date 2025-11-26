@@ -124,7 +124,7 @@ int sk_display(SKState *pSK)
 
     printf(TERM_BRIGHT_BLUE);
         printObject(obj);
-    printf(TERM_RESET);
+    printf(TERM_RESET"\n");
 
     return SK_TRUE;
 }
@@ -361,7 +361,7 @@ static void error_helper()
 {
     const char* msg;
 
-    // get message from stack
+    // get message count from stack
     Object* raw_n = vm_pop(&vm);
     int n = AS_NUM(raw_n);
 
@@ -971,7 +971,7 @@ static int sk_disasm(SKState* pSK)
 static SKFuncSet built_in_funcs[] =
 {
     // I/O functions
-    { "display", sk_display, ARITY_ONE_OR_MORE },
+    { "display", sk_display, 1 },
     { "newline", sk_newline, 0 },
 	{ "error", sk_error, ARITY_ONE_OR_MORE },
 	{ "warn", sk_warn, ARITY_ONE_OR_MORE },

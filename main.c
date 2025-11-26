@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
         if (vm.sp)
         {
             sk_display(&sk);
-            puts("");
+            //puts("");
             LOG("%d items left on stack.\n", vm.sp);
         }
     }
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
             if (vm.sp)
             {
                 sk_display(&sk);
-                puts("");
+                //puts("");
                 assert(0 == vm.sp);
                 LOG("%d items left on stack.\n", vm.sp);
             }
