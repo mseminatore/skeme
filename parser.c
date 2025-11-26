@@ -337,6 +337,39 @@ static int lambda()
 
     match(LAMBDA);
 
+    Object* proc_obj = vm_new_proc(&vm);
+
+    Procedure* proc = AS_OBJ(Procedure, proc_obj);
+    CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
+
+    if (lookahead == '(')
+    {
+        match('(');
+    
+        // parameters
+        formals(proc);
+
+        match(')');
+    }
+    else
+    {
+        if (lookahead == ID)
+        {
+            // single parameter
+            proc->arity = 1;
+            match(ID);
+        }
+        else
+            proc->arity = 0;
+    }
+     
+    // function body
+    local_body();
+
+    // return from function
+    vm_emit(&vm, OP_RET);
+    vm_set_current_chunk(prev_chunk);
+
     unindent();
     return 0;
 }
