@@ -218,10 +218,16 @@ static int atom()
             unindent();
         }
         break;
+    
+    default:
+        yyerror("syntax error");
+        match(lookahead);
+        unindent();
+        return 0;
     }
 
     unindent();
-    return 0;
+    return 1;
 }
 
 //-----------------------------------------------
