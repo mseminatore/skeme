@@ -370,6 +370,8 @@ static int lambda()
     vm_emit(&vm, OP_RET);
     vm_set_current_chunk(prev_chunk);
 
+    // vm_push(&vm, proc_obj);
+
     unindent();
     return 0;
 }
