@@ -345,6 +345,7 @@ static int sk_cdr(SKState* pSK)
 static int sk_exit(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
+
     g_bDone = TRUE;
 
     printf(TERM_GREEN"\nExiting skeme interpreter. Goodbye!\n\n"TERM_RESET);
@@ -522,7 +523,7 @@ static int sk_load(SKState* pSK)
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
         push_file_stack(filename);
-        yyparse();
+        yyparse(pSK);
     }
     else
         yyerror("invalid parameter");

@@ -691,7 +691,7 @@ static int expr()
 //-----------------------------------------------
 // parse the input stream (stdin or file)
 //-----------------------------------------------
-int yyparse(void)
+int yyparse(SKState *pSK)
 {
     //PARSE_LOG("yyparse(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
@@ -769,9 +769,9 @@ int sk_init(SKState *pSK)
 //-----------------------------------------------
 // parse the input
 //-----------------------------------------------
-int sk_parse()
+int sk_parse(SKState *pSK)
 {
-    int result = yyparse();
+    int result = yyparse(pSK);
     vm_emit(&vm, OP_HALT);
     return result;
 }

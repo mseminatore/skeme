@@ -1,25 +1,40 @@
-; a number
-; 5
+; turn on VM logging
+;(vmlog)
 
-; an empty list
-; ()
+; turn on parser logging
+;(parselog)
 
-(vmlog)
+; turn on GC logging
+;(gclog)
 
 ; construct a pair
 (cons 1 2)
+(define p (cons 1 2))
+
 (pair? (cons 1 2))
+(pair? p)
 
-; make a nested list
+; make a list via nested cons
 (cons 1 (cons 2 ()))
-
 (list? (cons 1 (cons 2 ())))
+
+; make a list
+(list 1 2 3)
+(define l (list 1 2 3))
+(list? l)
+(car l)
+(cdr l)
 
 (zero? 0)
 (zero? 1)
 (null? ())
 (number? 1)
 (boolean? #t)
+(and 1 2 3)
+(or 1 1 1)
+(if (< 1 2) #t)
+(cond ((< 1 2) #t))
+(cond ((> 1 2) #f) (else #t))
 
 ; define a variable
 ;(define foo 5)

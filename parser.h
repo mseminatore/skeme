@@ -52,14 +52,14 @@ extern int g_bParseLog;
 //-----------------
 void push_file_stack(const char *filename);
 void pop_file_stack(void);
-int yyparse(void);
+int yyparse(SKState *pSK);
 void dump_symbols();
 void yyerror(const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 
 int sk_init(SKState *pSK);
-int sk_parse();
+int sk_parse(SKState *pSK);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_display(SKState *pSK);
 

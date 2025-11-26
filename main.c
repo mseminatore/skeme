@@ -95,14 +95,18 @@ int main(int argc, char *argv[])
     // fout = fopen(g_szOutputFilename, "wb");
     LOG("Output file: '%s'\n", g_szOutputFilename);
 
+    // initialize repl code chunk
+    vm_init_chunk(&repl_chunk);
+    vm_set_current_chunk(&repl_chunk);
+
     if (argc != iFirstArg /* yyin != stdin */)
     {
         push_file_stack(argv[iFirstArg]);
         strcpy(infile, argv[iFirstArg]);
 
         // parse the input file
-        sk_parse();
-        vm_exec(&vm, 0);
+        sk_parse(&sk);
+        vm_exec(&vm, repl_chunk.code);
 
         LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
 
@@ -115,9 +119,6 @@ int main(int argc, char *argv[])
     }
     else
     {
-        vm_init_chunk(&repl_chunk);
-		vm_set_current_chunk(&repl_chunk);
-
         // REPL loop
         while (!g_bDone)
         {
@@ -125,7 +126,7 @@ int main(int argc, char *argv[])
 
             printf(PROMPT);
 
-            sk_parse();
+            sk_parse(&sk);
             vm_exec(&vm, repl_chunk.code);
             if (vm.sp)
             {
@@ -135,9 +136,9 @@ int main(int argc, char *argv[])
                 LOG("%d items left on stack.\n", vm.sp);
             }
         }
-
-        vm_free_chunk(&vm, &repl_chunk);
     }
+
+    vm_free_chunk(&vm, &repl_chunk);
 
     if (g_bSymbols)
         dump_symbols();
