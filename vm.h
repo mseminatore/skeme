@@ -105,6 +105,9 @@ enum
     OBJ_CLOSURE,
     OBJ_UPVALUE,
     OBJ_NATIVE_FN,
+    OBJ_CHAR,
+    OBJ_ENVIRONMENT,
+    OBJ_FLOAT,
     OBJ_LAST
 };
 
@@ -178,9 +181,6 @@ typedef struct VM {
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
-
-    //int vm_code_ptr;
-    //VMCode_t vm_code[VM_MAX_CODE];
 
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings
