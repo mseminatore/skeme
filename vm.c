@@ -682,6 +682,16 @@ static void blackenObject(VM* pvm, Object* object)
         }
         break;
 
+    case OBJ_CLOSURE:
+		{
+            Closure* closure = (Closure*)object;
+            markObject(pvm, closure->function);
+			
+            // Closure-specific marking logic
+			// e.g., mark captured variables
+		}
+        break;
+
     default:
         // Handle other object types as needed
         break;
