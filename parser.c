@@ -345,6 +345,7 @@ static int lambda()
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
 	proc->name = vm_new_string(&vm, "<lambda>");
+    vm_define_global(&vm, proc->name, NULL);   // ensure name is in global table
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
