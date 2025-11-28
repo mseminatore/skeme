@@ -372,13 +372,13 @@ static int lambda()
     // function body
     local_body();
 
-    //vm_emit_object(&vm, proc_obj);
+    vm_emit_object(&vm, proc_obj);
 
     // return from function
     vm_emit(&vm, OP_RET);
     vm_set_current_chunk(prev_chunk);
 
-    //vm_pop(&vm);    // remove proc_obj from stack
+    vm_pop(&vm);    // remove proc_obj from stack
 
     unindent();
     return 0;

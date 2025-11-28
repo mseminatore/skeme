@@ -298,6 +298,14 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("MAKE_LIST\n");
             break;
 
+        case OP_PROC:
+            printf("PROC\n");
+            break;
+
+        case OP_CLOSURE:
+            printf("CLOSURE\n");
+            break;
+
         default:
             printf("Unknown opcode: %zd\n", (VMCode_t)*ip++);
             break;
@@ -482,6 +490,13 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             // variable assignment
             Object *value = vm_pop(pvm);
             Object *key = vm_pop(pvm);
+            if (!IS_STRING(key))
+            {
+                yyerror("invalid variable name");
+                printf("STORE: key is not a string! Obj type = %d\n", OBJ_TYPE(key));
+                break;
+            }
+
             VM_LOG("STORE '%s'\n", ((String*)key)->value);
             vm_update_global(pvm, key, value);
         }

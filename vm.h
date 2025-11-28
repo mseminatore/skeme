@@ -85,6 +85,10 @@ typedef struct Object {
 #define IS_MARKED(obj)      (IS_OBJ(obj) ? AS_OBJ(Object, obj)->marked : 0)
 
 #define IS_BOOL(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x2)))
+#define IS_STRING(obj)  (OBJ_TYPE(obj) == OBJ_STRING)
+#define IS_PAIR(obj)    (OBJ_TYPE(obj) == OBJ_PAIR)
+#define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_FUNCTION)
+#define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
 #define IS_TRUE(obj)    (((intptr_t)(obj)) == 3)
 #define IS_FALSE(obj)   (((intptr_t)(obj)) == 2)
 #define MAKE_TRUE()     ((Object*)3)
@@ -113,7 +117,7 @@ enum
 
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
-    OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP,
+    OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP, OP_PROC, OP_CLOSURE,
     OP_LIST
 };
 
