@@ -743,7 +743,10 @@ static void removeWhiteObjects(VM* pvm) {
             continue;
 
         if (HT_OK == ht_remove(pvm->interned_strings, key))
+        {
             removed++;
+            GC_LOG("-- gc removing interned string: '%s'\n", ((String*)value)->value);
+        }
         else
             fprintf(stderr, "Error removing interned string during GC\n");
 
