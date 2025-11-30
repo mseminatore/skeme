@@ -162,8 +162,9 @@ typedef struct NativeFunction {
 
 // environment object
 typedef struct Environment {
-    Object base;            // base object
-    //HashTable env;
+    Object base;                // base object
+    HashTable env;              // hash table for variable bindings
+    struct Environment* parent; // pointer to parent environment
 } Environment;
 
 // closure object
@@ -188,6 +189,8 @@ typedef struct VM {
 
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings
+
+    Environment *current_scope;   // Current environment/scope
 
     VMCode_t *return_stack[VM_STACK_SIZE]; // Return address stack
     int return_sp;                        // Return address stack pointer

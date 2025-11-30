@@ -67,6 +67,8 @@ int vm_init(VM* pvm) {
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
 
+    pvm->current_scope = NULL;
+    
     //pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
