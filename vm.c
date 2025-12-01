@@ -68,7 +68,7 @@ int vm_init(VM* pvm) {
     ht_set_compare_func(pvm->interned_strings, compare_fn);
 
     pvm->current_scope = NULL;
-    
+
     //pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
@@ -588,6 +588,25 @@ static void markObjects(VM* pvm) {
     {
         markObject(pvm, pvm->stack[i]);
     }
+
+    // mark environment chain
+    Environment* env = pvm->current_scope;
+    while (env)
+    {
+        // mark environment object
+        markObject(pvm, (Object*)env);
+
+        // mark all bindings in the environment
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(&env->env, &env_index, &env_key, &env_value))
+        {
+            markObject(pvm, (Object*)env_key);
+            markObject(pvm, (Object*)env_value);
+        }
+        env = env->parent;
+    }
 }
 
 //--------------------------------------------------------------
@@ -610,6 +629,14 @@ static void freeObject(VM* pvm, Object* object)
 			vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
         }
 		break;
+    
+    case OBJ_ENVIRONMENT:
+        {
+            // free environment-specific resources
+            Environment* env = (Environment*)object;
+            ht_free(&env->env);
+        }
+        break;
 
     default:
         // nothing to do!
