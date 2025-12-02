@@ -67,6 +67,7 @@ int vm_init(VM* pvm) {
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
 
+    // initialize current scope to NULL (ie. global scope)
     pvm->current_scope = NULL;
 
     //pvm->vm_code_ptr = 0;
@@ -960,6 +961,31 @@ Object* vm_newObject(VM* pvm, size_t size, int type)
     }
 
     return obj;
+}
+
+//--------------------------------------------------------------
+// Create a new environment object
+//--------------------------------------------------------------
+Object *vm_new_environment(VM* pvm, Environment* parent)
+{
+    Environment* env = (Environment*)vm_newObject(pvm, sizeof(Environment), OBJ_ENVIRONMENT);
+    ht_init(&env->env);
+    env->parent = parent;
+    return (Object*)env;
+}
+
+//--------------------------------------------------------------
+// Unlink the top environment object from the environment chain
+//--------------------------------------------------------------
+void vm_free_environment(VM* pvm, Environment* env)
+{
+    if (!env) return;
+
+    pvm->current_scope = env->parent;
+
+    // no need to explicitly free, GC will free this object once it has no refs
+    // ht_free(&env->env);
+    // vm_alloc(pvm, env, sizeof(Environment), 0);
 }
 
 //--------------------------------------------------------------

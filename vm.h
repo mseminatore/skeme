@@ -249,5 +249,6 @@ VMCode_t* vm_pop_ip(VM* pvm);
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
+Object *vm_new_environment(VM* pvm, Environment* parent);
 
 #endif // __VM_H
