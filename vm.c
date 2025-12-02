@@ -601,7 +601,7 @@ static void markObjects(VM* pvm) {
         size_t env_index = 0;
         ht_key_t env_key;
         ht_value_t env_value;
-        while (ht_next(&env->env, &env_index, &env_key, &env_value))
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
         {
             markObject(pvm, (Object*)env_key);
             markObject(pvm, (Object*)env_value);
@@ -635,7 +635,7 @@ static void freeObject(VM* pvm, Object* object)
         {
             // free environment-specific resources
             Environment* env = (Environment*)object;
-            ht_free(&env->env);
+            ht_free(env->bindings);
         }
         break;
 
@@ -966,22 +966,23 @@ Object* vm_newObject(VM* pvm, size_t size, int type)
 //--------------------------------------------------------------
 // Create a new environment object
 //--------------------------------------------------------------
-Object *vm_new_environment(VM* pvm, Environment* parent)
+Object *vm_new_environment(VM* pvm)
 {
     Environment* env = (Environment*)vm_newObject(pvm, sizeof(Environment), OBJ_ENVIRONMENT);
-    ht_init(&env->env);
-    env->parent = parent;
+    env->bindings = ht_create();
+    env->parent = pvm->current_scope;
+    pvm->current_scope = env;
+
     return (Object*)env;
 }
 
 //--------------------------------------------------------------
 // Unlink the top environment object from the environment chain
 //--------------------------------------------------------------
-void vm_free_environment(VM* pvm, Environment* env)
+void vm_free_environment(VM* pvm)
 {
-    if (!env) return;
-
-    pvm->current_scope = env->parent;
+    if (pvm->current_scope)
+        pvm->current_scope = pvm->current_scope->parent;
 
     // no need to explicitly free, GC will free this object once it has no refs
     // ht_free(&env->env);

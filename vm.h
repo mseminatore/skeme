@@ -163,7 +163,7 @@ typedef struct NativeFunction {
 // environment object
 typedef struct Environment {
     Object base;                // base object
-    HashTable env;              // hash table for variable bindings
+    HashTable *bindings;             // hash table for variable bindings
     struct Environment* parent; // pointer to parent environment
 } Environment;
 
@@ -249,6 +249,7 @@ VMCode_t* vm_pop_ip(VM* pvm);
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
-Object *vm_new_environment(VM* pvm, Environment* parent);
+Object *vm_new_environment(VM* pvm);
+void vm_free_environment(VM* pvm);
 
 #endif // __VM_H

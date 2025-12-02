@@ -283,6 +283,8 @@ static int definition()
 		// function definition
 		match('(');
         
+        vm_new_environment(&vm);   // create new environment for function scope
+
         // function name
         Object* proc_name = vm_new_string(&vm, yylval.word);
 		vm_push(&vm, proc_name);                    // stash function name on stack in case of GC
@@ -310,6 +312,8 @@ static int definition()
         // return from function
         vm_emit(&vm, OP_RET);
         vm_set_current_chunk(prev_chunk);
+
+        vm_free_environment(&vm); // pop function environment off chain
 	}
     else
     {
