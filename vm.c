@@ -1164,7 +1164,7 @@ void vm_print_stack(VM* pvm)
         Object* obj = pvm->stack[i];
         if (IS_NUM(obj))
         {
-            printf("[%d] NUM: %zd\n", i, AS_NUM(obj));
+            printf("[%d] NUM: %d\n", i, AS_NUM(obj));
         }
         else if (IS_STRING(obj))
         {
