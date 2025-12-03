@@ -76,6 +76,7 @@ typedef struct Object {
 #define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
 #define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
 #define IS_NIL(obj)         (obj == NULL)
+#define AS_STRING(obj)      (IS_OBJ(obj) ? (String*)(obj) : NULL)
 
 #define OBJ_TYPE(obj)       (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
 #define SET_TYPE(obj, t)    do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->type = (t); } while(0)
@@ -245,11 +246,13 @@ int vm_reset(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);
 
-// global variable management
+// local/global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
 Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);
+void vm_set_var(VM* pvm, const char* name, Object* value);
+Object* vm_get_var(VM* pvm, const char* name);
 
 #endif // __VM_H

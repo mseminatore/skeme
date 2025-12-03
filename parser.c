@@ -240,8 +240,9 @@ static int formals(Procedure* proc)
     int arity = 0;
     while (lookahead == ID)
     {
-        match(ID);
         arity++;
+		vm_set_var(&vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
+        match(ID);
     }
 
     if (proc)
@@ -296,7 +297,8 @@ static int definition()
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
-        vm_define_global(&vm, proc_name, proc_obj);
+		vm_define_global(&vm, proc_name, proc_obj); // TODO - add to current scope instead of global
+
         match(ID);
 		
         // parameters

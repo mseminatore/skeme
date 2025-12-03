@@ -779,8 +779,6 @@ static void removeWhiteObjects(VM* pvm) {
         }
         else
             fprintf(stderr, "Error removing interned string during GC\n");
-
-        //free((void*)key);
     }
 
     GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
@@ -1115,6 +1113,69 @@ Object *vm_get_global(VM *pvm, Object* key)
 {
     ht_value_t val = ht_find(pvm->global_table, key);
     return (Object*)val;
+}
+
+//--------------------------------------------------------------
+// Set a variable in current scope
+//--------------------------------------------------------------
+void vm_set_var(VM* pvm, const char* name, Object* value)
+{
+    Object* key = vm_new_string(pvm, name);
+
+    if (pvm->current_scope)
+    {
+        // set in current environment
+        ht_add(pvm->current_scope->bindings, key, value);
+        return;
+	}
+    else
+        vm_update_global(pvm, key, value);
+}
+
+//--------------------------------------------------------------
+// Get a variable from current scope
+//--------------------------------------------------------------
+Object* vm_get_var(VM* pvm, const char* name)
+{
+    Object* key = vm_new_string(pvm, name);
+
+    if (pvm->current_scope)
+    {
+        // look in current environment chain
+        Environment* env = pvm->current_scope;
+        ht_value_t val;
+        while (env)
+        {
+            val = ht_find(env->bindings, key);
+            if (val)
+                return (Object*)val;
+            env = env->parent;
+        }
+	}
+
+    return vm_get_global(pvm, key);
+}
+
+void vm_print_stack(VM* pvm)
+{
+    printf("---- VM Stack (SP=%d) ----\n", pvm->sp);
+    for (int i = pvm->sp - 1; i >= 0; i--)
+    {
+        Object* obj = pvm->stack[i];
+        if (IS_NUM(obj))
+        {
+            printf("[%d] NUM: %zd\n", i, AS_NUM(obj));
+        }
+        else if (IS_STRING(obj))
+        {
+            printf("[%d] STRING: '%s'\n", i, AS_STRING(obj)->value);
+        }
+        else
+        {
+            printf("[%d] OBJ TYPE: %d\n", i, OBJ_TYPE(obj));
+        }
+    }
+    printf("--------------------------\n");
 }
 
 //--------------------------------------------------------------
