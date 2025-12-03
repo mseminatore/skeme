@@ -184,7 +184,7 @@ static int atom()
         break;
 
     case STRING:
-        // handle string
+        // TODO - use yylval.word and handle interned strings
         PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
 
 		vm_emit_string(&vm, symbols[yylval.symbol].name);
@@ -203,6 +203,8 @@ static int atom()
     case ID:
         {
             PARSE_LOG("ID: '%s'\n", yylval.word);
+
+			Object* obj = vm_get_var(&vm, yylval.word);
 
             // handle variable and check for undefined symbol
             Object* key = vm_get_string(&vm, yylval.word);
