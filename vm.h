@@ -183,7 +183,8 @@ typedef struct Closure {
 
 // Define the VM structure
 typedef struct VM {
-	int sp;                         // Stack pointer should be size_t or uint
+	int sp;                         // Stack pointer, should be size_t or uint?
+    int fp;                         // Frame pointer
     VMCode_t *ip;                   // Instruction pointer
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers

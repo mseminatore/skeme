@@ -52,6 +52,7 @@ int vm_init(VM* pvm) {
     CHECK_THAT(pvm != NULL);
 
     pvm->sp = 0;
+    pvm->fp = 0;
     pvm->ip = 0;
     pvm->return_sp = 0;
     pvm->head = NULL;
@@ -388,10 +389,11 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         case OP_RET:
             VM_LOG("RET\n");
             {
-				Object* nargs_obj = vm_pop(pvm);
-				Object* ret_val = vm_pop(pvm); // get return value
-				vm_pop_n(pvm, AS_NUM(nargs_obj)); // pop args from stack
-                vm_push(pvm, ret_val);          // push return value onto stack
+				Object* nargs_obj = vm_pop(pvm);    // pop number of args
+				Object* ret_val = vm_pop(pvm);      // get return value
+				vm_pop_n(pvm, AS_NUM(nargs_obj));   // pop args from stack
+                vm_push(pvm, ret_val);              // push return value onto stack
+
                 // set IP to return address
                 pvm->ip = vm_pop_ip(pvm);
             }
@@ -427,10 +429,13 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                 break;
             }
 
-            // call function by setting IP to function address
             vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
 
+            // call function by setting IP to function address
             pvm->ip = proc->chunk.code;
+
+            // vm_push(pvm, MAKE_NUM(pvm->fp)); // push old frame pointer onto stack
+            pvm->fp = pvm->sp;  // - nargs; // set frame pointer
         }
             break;
 
