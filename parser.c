@@ -204,18 +204,27 @@ static int atom()
         {
             PARSE_LOG("ID: '%s'\n", yylval.word);
 
+            // TODO - check if var is local, if so emit stack read
 			Object* obj = vm_get_var(&vm, yylval.word);
 
             // handle variable and check for undefined symbol
             Object* key = vm_get_string(&vm, yylval.word);
             match(ID);
-            if (key)
+
+            if (!key)
+            {
+                yyerror("entity undefined");
+            }
+            else if (IS_NUM(obj))
+            {
+                vm_emit_object(&vm, obj);
+				vm_emit(&vm, OP_GET_LOCAL);
+            }
+            else
             {
                 vm_emit_object(&vm, key);
                 vm_emit(&vm, OP_LOAD);
             }
-            else
-                yyerror("entity undefined");
 
             unindent();
         }
@@ -245,6 +254,20 @@ static int formals(Procedure* proc)
         arity++;
 		vm_set_var(&vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
         match(ID);
+    }
+
+    if (vm.current_scope)
+    {
+        Environment* env = vm.current_scope;
+
+        // update all bindings in the current environment
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+        {
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value))); // set parameter stack offset
+        }
     }
 
     if (proc)
@@ -314,6 +337,7 @@ static int definition()
         local_body();
 
         // return from function
+        vm_emit_number(&vm, proc->arity);
         vm_emit(&vm, OP_RET);
         vm_set_current_chunk(prev_chunk);
 

@@ -122,7 +122,7 @@ int main(int argc, char *argv[])
         // REPL loop
         while (!g_bDone)
         {
-            vm_reset(&vm);  // TODO - maybe we don't want to throw away everything each time?
+            vm_reset(&vm);
 
             printf(PROMPT);
 
@@ -131,9 +131,12 @@ int main(int argc, char *argv[])
             if (vm.sp)
             {
                 sk_display(&sk);
-                //puts("");
-                assert(0 == vm.sp);
-                LOG("%d items left on stack.\n", vm.sp);
+                //assert(0 == vm.sp);
+                if (vm.sp)
+                {
+                    fprintf(stderr, "%d items left on stack.\n", vm.sp);
+                    vm_print_stack(&vm);
+                }
             }
         }
     }

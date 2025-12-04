@@ -966,6 +966,18 @@ static int sk_disasm(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: print stack
+//-----------------------------------------------
+static int sk_print_stack(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    vm_print_stack(&vm);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1006,9 +1018,6 @@ static SKFuncSet built_in_funcs[] =
     { "gclog", sk_gclog, 0 },
 	{ "parselog", sk_parselog, 0 },
 	{ "vmlog", sk_vmlog, 0 },
-    { "strings", sk_strings, 0 },
-	{ "globals", sk_globals },
-    { "gc-stats", sk_gc_stats, 0 },
 
     // comparison operators
     { "<", sk_less, 2 },
@@ -1023,7 +1032,12 @@ static SKFuncSet built_in_funcs[] =
 	{ "/", sk_divide, ARITY_TWO_OR_MORE },
     { "=", sk_equalnum, ARITY_TWO_OR_MORE },
 
+	// debugging functions
     { "disasm", sk_disasm, 1 },
+	{ "print-stack", sk_print_stack, 0 },
+    { "strings", sk_strings, 0 },
+    { "globals", sk_globals },
+    { "gc-stats", sk_gc_stats, 0 },
 
     // { "print", sk_print },
     // { "integer?", sk_integerp },

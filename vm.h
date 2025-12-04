@@ -119,7 +119,7 @@ enum
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
     OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP, OP_PROC, OP_CLOSURE,
-    OP_LIST
+	OP_LIST, OP_GET_LOCAL, OP_SET_LOCAL, OP_LAST
 };
 
 // opcode type
@@ -144,6 +144,12 @@ typedef struct String {
     Object base;        // base object
     const char value[]; // string value
 } String;
+
+// float object
+typedef struct Float {
+    Object base;    // base object
+    float value;    // float value
+} Float;
 
 // procedure object
 typedef struct Procedure {
@@ -245,6 +251,7 @@ void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);
+void vm_print_stack(VM* pvm);
 
 // local/global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);

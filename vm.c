@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <string.h>
 #include "vm.h"
+#include "term_colors.h"
 
 int g_bGCLog = FALSE;
 int g_bVMLog = FALSE;
@@ -147,7 +148,7 @@ int vm_emit(VM* pvm, VMCode_t opcode)
 	}
 
 	chunk->code[chunk->count++] = opcode;
-    return chunk->count-1;
+    return (int)chunk->count-1;
 
 	// TODO - line number tracking
 	/*
@@ -221,6 +222,8 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
     {
         printf("%p ", ip);
         VMCode_t instruction = *ip++;
+
+        printf(TERM_BLUE);
 
         switch (instruction)
         {
@@ -309,10 +312,20 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("CLOSURE\n");
             break;
 
+        case OP_GET_LOCAL:
+            printf("GET_LOCAL [SP-%zd]\n", *ip++);
+            break;
+            
+        case OP_SET_LOCAL:
+            printf("SET_LOCAL [SP-%zd]\n", *ip++);
+            break;
+
         default:
-            printf("Unknown opcode: %zd\n", (VMCode_t)*ip++);
+            printf("Unknown opcode: %zd\n", *ip++);
             break;
         }
+
+        printf(TERM_RESET);
     }
 }
 
@@ -374,9 +387,14 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_RET:
             VM_LOG("RET\n");
-
-            // set IP to return address
-            pvm->ip = vm_pop_ip(pvm);
+            {
+				Object* nargs_obj = vm_pop(pvm);
+				Object* ret_val = vm_pop(pvm); // get return value
+				vm_pop_n(pvm, AS_NUM(nargs_obj)); // pop args from stack
+                vm_push(pvm, ret_val);          // push return value onto stack
+                // set IP to return address
+                pvm->ip = vm_pop_ip(pvm);
+            }
             break;
 
         case OP_HALT:
@@ -512,6 +530,16 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             // variable retrieval
             vm_push(pvm, vm_get_global(pvm, key));
         }
+            break;
+
+        case OP_GET_LOCAL:
+            VM_LOG("GET_LOCAL\n");
+            {
+                Object* index_obj = vm_pop(pvm);
+                int index = AS_NUM(index_obj);
+                Object* local_var = vm_peek(pvm, index);
+                vm_push(pvm, local_var);
+			}
             break;
 
         case OP_LIST:
@@ -736,6 +764,11 @@ static void blackenObject(VM* pvm, Object* object)
 			// e.g., mark captured variables
 		}
         break;
+
+    case OBJ_ENVIRONMENT:
+        {
+        }
+	    break;
 
     default:
         // Handle other object types as needed
@@ -1153,9 +1186,12 @@ Object* vm_get_var(VM* pvm, const char* name)
         }
 	}
 
-    return vm_get_global(pvm, key);
+    return NULL;    // vm_get_global(pvm, key);
 }
 
+//--------------------------------------------------------------
+// Print the current VM stack for debugging
+//--------------------------------------------------------------
 void vm_print_stack(VM* pvm)
 {
     printf("---- VM Stack (SP=%d) ----\n", pvm->sp);
@@ -1175,7 +1211,7 @@ void vm_print_stack(VM* pvm)
             printf("[%d] OBJ TYPE: %d\n", i, OBJ_TYPE(obj));
         }
     }
-    printf("--------------------------\n");
+    printf("-------------------------\n");
 }
 
 //--------------------------------------------------------------
