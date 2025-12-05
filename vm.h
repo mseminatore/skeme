@@ -223,6 +223,11 @@ void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
 void vm_pop_n(VM* pvm, int n);
+Object* vm_fp_peek(VM* pvm, int distance);
+int vm_clear_stack(VM* pvm);
+void vm_push_ip(VM* pvm, VMCode_t* ip);
+VMCode_t* vm_pop_ip(VM* pvm);
+void vm_print_stack(VM* pvm);
 
 // object allocation
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
@@ -234,7 +239,7 @@ Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
 
-// code generation and execution
+// code generation
 int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
@@ -246,13 +251,10 @@ void vm_init_chunk(CodeChunk* chunk);
 void vm_free_chunk(VM* pvm, CodeChunk* chunk);
 VMCode_t* vm_get_chunk_ip();
 
+// execution
 void vm_exec(VM* pvm, VMCode_t *addr);
-int vm_clear_stack(VM* pvm);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
-void vm_push_ip(VM* pvm, VMCode_t* ip);
-VMCode_t* vm_pop_ip(VM* pvm);
-void vm_print_stack(VM* pvm);
 
 // local/global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);

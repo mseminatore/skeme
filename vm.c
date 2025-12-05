@@ -391,8 +391,10 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             {
 				Object* nargs_obj = vm_pop(pvm);    // pop number of args
 				Object* ret_val = vm_pop(pvm);      // get return value
+				Object* nframe_obj = vm_pop(pvm);   // pop old frame pointer
+				pvm->fp = AS_NUM(nframe_obj);       // restore old frame pointer
 				vm_pop_n(pvm, AS_NUM(nargs_obj));   // pop args from stack
-                vm_push(pvm, ret_val);              // push return value onto stack
+                vm_push(pvm, ret_val);              // restore return value to stack
 
                 // set IP to return address
                 pvm->ip = vm_pop_ip(pvm);
@@ -434,7 +436,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             // call function by setting IP to function address
             pvm->ip = proc->chunk.code;
 
-            // vm_push(pvm, MAKE_NUM(pvm->fp)); // push old frame pointer onto stack
+            vm_push(pvm, MAKE_NUM(pvm->fp)); // push old frame pointer onto stack
             pvm->fp = pvm->sp;  // - nargs; // set frame pointer
         }
             break;
@@ -542,7 +544,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             {
                 Object* index_obj = vm_pop(pvm);
                 int index = AS_NUM(index_obj);
-                Object* local_var = vm_peek(pvm, index);
+                Object* local_var = vm_fp_peek(pvm, index);
                 vm_push(pvm, local_var);
 			}
             break;
@@ -919,6 +921,18 @@ Object* vm_peek(VM* pvm, int distance) {
     }
 
     return pvm->stack[pvm->sp - 1 - distance];
+}
+
+//--------------------------------------------------------------
+// Peek at an object relative to the frame without popping it
+//--------------------------------------------------------------
+Object* vm_fp_peek(VM* pvm, int distance) {
+    if (pvm->fp - 1 - distance < 0) {
+        fprintf(stderr, "Stack underflow on fp_peek!\n");
+        return NULL;
+    }
+
+    return pvm->stack[pvm->fp - 1 - distance];
 }
 
 //--------------------------------------------------------------

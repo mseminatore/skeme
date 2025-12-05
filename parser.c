@@ -266,7 +266,7 @@ static int formals(Procedure* proc)
         ht_value_t env_value;
         while (ht_next(env->bindings, &env_index, &env_key, &env_value))
         {
-			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value))); // set parameter stack offset
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 1)); // set parameter stack offset
         }
     }
 
