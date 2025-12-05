@@ -426,8 +426,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             if (proc->arity != nargs)
             {
                 yyerror("incorrect number of arguments to function");
-                // clear args from stack
-                vm_pop_n(pvm, nargs);
+                
+                vm_pop_n(pvm, nargs);   // clear args from stack
+                pvm->ip++;              // skip to the start of next instruction
                 break;
             }
 
@@ -436,8 +437,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             // call function by setting IP to function address
             pvm->ip = proc->chunk.code;
 
-            vm_push(pvm, MAKE_NUM(pvm->fp)); // push old frame pointer onto stack
-            pvm->fp = pvm->sp;  // - nargs; // set frame pointer
+            vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
+            pvm->fp = pvm->sp;                  // set-up new frame pointer
         }
             break;
 
