@@ -224,7 +224,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         printf("%p ", ip);
         VMCode_t instruction = *ip++;
 
-        printf(TERM_BLUE);
+        printf(TERM_BRIGHT_BLUE);
 
         switch (instruction)
         {
