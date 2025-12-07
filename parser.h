@@ -50,7 +50,7 @@ extern int g_bParseLog;
 //-----------------
 // function decls
 //-----------------
-void push_file_stack(const char *filename);
+int push_file_stack(const char *filename);
 void pop_file_stack(void);
 int yyparse(SKState *pSK);
 void dump_symbols();

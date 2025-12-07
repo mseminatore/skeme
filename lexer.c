@@ -73,7 +73,7 @@ void LOG(const char *fmt, ...)
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-void push_file_stack(const char* filename)
+int push_file_stack(const char* filename)
 {
     if (file_stack_ptr + 1 > MAX_FILE_STACK)
         yyerror("too many files!");
@@ -82,7 +82,7 @@ void push_file_stack(const char* filename)
     if (!fptr)
     {
         yyerror("file not found!");
-        return;
+        return FALSE;
     }
 
     file_stack_ptr++;
@@ -93,6 +93,7 @@ void push_file_stack(const char* filename)
 
     yyin = fptr;
     LOG("Push '%s' onto parser input stack (depth = %d)\n", filename, file_stack_ptr);
+    return TRUE;
 }
 
 //-----------------------------------
@@ -113,6 +114,8 @@ void pop_file_stack()
 
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
+    if (yyin == NULL)
+        yyin = stdin;
 }
 
 //------------------------
@@ -331,7 +334,7 @@ yylex01:
     // see if input is empty
     if (c == EOF)
     {
-        if (file_stack_ptr > 1)
+        if (file_stack_ptr >= 1)
         {
             pop_file_stack();
             goto yylex01;

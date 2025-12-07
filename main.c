@@ -101,7 +101,9 @@ int main(int argc, char *argv[])
 
     if (argc != iFirstArg /* yyin != stdin */)
     {
-        push_file_stack(argv[iFirstArg]);
+        if (!push_file_stack(argv[iFirstArg]))
+            return -1;
+
         strcpy(infile, argv[iFirstArg]);
 
         // parse the input file
