@@ -114,8 +114,10 @@ void pop_file_stack()
 
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
-    if (yyin == NULL)
-        yyin = stdin;
+
+    // TODO - if file stack empty restore yyin to stdin?
+    // if (yyin == NULL)
+    //     yyin = stdin;
 }
 
 //------------------------
@@ -307,7 +309,7 @@ int getString(int delim)
     if (sym_num != -1)
     {
         yylval.symbol = sym_num;
-        LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
+        // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         return STRING;
     }
 
@@ -315,7 +317,7 @@ int getString(int delim)
 
     yylval.symbol = sym_num;
     //strcpy(yylval.word, buf);
-    LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+    // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
 
     return STRING;
 }
@@ -334,7 +336,7 @@ yylex01:
     // see if input is empty
     if (c == EOF)
     {
-        if (file_stack_ptr >= 1)
+        if (file_stack_ptr > 1) // TODO - maybe >= ?
         {
             pop_file_stack();
             goto yylex01;
@@ -419,11 +421,11 @@ yylex01:
         if (sym_num == -1)
         {
             sym_num = add_symbol(buf, lineno);
-            LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+            // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
         }
         else
         {
-            LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
+            // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         }
 
         yylval.symbol = sym_num;
