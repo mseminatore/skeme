@@ -49,3 +49,5 @@
 ;  (if (not condition)
 ;      (error "Assertion failed:" message)
 ;      condition))
+
+;(define (assert condition message) (if (not condition) (error "Assertion failed:" message) condition))

@@ -322,7 +322,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         default:
-            printf("Unknown opcode: %zd\n", *ip++);
+            printf("Unknown opcode: %zd\n", instruction);
             break;
         }
 
