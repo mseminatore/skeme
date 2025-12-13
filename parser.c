@@ -217,8 +217,9 @@ static int atom()
             }
             else if (IS_NUM(obj))
             {
-                vm_emit_object(&vm, obj);
-				vm_emit(&vm, OP_GET_LOCAL);
+                vm_emit_number(&vm, AS_NUM(obj));
+                //vm_emit_object(&vm, obj);
+                vm_emit(&vm, OP_GET_LOCAL);
             }
             else
             {

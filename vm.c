@@ -286,15 +286,15 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 			break;
 
         case OP_BRA:
-            printf("BRA %p\n", (VMCode_t*)*ip++);
+            printf("BRA %p\n", (VMCode_t*)(ip + *ip++));
             break;
 
         case OP_BNT:
-            printf("BNT %p\n", (VMCode_t*)*ip++);
+            printf("BNT %p\n", (VMCode_t*)(ip + *ip++));
             break;
 
         case OP_BNF:
-            printf("BNF %p\n", (VMCode_t*)*ip++);
+            printf("BNF %p\n", (VMCode_t*)(ip + *ip++));
             break;
 
         case OP_HALT:
@@ -314,11 +314,11 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_GET_LOCAL:
-            printf("GET_LOCAL [SP-%zd]\n", *ip++);
+            printf("GET_LOCAL\n");
             break;
             
         case OP_SET_LOCAL:
-            printf("SET_LOCAL [SP-%zd]\n", *ip++);
+            printf("SET_LOCAL\n");
             break;
 
         default:
@@ -544,9 +544,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             VM_LOG("GET_LOCAL\n");
             {
                 Object* index_obj = vm_pop(pvm);
-                int index = AS_NUM(index_obj);
-                Object* local_var = vm_fp_peek(pvm, index);
-                vm_push(pvm, local_var);
+                int index = AS_NUM(index_obj);              // get stack offset of parameter
+                Object* local_var = vm_fp_peek(pvm, index); // get parameter
+                vm_push(pvm, local_var);                    // push it onto the stack
 			}
             break;
 

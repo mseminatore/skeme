@@ -978,6 +978,18 @@ static int sk_print_stack(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: clear screen
+//-----------------------------------------------
+static int sk_cls(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // clear the screen
+    puts(TERM_CLEAR);   // "\033[2J\033[H"
+	return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -985,10 +997,11 @@ static SKFuncSet built_in_funcs[] =
     // I/O functions
     { "display", sk_display, 1 },
     { "newline", sk_newline, 0 },
-	{ "error", sk_error, ARITY_ONE_OR_MORE },
-	{ "warn", sk_warn, ARITY_ONE_OR_MORE },
-	{ "info", sk_info, ARITY_ONE_OR_MORE },
+	{ "error", sk_error, SK_ARITY_ONE_OR_MORE },
+	{ "warn", sk_warn, SK_ARITY_ONE_OR_MORE },
+	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
+	{ "cls", sk_cls, 0 },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
@@ -1026,11 +1039,11 @@ static SKFuncSet built_in_funcs[] =
 	{ ">=", sk_greater_equal, 2 },
 
     // arithmetic operators
-    { "+", sk_add, ARITY_TWO_OR_MORE },
-    { "-", sk_subtract, ARITY_TWO_OR_MORE },
-    { "*", sk_multiply, ARITY_TWO_OR_MORE },
-	{ "/", sk_divide, ARITY_TWO_OR_MORE },
-    { "=", sk_equalnum, ARITY_TWO_OR_MORE },
+    { "+", sk_add, SK_ARITY_TWO_OR_MORE },
+    { "-", sk_subtract, SK_ARITY_TWO_OR_MORE },
+    { "*", sk_multiply, SK_ARITY_TWO_OR_MORE },
+	{ "/", sk_divide, SK_ARITY_TWO_OR_MORE },
+    { "=", sk_equalnum, SK_ARITY_TWO_OR_MORE },
 
 	// debugging functions
     { "disasm", sk_disasm, 1 },
