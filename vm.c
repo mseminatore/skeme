@@ -286,15 +286,18 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 			break;
 
         case OP_BRA:
-            printf("BRA %p\n", (VMCode_t*)(ip + *ip++));
+            printf("BRA %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_BNT:
-            printf("BNT %p\n", (VMCode_t*)(ip + *ip++));
+            printf("BNT %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_BNF:
-            printf("BNF %p\n", (VMCode_t*)(ip + *ip++));
+            printf("BNF %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_HALT:
