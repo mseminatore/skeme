@@ -522,7 +522,7 @@ static int sk_load(SKState* pSK)
     {
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
-        push_file_stack(filename);
+        push_filename_stack(filename);
         yyparse(pSK);
     }
     else

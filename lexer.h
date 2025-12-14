@@ -29,6 +29,7 @@
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
 
+// file stack node structure
 typedef struct
 {
     FILE *fptr;
@@ -36,7 +37,6 @@ typedef struct
     int column;
     char *filename;    
 } FileNode;
-
 
 // symbol types
 typedef enum
@@ -75,11 +75,14 @@ typedef struct
 //    char *lexeme;
 } YYLVAL;
 
+// input file ptr
 extern FILE *yyin;
 
+// token values
 enum { ID = 256, DEFINE, LAMBDA, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FALSE, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
        LIST, CASE_TOKEN, PRINT, READ, EVAL, AND, OR };
 
+// externals
 extern int lookahead;
 extern int symbol_count;
 extern YYLVAL yylval;
@@ -88,6 +91,11 @@ extern int lineno;
 extern int g_bDebug;
 extern int file_stack_ptr;
 extern FileNode file_nodes[];
+
+// function decls
+int push_fileptr_stack(FILE *fptr, const char* filename);
+int push_filename_stack(const char *filename);
+int pop_file_stack(void);
 
 int yylex();
 void LOG(const char *fmt, ...);

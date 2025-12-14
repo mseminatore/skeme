@@ -73,15 +73,11 @@ void LOG(const char *fmt, ...)
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-int push_file_stack(const char* filename)
+int push_fileptr_stack(FILE *fptr, const char* filename)
 {
     if (file_stack_ptr + 1 > MAX_FILE_STACK)
-        yyerror("too many files!");
-
-    FILE* fptr = fopen(filename, "rt");
-    if (!fptr)
     {
-        yyerror("file not found!");
+        yyerror("too many files!");
         return FALSE;
     }
 
@@ -97,20 +93,48 @@ int push_file_stack(const char* filename)
 }
 
 //-----------------------------------
+// push new input file onto the stack
+//-----------------------------------
+int push_filename_stack(const char* filename)
+{
+    FILE* fptr = fopen(filename, "rt");
+    if (!fptr)
+    {
+        yyerror("file not found!");
+        return FALSE;
+    }
+
+    int result = push_fileptr_stack(fptr, filename);
+    if (!result && fptr != stdin)
+    {
+        fclose(fptr);
+    }
+
+    return result;
+}
+
+//-----------------------------------
 // pop input file off the stack
 //-----------------------------------
-void pop_file_stack()
+int pop_file_stack()
 {
     if (file_stack_ptr <= 0)
     {
         yyerror("file stack underflow!");
-        return;
+        return FALSE;
     }
 
     LOG("Popping '%s' from parser input stack (depth = %d)\n", file_nodes[file_stack_ptr].filename, file_stack_ptr-1);
 
     free(file_nodes[file_stack_ptr].filename);
-    fclose(file_nodes[file_stack_ptr].fptr);
+
+    if (file_nodes[file_stack_ptr].fptr != stdin)
+        fclose(file_nodes[file_stack_ptr].fptr);
+    else
+    {
+        yyerror("attempt to close stdin!");
+        return FALSE;
+    }
 
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
@@ -118,6 +142,7 @@ void pop_file_stack()
     // TODO - if file stack empty restore yyin to stdin?
     // if (yyin == NULL)
     //     yyin = stdin;
+    return TRUE;
 }
 
 //------------------------
@@ -333,7 +358,7 @@ yylex01:
     // skip leading whitespace
     while ((c = getch()) == ' ' || c == '\t');
 
-    // see if input is empty
+    // see if input stack is empty
     if (c == EOF)
     {
         if (file_stack_ptr > 1) // TODO - maybe >= ?

@@ -24,11 +24,12 @@ CodeChunk repl_chunk;
 //--------------------------------
 void usage()
 {
-    printf("\nUsage: %s [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n", APP_NAME);
+    printf("\nUsage: %s [-d] [-i] [-t] <inputfile>\n", APP_NAME);
     printf("  -d : enable parser debug output\n");
+    printf("  -h : display usage\n");
     printf("  -i : take input from stdin\n");
     printf("  -p : parser logging\n");
-    printf("  -t : generate symbol table\n\n");
+    printf("  -t : generate symbol table\n");
     printf("  -v : enable verbose output\n");
     exit(0);
 }
@@ -53,6 +54,10 @@ int getopt(int n, char *args[])
         // flag for parser debugging
         if (args[i][1] == 'd')
             yydebug = 1;
+
+        // flag for usage
+        if (args[i][1] == 'h')
+            usage();
 
         // flag for setting output file name
 		if (args[i][1] == 'o')
@@ -93,7 +98,7 @@ int main(int argc, char *argv[])
 	int iFirstArg = getopt(argc, argv);
 
     // fout = fopen(g_szOutputFilename, "wb");
-    LOG("Output file: '%s'\n", g_szOutputFilename);
+    // LOG("Output file: '%s'\n", g_szOutputFilename);
 
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
@@ -101,7 +106,7 @@ int main(int argc, char *argv[])
 
     if (argc != iFirstArg /* yyin != stdin */)
     {
-        if (!push_file_stack(argv[iFirstArg]))
+        if (!push_filename_stack(argv[iFirstArg]))
             return -1;
 
         strcpy(infile, argv[iFirstArg]);
