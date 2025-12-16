@@ -990,6 +990,96 @@ static int sk_cls(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: getenv
+//-----------------------------------------------
+static int sk_getenv(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    Object *key = vm_pop(&vm);
+    if (!IS_OBJ(key) || OBJ_TYPE(key) != OBJ_STRING)
+    {
+        yyerror("argument to 'getenv' is not a string");
+        return SK_FALSE;
+    }
+
+    const char *value = getenv(((String*)key)->value);
+    if (value)
+    {
+        vm_push_string(&vm, value);
+    }
+    else
+    {
+        vm_push(&vm, NULL);
+    }
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: command-line
+//-----------------------------------------------
+static int sk_command_line(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    //vm_push(&vm, vm_get_global(&vm, vm_new_string(&vm, "env__")));
+	vm_push_global(&vm, "env__");
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: typeof
+//-----------------------------------------------
+static int sk_typeof(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&vm);
+    const char* type_name = "unknown";
+
+    if (!obj)
+    {
+        type_name = "nil";
+    }
+    else if (IS_BOOL(obj))
+    {
+        type_name = "boolean";
+    }
+    else if (IS_NUM(obj))
+    {
+        type_name = "number";
+    }
+    else if (IS_OBJ(obj))
+    {
+        switch (OBJ_TYPE(obj))
+        {
+        case OBJ_STRING:
+            type_name = "string";
+            break;
+
+        case OBJ_PAIR:
+            type_name = "pair";
+            break;
+
+        case OBJ_FUNCTION:
+            type_name = "function";
+            break;
+
+        case OBJ_NATIVE_FN:
+            type_name = "native-function";
+            break;
+
+        default:
+            type_name = "object";
+            break;
+        }
+    }
+
+    vm_push_string(&vm, type_name);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1002,6 +1092,11 @@ static SKFuncSet built_in_funcs[] =
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 	{ "cls", sk_cls, 0 },
+
+    // environment functions
+	{ "getenv", sk_getenv, 1 }, 
+	//{ "setenv", sk_setenv, 2 },
+	{ "command-line", sk_command_line, 0 },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
@@ -1051,6 +1146,7 @@ static SKFuncSet built_in_funcs[] =
     { "strings", sk_strings, 0 },
     { "globals", sk_globals },
     { "gc-stats", sk_gc_stats, 0 },
+	{ "typeof", sk_typeof, 1 },
 
     // { "print", sk_print },
     // { "integer?", sk_integerp },

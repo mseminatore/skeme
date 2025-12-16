@@ -228,6 +228,8 @@ int vm_clear_stack(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);
 void vm_print_stack(VM* pvm);
+void vm_push_string(VM* pvm, const char* str);
+void vm_push_global(VM* pvm, const char* name);
 
 // object allocation
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);

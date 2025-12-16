@@ -854,6 +854,22 @@ void vm_gc(VM* pvm) {
 }
 
 //--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+void vm_push_string(VM* pvm, const char *str)
+{
+    vm_push(pvm, vm_new_string(pvm, str));
+}
+
+//--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+void vm_push_global(VM* pvm, const char *name)
+{
+    vm_push(pvm, vm_get_global(pvm, vm_new_string(pvm, name)));
+}
+
+//--------------------------------------------------------------
 // Push a return address onto the return stack
 //--------------------------------------------------------------
 void vm_push_ip(VM* pvm, VMCode_t *ip)

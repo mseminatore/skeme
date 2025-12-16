@@ -24,6 +24,10 @@
 	#define SK_FALSE 0
 #endif
 
+#ifndef SK_NULL
+	#define SK_NULL NULL
+#endif
+
 #define SK_ARITY_ANY -1
 #define SK_ARITY_ONE_OR_MORE -2
 #define SK_ARITY_TWO_OR_MORE -3
