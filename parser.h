@@ -56,7 +56,7 @@ void yyerror(const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 
-int sk_init(SKState *pSK);
+int sk_init(SKState *pSK, int argc, char *argv[]);
 int sk_parse(SKState *pSK);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_display(SKState *pSK);

@@ -88,7 +88,8 @@ int main(int argc, char *argv[])
     char infile[BUF_SIZE] = "stdin";
 
     printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n\n", APP_NAME, APP_VER);
-    sk_init(&sk);
+
+    sk_init(&sk, argc, argv);
 
 	int iFirstArg = getopt(argc, argv);
 
@@ -99,7 +100,7 @@ int main(int argc, char *argv[])
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&repl_chunk);
 
-    if (argc != iFirstArg /* yyin != stdin */)
+    if (argc != iFirstArg)
     {
         if (!push_filename_stack(argv[iFirstArg]))
             return -1;

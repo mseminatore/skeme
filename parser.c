@@ -830,7 +830,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 //-----------------------------------------------
 // init skeme
 //-----------------------------------------------
-int sk_init(SKState *pSK)
+int sk_init(SKState *pSK, int argc, char* argv[])
 {
     // initialize the VM
     if (VM_OK != vm_init(&vm))
@@ -845,6 +845,29 @@ int sk_init(SKState *pSK)
         fprintf(stderr, "Failed to register built-in functions!\n");
         return FALSE;
     }
+
+    // setup environment vars
+    Pair* alist = NULL;
+    Pair* pair = NULL;
+
+    for (int i = argc - 1; i >= 0; i--)
+    {
+        vm_push(&vm, (Object*)pair);    // stash pair on stack to prevent premature GC
+        alist = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
+		vm_push(&vm, (Object*)alist); // stash alist on stack to prevent premature GC
+        alist->car = vm_new_string(&vm, argv[i]);
+        vm_pop(&vm);                    // discard stashed list
+        vm_pop(&vm);                    // discard stashed pair
+
+        alist->cdr = (Object*)pair;
+
+        pair = alist;
+    }
+    
+    vm_push(&vm, (Object*)alist);
+    Object* key = vm_new_string(&vm, "env__");
+    vm_pop(&vm);
+    vm_define_global(&vm, key, (Object*)alist);
 
     return TRUE;
 }
