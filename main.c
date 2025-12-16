@@ -71,7 +71,6 @@ int getopt(int n, char *args[])
         // flag for taking input from stdio
         if (args[i][1] == 'i')
             g_bInteractive = TRUE;
-//			push_fileptr_stack(stdin, "stdin");
 
         // flag for symbols
         if (args[i][1] == 't')
@@ -128,7 +127,10 @@ int main(int argc, char *argv[])
     }
 
     // default input is stdin
-    yyin = stdin;
+	if (!g_bDone)
+    {
+        push_fileptr_stack(stdin, "stdin");
+    }
 
     // REPL loop
     while (!g_bDone)
@@ -142,7 +144,6 @@ int main(int argc, char *argv[])
         if (vm.sp)
         {
             sk_display(&sk);
-            //assert(0 == vm.sp);
             if (vm.sp)
             {
                 fprintf(stderr, "%d items left on stack.\n", vm.sp);

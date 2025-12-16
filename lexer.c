@@ -139,7 +139,7 @@ int pop_file_stack()
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
 
-    if (yyin == NULL)
+    if (NULL == yyin || stdin == yyin)
         return FALSE;
 
     return TRUE;
