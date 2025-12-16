@@ -139,9 +139,9 @@ int pop_file_stack()
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
 
-    // TODO - if file stack empty restore yyin to stdin?
-    // if (yyin == NULL)
-    //     yyin = stdin;
+    if (yyin == NULL)
+        return FALSE;
+
     return TRUE;
 }
 
@@ -361,9 +361,8 @@ yylex01:
     // see if input stack is empty
     if (c == EOF)
     {
-        if (file_stack_ptr > 1) // TODO - maybe >= ?
+        if (pop_file_stack())
         {
-            pop_file_stack();
             goto yylex01;
         }
 

@@ -15,6 +15,8 @@ const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
 int g_bDone = FALSE;
+int g_bInteractive = FALSE;
+
 extern int g_bParseLog;
 
 CodeChunk repl_chunk;
@@ -68,7 +70,8 @@ int getopt(int n, char *args[])
 
         // flag for taking input from stdio
         if (args[i][1] == 'i')
-            yyin = stdin;
+            g_bInteractive = TRUE;
+//			push_fileptr_stack(stdin, "stdin");
 
         // flag for symbols
         if (args[i][1] == 't')
@@ -84,13 +87,6 @@ int getopt(int n, char *args[])
 int main(int argc, char *argv[])
 {
     char infile[BUF_SIZE] = "stdin";
-
-    // show usage if no arguments given
-  //  if (argc == 1)
-		//usage();
-
-	// default input is stdin
-    yyin = stdin;
 
     printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n\n", APP_NAME, APP_VER);
     sk_init(&sk);
@@ -123,27 +119,34 @@ int main(int argc, char *argv[])
             //puts("");
             LOG("%d items left on stack.\n", vm.sp);
         }
-    }
-    else
-    {
-        // REPL loop
-        while (!g_bDone)
+
+        if (!g_bInteractive)
         {
-            vm_reset(&vm);
+            // clean up and exit
+            g_bDone = TRUE;
+		}
+    }
 
-            printf(PROMPT);
+    // default input is stdin
+    yyin = stdin;
 
-            sk_parse(&sk);
-            vm_exec(&vm, repl_chunk.code);
+    // REPL loop
+    while (!g_bDone)
+    {
+        vm_reset(&vm);
+
+        printf(PROMPT);
+
+        sk_parse(&sk);
+        vm_exec(&vm, repl_chunk.code);
+        if (vm.sp)
+        {
+            sk_display(&sk);
+            //assert(0 == vm.sp);
             if (vm.sp)
             {
-                sk_display(&sk);
-                //assert(0 == vm.sp);
-                if (vm.sp)
-                {
-                    fprintf(stderr, "%d items left on stack.\n", vm.sp);
-                    vm_print_stack(&vm);
-                }
+                fprintf(stderr, "%d items left on stack.\n", vm.sp);
+                vm_print_stack(&vm);
             }
         }
     }
