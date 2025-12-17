@@ -39,6 +39,9 @@
 ; define a variable
 ;(define foo 5)
 
+;(define (cadr x) (car (cdr x)))
+;(define (cddr x) (cdr (cdr x)))
+
 ; a function
 ;(define (fib n)
 ;    (if (<= n 2)
