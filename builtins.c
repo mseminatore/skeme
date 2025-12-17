@@ -1081,6 +1081,16 @@ static int sk_typeof(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: mem-allocated
+//-----------------------------------------------
+static int sk_mem_allocated(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    vm_push(&vm, MAKE_NUM((int)vm.allocatedBytes));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1098,6 +1108,7 @@ static SKFuncSet built_in_funcs[] =
 	{ "getenv", sk_getenv, 1 }, 
 	//{ "setenv", sk_setenv, 2 },
 	{ "command-line", sk_command_line, 0 },
+	{ "mem-allocated", sk_mem_allocated, 0 },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
