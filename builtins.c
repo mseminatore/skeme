@@ -1003,7 +1003,8 @@ static int sk_getenv(SKState* pSK)
         return SK_FALSE;
     }
 
-    const char *value = getenv(((String*)key)->value);
+    const char *str = ((String*)key)->value;
+    const char *value = getenv(str);
     if (value)
     {
         vm_push_string(&vm, value);
