@@ -138,7 +138,8 @@ int main(int argc, char *argv[])
     {
         vm_reset(&vm);
 
-        printf(PROMPT);
+        if (yyin == stdin)
+            printf(PROMPT);
 
         sk_parse(&sk);
         vm_exec(&vm, repl_chunk.code);
