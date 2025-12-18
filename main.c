@@ -109,6 +109,8 @@ int main(int argc, char *argv[])
 
         // parse the input file
         sk_parse(&sk);
+
+		// execute the parsed code
         vm_exec(&vm, repl_chunk.code);
 
         LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
@@ -143,6 +145,7 @@ int main(int argc, char *argv[])
 
         sk_parse(&sk);
         vm_exec(&vm, repl_chunk.code);
+
         if (vm.sp)
         {
             sk_display(&sk);
