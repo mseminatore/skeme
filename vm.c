@@ -10,7 +10,13 @@
 
 int g_bGCLog = FALSE;
 int g_bVMLog = FALSE;
-int g_bGCStress = FALSE;
+
+#if defined(VM_STRESS_GC)
+    int g_bGCStress = TRUE;
+#else
+    int g_bGCStress = FALSE;
+#endif
+
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
@@ -30,6 +36,8 @@ CodeChunk* vm_get_current_chunk()
 //--------------------------------------
 CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
 {
+    VM_LOG("vm: set current chunk = %p", chunk);
+
     assert(chunk);
 
     CodeChunk* previous_chunk = g_current_chunk;
@@ -539,7 +547,14 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             Object* key = vm_pop(pvm);
             VM_LOG("LOAD '%s'\n", ((String*)key)->value);
             // variable retrieval
-            vm_push(pvm, vm_get_global(pvm, key));
+            Object* value = vm_get_global(pvm, key);
+            
+			// if variable not found, error
+			// TODO NB: the hash table doesn't differentiate between NULL value and missing key
+            //if (!value)
+            //    yyerror("entity undefined");
+
+            vm_push(pvm, value);
         }
             break;
 
@@ -850,7 +865,7 @@ void vm_gc(VM* pvm) {
 
     pvm->gc_cycles++;
     
-    GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+    GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
 }
 
 //--------------------------------------------------------------
@@ -966,13 +981,16 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     }
 
     // possibly trigger GC
-    if (new_size > old_size) 
+    if (new_size > old_size)
     {
-#ifdef VM_STRESS_GC
         // Force a garbage collection on every allocation if stress GC is enabled
         // This is useful for testing purposes
-        vm_gc(pvm);
-#endif
+        do
+        {
+            if (g_bGCStress)
+                vm_gc(pvm);
+        } while (0);
+
     }
 
     // free the memory

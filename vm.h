@@ -57,6 +57,9 @@
 //#endif
 
 extern int g_bGCLog;
+extern int g_bVMLog;
+extern int g_bGCStress;
+
 void yyerror(const char *s);
 
 //-----------------------------
@@ -127,6 +130,7 @@ typedef intptr_t VMCode_t;
 
 // code chunk structure
 typedef struct CodeChunk {
+    Object base;    // base object - not used presently!
     VMCode_t* code;
     size_t count;
     size_t capacity;

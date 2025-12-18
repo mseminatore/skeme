@@ -27,8 +27,6 @@
     #define getcwd _getcwd
 #endif
 
-extern int g_bVMLog;
-
 //
 //[]-----------------------------------------------
 //  built-in functions
@@ -178,6 +176,20 @@ static int sk_vmlog(SKState* pSK)
 
     return SK_TRUE;
 }
+
+//-----------------------------------------------
+// built-in function: gc-stress
+//-----------------------------------------------
+static int sk_gc_stress(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    g_bGCStress = !g_bGCStress;
+    yyinfo(g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
+    
+    return SK_TRUE;
+}
+
 //-----------------------------------------------
 // built-in function: null?
 //-----------------------------------------------
@@ -523,7 +535,6 @@ static int sk_load(SKState* pSK)
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
         push_filename_stack(filename);
-        // yyparse(pSK);
     }
     else
         yyerror("invalid parameter");
@@ -1159,6 +1170,7 @@ static SKFuncSet built_in_funcs[] =
     { "globals", sk_globals },
     { "gc-stats", sk_gc_stats, 0 },
 	{ "typeof", sk_typeof, 1 },
+    { "gc-stress", sk_gc_stress, 0 },
 
     // { "print", sk_print },
     // { "integer?", sk_integerp },

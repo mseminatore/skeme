@@ -1,3 +1,8 @@
+;(load "stdlib.scm")
+;(load "core.scm")
+;(load "io.scm")
+;(load "../fib.scm")
+
 ; turn on VM logging
 ;(vmlog)
 
