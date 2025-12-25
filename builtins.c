@@ -1070,7 +1070,10 @@ static int sk_typeof(SKState* pSK)
             break;
 
         case OBJ_PAIR:
-            type_name = "pair";
+            if (OBJ_TYPE(((Pair*)obj)->cdr) == OBJ_PAIR || IS_NIL(((Pair*)obj)->cdr))
+                type_name = "list";
+            else
+                type_name = "pair";
             break;
 
         case OBJ_FUNCTION:
