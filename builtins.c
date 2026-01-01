@@ -27,8 +27,6 @@
     #define getcwd _getcwd
 #endif
 
-extern int g_bVMLog;
-
 //
 //[]-----------------------------------------------
 //  built-in functions
@@ -178,6 +176,20 @@ static int sk_vmlog(SKState* pSK)
 
     return SK_TRUE;
 }
+
+//-----------------------------------------------
+// built-in function: gc-stress
+//-----------------------------------------------
+static int sk_gc_stress(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    g_bGCStress = !g_bGCStress;
+    yyinfo(g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
+    
+    return SK_TRUE;
+}
+
 //-----------------------------------------------
 // built-in function: null?
 //-----------------------------------------------
@@ -522,8 +534,7 @@ static int sk_load(SKState* pSK)
     {
         // Get the filename from the string object
         const char* filename = ((String*)obj)->value;
-        push_file_stack(filename);
-        yyparse(pSK);
+        push_filename_stack(filename);
     }
     else
         yyerror("invalid parameter");
@@ -966,6 +977,134 @@ static int sk_disasm(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: print stack
+//-----------------------------------------------
+static int sk_print_stack(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    vm_print_stack(&vm);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: clear screen
+//-----------------------------------------------
+static int sk_cls(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    // clear the screen
+    puts(TERM_CLEAR);   // "\033[2J\033[H"
+	return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: getenv
+//-----------------------------------------------
+static int sk_getenv(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    Object *key = vm_pop(&vm);
+    if (!IS_OBJ(key) || OBJ_TYPE(key) != OBJ_STRING)
+    {
+        yyerror("argument to 'getenv' is not a string");
+        return SK_FALSE;
+    }
+
+    const char *str = ((String*)key)->value;
+    const char *value = getenv(str);
+    if (value)
+    {
+        vm_push_string(&vm, value);
+    }
+    else
+    {
+        vm_push(&vm, NULL);
+    }
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: command-line
+//-----------------------------------------------
+static int sk_command_line(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    //vm_push(&vm, vm_get_global(&vm, vm_new_string(&vm, "env__")));
+	vm_push_global(&vm, "env__");
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: typeof
+//-----------------------------------------------
+static int sk_typeof(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&vm);
+    const char* type_name = "unknown";
+
+    if (!obj)
+    {
+        type_name = "nil";
+    }
+    else if (IS_BOOL(obj))
+    {
+        type_name = "boolean";
+    }
+    else if (IS_NUM(obj))
+    {
+        type_name = "number";
+    }
+    else if (IS_OBJ(obj))
+    {
+        switch (OBJ_TYPE(obj))
+        {
+        case OBJ_STRING:
+            type_name = "string";
+            break;
+
+        case OBJ_PAIR:
+            if (OBJ_TYPE(((Pair*)obj)->cdr) == OBJ_PAIR || IS_NIL(((Pair*)obj)->cdr))
+                type_name = "list";
+            else
+                type_name = "pair";
+            break;
+
+        case OBJ_FUNCTION:
+            type_name = "function";
+            break;
+
+        case OBJ_NATIVE_FN:
+            type_name = "native-function";
+            break;
+
+        default:
+            type_name = "object";
+            break;
+        }
+    }
+
+    vm_push_string(&vm, type_name);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: mem-allocated
+//-----------------------------------------------
+static int sk_mem_allocated(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    vm_push(&vm, MAKE_NUM((int)vm.allocatedBytes));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -973,10 +1112,17 @@ static SKFuncSet built_in_funcs[] =
     // I/O functions
     { "display", sk_display, 1 },
     { "newline", sk_newline, 0 },
-	{ "error", sk_error, ARITY_ONE_OR_MORE },
-	{ "warn", sk_warn, ARITY_ONE_OR_MORE },
-	{ "info", sk_info, ARITY_ONE_OR_MORE },
+	{ "error", sk_error, SK_ARITY_ONE_OR_MORE },
+	{ "warn", sk_warn, SK_ARITY_ONE_OR_MORE },
+	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
+	{ "cls", sk_cls, 0 },
+
+    // environment functions
+	{ "getenv", sk_getenv, 1 }, 
+	//{ "setenv", sk_setenv, 2 },
+	{ "command-line", sk_command_line, 0 },
+	{ "mem-allocated", sk_mem_allocated, 0 },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
@@ -1006,9 +1152,6 @@ static SKFuncSet built_in_funcs[] =
     { "gclog", sk_gclog, 0 },
 	{ "parselog", sk_parselog, 0 },
 	{ "vmlog", sk_vmlog, 0 },
-    { "strings", sk_strings, 0 },
-	{ "globals", sk_globals },
-    { "gc-stats", sk_gc_stats, 0 },
 
     // comparison operators
     { "<", sk_less, 2 },
@@ -1017,13 +1160,20 @@ static SKFuncSet built_in_funcs[] =
 	{ ">=", sk_greater_equal, 2 },
 
     // arithmetic operators
-    { "+", sk_add, ARITY_TWO_OR_MORE },
-    { "-", sk_subtract, ARITY_TWO_OR_MORE },
-    { "*", sk_multiply, ARITY_TWO_OR_MORE },
-	{ "/", sk_divide, ARITY_TWO_OR_MORE },
-    { "=", sk_equalnum, ARITY_TWO_OR_MORE },
+    { "+", sk_add, SK_ARITY_TWO_OR_MORE },
+    { "-", sk_subtract, SK_ARITY_TWO_OR_MORE },
+    { "*", sk_multiply, SK_ARITY_TWO_OR_MORE },
+	{ "/", sk_divide, SK_ARITY_TWO_OR_MORE },
+    { "=", sk_equalnum, SK_ARITY_TWO_OR_MORE },
 
+	// debugging functions
     { "disasm", sk_disasm, 1 },
+	{ "print-stack", sk_print_stack, 0 },
+    { "strings", sk_strings, 0 },
+    { "globals", sk_globals },
+    { "gc-stats", sk_gc_stats, 0 },
+	{ "typeof", sk_typeof, 1 },
+    { "gc-stress", sk_gc_stress, 0 },
 
     // { "print", sk_print },
     // { "integer?", sk_integerp },

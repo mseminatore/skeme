@@ -184,7 +184,7 @@ static int atom()
         break;
 
     case STRING:
-        // handle string
+        // TODO - use yylval.word and handle interned strings
         PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
 
 		vm_emit_string(&vm, symbols[yylval.symbol].name);
@@ -204,16 +204,28 @@ static int atom()
         {
             PARSE_LOG("ID: '%s'\n", yylval.word);
 
+            // TODO - check if var is local, if so emit stack read
+			Object* obj = vm_get_var(&vm, yylval.word);
+
             // handle variable and check for undefined symbol
             Object* key = vm_get_string(&vm, yylval.word);
             match(ID);
-            if (key)
+
+            if (!key)
+            {
+                yyerror("entity undefined");
+            }
+            else if (IS_NUM(obj))
+            {
+                vm_emit_number(&vm, AS_NUM(obj));
+                //vm_emit_object(&vm, obj);
+                vm_emit(&vm, OP_GET_LOCAL);
+            }
+            else
             {
                 vm_emit_object(&vm, key);
                 vm_emit(&vm, OP_LOAD);
             }
-            else
-                yyerror("entity undefined");
 
             unindent();
         }
@@ -240,8 +252,23 @@ static int formals(Procedure* proc)
     int arity = 0;
     while (lookahead == ID)
     {
-        match(ID);
         arity++;
+		vm_set_var(&vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
+        match(ID);
+    }
+
+    if (vm.current_scope)
+    {
+        Environment* env = vm.current_scope;
+
+        // update all bindings in the current environment
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+        {
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 1)); // set parameter stack offset
+        }
     }
 
     if (proc)
@@ -283,6 +310,8 @@ static int definition()
 		// function definition
 		match('(');
         
+        vm_new_environment(&vm);   // create new environment for function scope
+
         // function name
         Object* proc_name = vm_new_string(&vm, yylval.word);
 		vm_push(&vm, proc_name);                    // stash function name on stack in case of GC
@@ -294,7 +323,8 @@ static int definition()
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
-        vm_define_global(&vm, proc_name, proc_obj);
+		vm_define_global(&vm, proc_name, proc_obj); // TODO - add to current scope instead of global
+
         match(ID);
 		
         // parameters
@@ -308,8 +338,11 @@ static int definition()
         local_body();
 
         // return from function
+        vm_emit_number(&vm, proc->arity);
         vm_emit(&vm, OP_RET);
         vm_set_current_chunk(prev_chunk);
+
+        vm_free_environment(&vm); // pop function environment off chain
 	}
     else
     {
@@ -797,7 +830,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 //-----------------------------------------------
 // init skeme
 //-----------------------------------------------
-int sk_init(SKState *pSK)
+int sk_init(SKState *pSK, int argc, char* argv[])
 {
     // initialize the VM
     if (VM_OK != vm_init(&vm))
@@ -812,6 +845,29 @@ int sk_init(SKState *pSK)
         fprintf(stderr, "Failed to register built-in functions!\n");
         return FALSE;
     }
+
+    // setup environment vars
+    Pair* alist = NULL;
+    Pair* pair = NULL;
+
+    for (int i = argc - 1; i >= 0; i--)
+    {
+        vm_push(&vm, (Object*)pair);    // stash pair on stack to prevent premature GC
+        alist = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
+		vm_push(&vm, (Object*)alist); // stash alist on stack to prevent premature GC
+        alist->car = vm_new_string(&vm, argv[i]);
+        vm_pop(&vm);                    // discard stashed list
+        vm_pop(&vm);                    // discard stashed pair
+
+        alist->cdr = (Object*)pair;
+
+        pair = alist;
+    }
+    
+    vm_push(&vm, (Object*)alist);
+    Object* key = vm_new_string(&vm, "env__");
+    vm_pop(&vm);
+    vm_define_global(&vm, key, (Object*)alist);
 
     return TRUE;
 }

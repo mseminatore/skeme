@@ -57,6 +57,9 @@
 //#endif
 
 extern int g_bGCLog;
+extern int g_bVMLog;
+extern int g_bGCStress;
+
 void yyerror(const char *s);
 
 //-----------------------------
@@ -76,6 +79,7 @@ typedef struct Object {
 #define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
 #define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
 #define IS_NIL(obj)         (obj == NULL)
+#define AS_STRING(obj)      (IS_OBJ(obj) ? (String*)(obj) : NULL)
 
 #define OBJ_TYPE(obj)       (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
 #define SET_TYPE(obj, t)    do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->type = (t); } while(0)
@@ -118,7 +122,7 @@ enum
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
     OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP, OP_PROC, OP_CLOSURE,
-    OP_LIST
+	OP_LIST, OP_GET_LOCAL, OP_SET_LOCAL, OP_LAST
 };
 
 // opcode type
@@ -126,6 +130,7 @@ typedef intptr_t VMCode_t;
 
 // code chunk structure
 typedef struct CodeChunk {
+    Object base;    // base object - not used presently!
     VMCode_t* code;
     size_t count;
     size_t capacity;
@@ -143,6 +148,12 @@ typedef struct String {
     Object base;        // base object
     const char value[]; // string value
 } String;
+
+// float object
+typedef struct Float {
+    Object base;    // base object
+    float value;    // float value
+} Float;
 
 // procedure object
 typedef struct Procedure {
@@ -162,8 +173,9 @@ typedef struct NativeFunction {
 
 // environment object
 typedef struct Environment {
-    Object base;            // base object
-    //HashTable env;
+    Object base;                // base object
+    HashTable *bindings;             // hash table for variable bindings
+    struct Environment* parent; // pointer to parent environment
 } Environment;
 
 // closure object
@@ -175,7 +187,8 @@ typedef struct Closure {
 
 // Define the VM structure
 typedef struct VM {
-	int sp;                         // Stack pointer should be size_t or uint
+	int sp;                         // Stack pointer, should be size_t or uint?
+    int fp;                         // Frame pointer
     VMCode_t *ip;                   // Instruction pointer
     Object* head;                   // Head of the object list
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
@@ -188,6 +201,8 @@ typedef struct VM {
 
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings
+
+    Environment *current_scope;   // Current environment/scope
 
     VMCode_t *return_stack[VM_STACK_SIZE]; // Return address stack
     int return_sp;                        // Return address stack pointer
@@ -212,6 +227,13 @@ void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
 void vm_pop_n(VM* pvm, int n);
+Object* vm_fp_peek(VM* pvm, int distance);
+int vm_clear_stack(VM* pvm);
+void vm_push_ip(VM* pvm, VMCode_t* ip);
+VMCode_t* vm_pop_ip(VM* pvm);
+void vm_print_stack(VM* pvm);
+void vm_push_string(VM* pvm, const char* str);
+void vm_push_global(VM* pvm, const char* name);
 
 // object allocation
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size);
@@ -223,7 +245,7 @@ Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
 
-// code generation and execution
+// code generation
 int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
@@ -235,16 +257,18 @@ void vm_init_chunk(CodeChunk* chunk);
 void vm_free_chunk(VM* pvm, CodeChunk* chunk);
 VMCode_t* vm_get_chunk_ip();
 
+// execution
 void vm_exec(VM* pvm, VMCode_t *addr);
-int vm_clear_stack(VM* pvm);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
-void vm_push_ip(VM* pvm, VMCode_t* ip);
-VMCode_t* vm_pop_ip(VM* pvm);
 
-// global variable management
+// local/global variable management
 void vm_define_global(VM* pvm, Object* key, Object* value);
 void vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
+Object *vm_new_environment(VM* pvm);
+void vm_free_environment(VM* pvm);
+void vm_set_var(VM* pvm, const char* name, Object* value);
+Object* vm_get_var(VM* pvm, const char* name);
 
 #endif // __VM_H

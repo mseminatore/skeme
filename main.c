@@ -15,6 +15,8 @@ const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
 int g_bDone = FALSE;
+int g_bInteractive = FALSE;
+
 extern int g_bParseLog;
 
 CodeChunk repl_chunk;
@@ -24,11 +26,12 @@ CodeChunk repl_chunk;
 //--------------------------------
 void usage()
 {
-    printf("\nUsage: %s [-d] [-i] [-o <outputfile>] [-t] <inputfile>\n", APP_NAME);
+    printf("\nUsage: %s [-d] [-i] [-t] <inputfile>\n", APP_NAME);
     printf("  -d : enable parser debug output\n");
+    printf("  -h : display usage\n");
     printf("  -i : take input from stdin\n");
     printf("  -p : parser logging\n");
-    printf("  -t : generate symbol table\n\n");
+    printf("  -t : generate symbol table\n");
     printf("  -v : enable verbose output\n");
     exit(0);
 }
@@ -54,6 +57,10 @@ int getopt(int n, char *args[])
         if (args[i][1] == 'd')
             yydebug = 1;
 
+        // flag for usage
+        if (args[i][1] == 'h')
+            usage();
+
         // flag for setting output file name
 		if (args[i][1] == 'o')
 		{
@@ -63,7 +70,7 @@ int getopt(int n, char *args[])
 
         // flag for taking input from stdio
         if (args[i][1] == 'i')
-            yyin = stdin;
+            g_bInteractive = TRUE;
 
         // flag for symbols
         if (args[i][1] == 't')
@@ -80,32 +87,30 @@ int main(int argc, char *argv[])
 {
     char infile[BUF_SIZE] = "stdin";
 
-    // show usage if no arguments given
-  //  if (argc == 1)
-		//usage();
-
-	// default input is stdin
-    yyin = stdin;
-
     printf("\n%s v%s - a Scheme-like little language by Mark Seminatore (c) 2025\n\n", APP_NAME, APP_VER);
-    sk_init(&sk);
+
+    sk_init(&sk, argc, argv);
 
 	int iFirstArg = getopt(argc, argv);
 
     // fout = fopen(g_szOutputFilename, "wb");
-    LOG("Output file: '%s'\n", g_szOutputFilename);
+    // LOG("Output file: '%s'\n", g_szOutputFilename);
 
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&repl_chunk);
 
-    if (argc != iFirstArg /* yyin != stdin */)
+    if (argc != iFirstArg)
     {
-        push_file_stack(argv[iFirstArg]);
+        if (!push_filename_stack(argv[iFirstArg]))
+            return -1;
+
         strcpy(infile, argv[iFirstArg]);
 
         // parse the input file
         sk_parse(&sk);
+
+		// execute the parsed code
         vm_exec(&vm, repl_chunk.code);
 
         LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
@@ -116,24 +121,38 @@ int main(int argc, char *argv[])
             //puts("");
             LOG("%d items left on stack.\n", vm.sp);
         }
-    }
-    else
-    {
-        // REPL loop
-        while (!g_bDone)
-        {
-            vm_reset(&vm);  // TODO - maybe we don't want to throw away everything each time?
 
+        if (!g_bInteractive)
+        {
+            // clean up and exit
+            g_bDone = TRUE;
+		}
+    }
+
+    // default input is stdin
+	if (!g_bDone)
+    {
+        push_fileptr_stack(stdin, "stdin");
+    }
+
+    // REPL loop
+    while (!g_bDone)
+    {
+        vm_reset(&vm);
+
+        if (yyin == stdin)
             printf(PROMPT);
 
-            sk_parse(&sk);
-            vm_exec(&vm, repl_chunk.code);
+        sk_parse(&sk);
+        vm_exec(&vm, repl_chunk.code);
+
+        if (vm.sp)
+        {
+            sk_display(&sk);
             if (vm.sp)
             {
-                sk_display(&sk);
-                //puts("");
-                assert(0 == vm.sp);
-                LOG("%d items left on stack.\n", vm.sp);
+                fprintf(stderr, "%d items left on stack.\n", vm.sp);
+                vm_print_stack(&vm);
             }
         }
     }

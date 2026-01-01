@@ -6,10 +6,17 @@
 #include <assert.h>
 #include <string.h>
 #include "vm.h"
+#include "term_colors.h"
 
 int g_bGCLog = FALSE;
 int g_bVMLog = FALSE;
-int g_bGCStress = FALSE;
+
+#if defined(VM_STRESS_GC)
+    int g_bGCStress = TRUE;
+#else
+    int g_bGCStress = FALSE;
+#endif
+
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
@@ -29,6 +36,8 @@ CodeChunk* vm_get_current_chunk()
 //--------------------------------------
 CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
 {
+    VM_LOG("vm: set current chunk = %p", chunk);
+
     assert(chunk);
 
     CodeChunk* previous_chunk = g_current_chunk;
@@ -51,6 +60,7 @@ int vm_init(VM* pvm) {
     CHECK_THAT(pvm != NULL);
 
     pvm->sp = 0;
+    pvm->fp = 0;
     pvm->ip = 0;
     pvm->return_sp = 0;
     pvm->head = NULL;
@@ -66,6 +76,9 @@ int vm_init(VM* pvm) {
     pvm->interned_strings = ht_create();
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
+
+    // initialize current scope to NULL (ie. global scope)
+    pvm->current_scope = NULL;
 
     //pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
@@ -144,7 +157,7 @@ int vm_emit(VM* pvm, VMCode_t opcode)
 	}
 
 	chunk->code[chunk->count++] = opcode;
-    return chunk->count-1;
+    return (int)chunk->count-1;
 
 	// TODO - line number tracking
 	/*
@@ -219,6 +232,8 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         printf("%p ", ip);
         VMCode_t instruction = *ip++;
 
+        printf(TERM_BRIGHT_BLUE);
+
         switch (instruction)
         {
         case OP_PUSH:
@@ -279,15 +294,18 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 			break;
 
         case OP_BRA:
-            printf("BRA %p\n", (VMCode_t*)*ip++);
+            printf("BRA %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_BNT:
-            printf("BNT %p\n", (VMCode_t*)*ip++);
+            printf("BNT %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_BNF:
-            printf("BNF %p\n", (VMCode_t*)*ip++);
+            printf("BNF %p\n", (VMCode_t*)(ip + *ip));
+            ip++;
             break;
 
         case OP_HALT:
@@ -306,10 +324,20 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("CLOSURE\n");
             break;
 
+        case OP_GET_LOCAL:
+            printf("GET_LOCAL\n");
+            break;
+            
+        case OP_SET_LOCAL:
+            printf("SET_LOCAL\n");
+            break;
+
         default:
-            printf("Unknown opcode: %zd\n", (VMCode_t)*ip++);
+            printf("Unknown opcode: %zd\n", instruction);
             break;
         }
+
+        printf(TERM_RESET);
     }
 }
 
@@ -371,9 +399,17 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_RET:
             VM_LOG("RET\n");
+            {
+				Object* nargs_obj = vm_pop(pvm);    // pop number of args
+				Object* ret_val = vm_pop(pvm);      // get return value
+				Object* nframe_obj = vm_pop(pvm);   // pop old frame pointer
+				pvm->fp = AS_NUM(nframe_obj);       // restore old frame pointer
+				vm_pop_n(pvm, AS_NUM(nargs_obj));   // pop args from stack
+                vm_push(pvm, ret_val);              // restore return value to stack
 
-            // set IP to return address
-            pvm->ip = vm_pop_ip(pvm);
+                // set IP to return address
+                pvm->ip = vm_pop_ip(pvm);
+            }
             break;
 
         case OP_HALT:
@@ -401,15 +437,19 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             if (proc->arity != nargs)
             {
                 yyerror("incorrect number of arguments to function");
-                // clear args from stack
-                vm_pop_n(pvm, nargs);
+                
+                vm_pop_n(pvm, nargs);   // clear args from stack
+                pvm->ip++;              // skip to the start of next instruction
                 break;
             }
 
-            // call function by setting IP to function address
             vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
 
+            // call function by setting IP to function address
             pvm->ip = proc->chunk.code;
+
+            vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
+            pvm->fp = pvm->sp;                  // set-up new frame pointer
         }
             break;
 
@@ -507,8 +547,25 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             Object* key = vm_pop(pvm);
             VM_LOG("LOAD '%s'\n", ((String*)key)->value);
             // variable retrieval
-            vm_push(pvm, vm_get_global(pvm, key));
+            Object* value = vm_get_global(pvm, key);
+            
+			// if variable not found, error
+			// TODO NB: the hash table doesn't differentiate between NULL value and missing key
+            //if (!value)
+            //    yyerror("entity undefined");
+
+            vm_push(pvm, value);
         }
+            break;
+
+        case OP_GET_LOCAL:
+            VM_LOG("GET_LOCAL\n");
+            {
+                Object* index_obj = vm_pop(pvm);
+                int index = AS_NUM(index_obj);              // get stack offset of parameter
+                Object* local_var = vm_fp_peek(pvm, index); // get parameter
+                vm_push(pvm, local_var);                    // push it onto the stack
+			}
             break;
 
         case OP_LIST:
@@ -586,6 +643,25 @@ static void markObjects(VM* pvm) {
     {
         markObject(pvm, pvm->stack[i]);
     }
+
+    // mark environment chain
+    Environment* env = pvm->current_scope;
+    while (env)
+    {
+        // mark environment object
+        markObject(pvm, (Object*)env);
+
+        // mark all bindings in the environment
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+        {
+            markObject(pvm, (Object*)env_key);
+            markObject(pvm, (Object*)env_value);
+        }
+        env = env->parent;
+    }
 }
 
 //--------------------------------------------------------------
@@ -608,6 +684,14 @@ static void freeObject(VM* pvm, Object* object)
 			vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
         }
 		break;
+    
+    case OBJ_ENVIRONMENT:
+        {
+            // free environment-specific resources
+            Environment* env = (Environment*)object;
+            ht_free(env->bindings);
+        }
+        break;
 
     default:
         // nothing to do!
@@ -707,6 +791,11 @@ static void blackenObject(VM* pvm, Object* object)
 		}
         break;
 
+    case OBJ_ENVIRONMENT:
+        {
+        }
+	    break;
+
     default:
         // Handle other object types as needed
         break;
@@ -749,8 +838,6 @@ static void removeWhiteObjects(VM* pvm) {
         }
         else
             fprintf(stderr, "Error removing interned string during GC\n");
-
-        //free((void*)key);
     }
 
     GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
@@ -778,7 +865,23 @@ void vm_gc(VM* pvm) {
 
     pvm->gc_cycles++;
     
-    GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+    GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
+}
+
+//--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+void vm_push_string(VM* pvm, const char *str)
+{
+    vm_push(pvm, vm_new_string(pvm, str));
+}
+
+//--------------------------------------------------------------
+//
+//--------------------------------------------------------------
+void vm_push_global(VM* pvm, const char *name)
+{
+    vm_push(pvm, vm_get_global(pvm, vm_new_string(pvm, name)));
 }
 
 //--------------------------------------------------------------
@@ -856,6 +959,18 @@ Object* vm_peek(VM* pvm, int distance) {
 }
 
 //--------------------------------------------------------------
+// Peek at an object relative to the frame without popping it
+//--------------------------------------------------------------
+Object* vm_fp_peek(VM* pvm, int distance) {
+    if (pvm->fp - 1 - distance < 0) {
+        fprintf(stderr, "Stack underflow on fp_peek!\n");
+        return NULL;
+    }
+
+    return pvm->stack[pvm->fp - 1 - distance];
+}
+
+//--------------------------------------------------------------
 // Custom realloc function for memory management
 //--------------------------------------------------------------
 void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
@@ -866,13 +981,16 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     }
 
     // possibly trigger GC
-    if (new_size > old_size) 
+    if (new_size > old_size)
     {
-#ifdef VM_STRESS_GC
         // Force a garbage collection on every allocation if stress GC is enabled
         // This is useful for testing purposes
-        vm_gc(pvm);
-#endif
+        do
+        {
+            if (g_bGCStress)
+                vm_gc(pvm);
+        } while (0);
+
     }
 
     // free the memory
@@ -931,6 +1049,32 @@ Object* vm_newObject(VM* pvm, size_t size, int type)
     }
 
     return obj;
+}
+
+//--------------------------------------------------------------
+// Create a new environment object
+//--------------------------------------------------------------
+Object *vm_new_environment(VM* pvm)
+{
+    Environment* env = (Environment*)vm_newObject(pvm, sizeof(Environment), OBJ_ENVIRONMENT);
+    env->bindings = ht_create();
+    env->parent = pvm->current_scope;
+    pvm->current_scope = env;
+
+    return (Object*)env;
+}
+
+//--------------------------------------------------------------
+// Unlink the top environment object from the environment chain
+//--------------------------------------------------------------
+void vm_free_environment(VM* pvm)
+{
+    if (pvm->current_scope)
+        pvm->current_scope = pvm->current_scope->parent;
+
+    // no need to explicitly free, GC will free this object once it has no refs
+    // ht_free(&env->env);
+    // vm_alloc(pvm, env, sizeof(Environment), 0);
 }
 
 //--------------------------------------------------------------
@@ -1059,6 +1203,72 @@ Object *vm_get_global(VM *pvm, Object* key)
 {
     ht_value_t val = ht_find(pvm->global_table, key);
     return (Object*)val;
+}
+
+//--------------------------------------------------------------
+// Set a variable in current scope
+//--------------------------------------------------------------
+void vm_set_var(VM* pvm, const char* name, Object* value)
+{
+    Object* key = vm_new_string(pvm, name);
+
+    if (pvm->current_scope)
+    {
+        // set in current environment
+        ht_add(pvm->current_scope->bindings, key, value);
+        return;
+	}
+    else
+        vm_update_global(pvm, key, value);
+}
+
+//--------------------------------------------------------------
+// Get a variable from current scope
+//--------------------------------------------------------------
+Object* vm_get_var(VM* pvm, const char* name)
+{
+    Object* key = vm_new_string(pvm, name);
+
+    if (pvm->current_scope)
+    {
+        // look in current environment chain
+        Environment* env = pvm->current_scope;
+        ht_value_t val;
+        while (env)
+        {
+            val = ht_find(env->bindings, key);
+            if (val)
+                return (Object*)val;
+            env = env->parent;
+        }
+	}
+
+    return NULL;    // vm_get_global(pvm, key);
+}
+
+//--------------------------------------------------------------
+// Print the current VM stack for debugging
+//--------------------------------------------------------------
+void vm_print_stack(VM* pvm)
+{
+    printf("---- VM Stack (SP=%d) ----\n", pvm->sp);
+    for (int i = pvm->sp - 1; i >= 0; i--)
+    {
+        Object* obj = pvm->stack[i];
+        if (IS_NUM(obj))
+        {
+            printf("[%d] NUM: %d\n", i, AS_NUM(obj));
+        }
+        else if (IS_STRING(obj))
+        {
+            printf("[%d] STRING: '%s'\n", i, AS_STRING(obj)->value);
+        }
+        else
+        {
+            printf("[%d] OBJ TYPE: %d\n", i, OBJ_TYPE(obj));
+        }
+    }
+    printf("-------------------------\n");
 }
 
 //--------------------------------------------------------------

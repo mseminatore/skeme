@@ -24,9 +24,13 @@
 	#define SK_FALSE 0
 #endif
 
-#define ARITY_ANY -1
-#define ARITY_ONE_OR_MORE -2
-#define ARITY_TWO_OR_MORE -3
+#ifndef SK_NULL
+	#define SK_NULL NULL
+#endif
+
+#define SK_ARITY_ANY -1
+#define SK_ARITY_ONE_OR_MORE -2
+#define SK_ARITY_TWO_OR_MORE -3
 
 // function set structure
 typedef struct
@@ -50,15 +54,13 @@ extern int g_bParseLog;
 //-----------------
 // function decls
 //-----------------
-void push_file_stack(const char *filename);
-void pop_file_stack(void);
 int yyparse(SKState *pSK);
 void dump_symbols();
 void yyerror(const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 
-int sk_init(SKState *pSK);
+int sk_init(SKState *pSK, int argc, char *argv[]);
 int sk_parse(SKState *pSK);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_display(SKState *pSK);

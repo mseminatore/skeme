@@ -73,16 +73,12 @@ void LOG(const char *fmt, ...)
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-void push_file_stack(const char* filename)
+int push_fileptr_stack(FILE *fptr, const char* filename)
 {
     if (file_stack_ptr + 1 > MAX_FILE_STACK)
-        yyerror("too many files!");
-
-    FILE* fptr = fopen(filename, "rt");
-    if (!fptr)
     {
-        yyerror("file not found!");
-        return;
+        yyerror("too many files!");
+        return FALSE;
     }
 
     file_stack_ptr++;
@@ -93,26 +89,60 @@ void push_file_stack(const char* filename)
 
     yyin = fptr;
     LOG("Push '%s' onto parser input stack (depth = %d)\n", filename, file_stack_ptr);
+    return TRUE;
+}
+
+//-----------------------------------
+// push new input file onto the stack
+//-----------------------------------
+int push_filename_stack(const char* filename)
+{
+    FILE* fptr = fopen(filename, "rt");
+    if (!fptr)
+    {
+        yyerror("file not found!");
+        return FALSE;
+    }
+
+    int result = push_fileptr_stack(fptr, filename);
+    if (!result && fptr != stdin)
+    {
+        fclose(fptr);
+    }
+
+    return result;
 }
 
 //-----------------------------------
 // pop input file off the stack
 //-----------------------------------
-void pop_file_stack()
+int pop_file_stack()
 {
     if (file_stack_ptr <= 0)
     {
         yyerror("file stack underflow!");
-        return;
+        return FALSE;
     }
 
     LOG("Popping '%s' from parser input stack (depth = %d)\n", file_nodes[file_stack_ptr].filename, file_stack_ptr-1);
 
     free(file_nodes[file_stack_ptr].filename);
-    fclose(file_nodes[file_stack_ptr].fptr);
+
+    if (file_nodes[file_stack_ptr].fptr != stdin)
+        fclose(file_nodes[file_stack_ptr].fptr);
+    else
+    {
+        yyerror("attempt to close stdin!");
+        return FALSE;
+    }
 
     file_stack_ptr--;
     yyin = file_nodes[file_stack_ptr].fptr;
+
+    if (NULL == yyin || stdin == yyin)
+        return FALSE;
+
+    return TRUE;
 }
 
 //------------------------
@@ -304,7 +334,7 @@ int getString(int delim)
     if (sym_num != -1)
     {
         yylval.symbol = sym_num;
-        LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
+        // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         return STRING;
     }
 
@@ -312,7 +342,7 @@ int getString(int delim)
 
     yylval.symbol = sym_num;
     //strcpy(yylval.word, buf);
-    LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+    // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
 
     return STRING;
 }
@@ -328,12 +358,11 @@ yylex01:
     // skip leading whitespace
     while ((c = getch()) == ' ' || c == '\t');
 
-    // see if input is empty
+    // see if input stack is empty
     if (c == EOF)
     {
-        if (file_stack_ptr > 1)
+        if (pop_file_stack())
         {
-            pop_file_stack();
             goto yylex01;
         }
 
@@ -416,11 +445,11 @@ yylex01:
         if (sym_num == -1)
         {
             sym_num = add_symbol(buf, lineno);
-            LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+            // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
         }
         else
         {
-            LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
+            // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         }
 
         yylval.symbol = sym_num;

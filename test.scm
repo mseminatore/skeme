@@ -1,3 +1,8 @@
+;(load "stdlib.scm")
+;(load "core.scm")
+;(load "io.scm")
+;(load "../fib.scm")
+
 ; turn on VM logging
 ;(vmlog)
 
@@ -39,6 +44,9 @@
 ; define a variable
 ;(define foo 5)
 
+;(define (cadr x) (car (cdr x)))
+;(define (cddr x) (cdr (cdr x)))
+
 ; a function
 ;(define (fib n)
 ;    (if (<= n 2)
@@ -49,3 +57,5 @@
 ;  (if (not condition)
 ;      (error "Assertion failed:" message)
 ;      condition))
+
+;(define (assert condition message) (if (not condition) (error "Assertion failed:" message) condition))
