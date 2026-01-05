@@ -1183,6 +1183,8 @@ static SKFuncSet built_in_funcs[] =
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 	{ "cls", sk_cls, 0 },
+    { "read", sk_read, 0 },
+    { "write", sk_write, 1 },
 
     // environment functions
 	{ "getenv", sk_getenv, 1 }, 
@@ -1208,10 +1210,21 @@ static SKFuncSet built_in_funcs[] =
     { "not", sk_not, 1 },
     { "car", sk_car, 1 },
     { "cdr", sk_cdr, 1 },
+    
+    // memory management
+    { "gc", sk_gc, 0 },
+    { "gc-stats", sk_gc_stats, 0 },
+    
+    // control functions
+    { "exit", sk_exit, 0 },
+
+    // higher-order functions
+    { "map", sk_map, 2 },
+    { "filter", sk_filter, 2 },
+    { "apply", sk_apply, 2 },
+    { "eval", sk_eval, 1 },
 
     // system functions
-    { "exit", sk_exit, 0 },
-    { "gc", sk_gc, 0 },
 	{ "pwd", sk_pwd, 0 },
 	{ "mem-allocated", sk_mem_allocated, 0 },
 
@@ -1238,7 +1251,6 @@ static SKFuncSet built_in_funcs[] =
 	{ "print-stack", sk_print_stack, 0 },
     { "strings", sk_strings, 0 },
     { "globals", sk_globals },
-    { "gc-stats", sk_gc_stats, 0 },
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
 
