@@ -1105,6 +1105,72 @@ static int sk_mem_allocated(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: map
+//-----------------------------------------------
+static int sk_map(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'map' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: apply
+//-----------------------------------------------
+static int sk_apply(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'apply' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: filter
+//-----------------------------------------------
+static int sk_filter(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'filter' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: eval
+//-----------------------------------------------
+static int sk_eval(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'eval' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: read
+//-----------------------------------------------
+static int sk_read(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'read' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: write
+//-----------------------------------------------
+static int sk_write(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'write' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1122,7 +1188,6 @@ static SKFuncSet built_in_funcs[] =
 	{ "getenv", sk_getenv, 1 }, 
 	//{ "setenv", sk_setenv, 2 },
 	{ "command-line", sk_command_line, 0 },
-	{ "mem-allocated", sk_mem_allocated, 0 },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
@@ -1144,9 +1209,11 @@ static SKFuncSet built_in_funcs[] =
     { "car", sk_car, 1 },
     { "cdr", sk_cdr, 1 },
 
+    // system functions
     { "exit", sk_exit, 0 },
     { "gc", sk_gc, 0 },
 	{ "pwd", sk_pwd, 0 },
+	{ "mem-allocated", sk_mem_allocated, 0 },
 
     // logging functions
     { "gclog", sk_gclog, 0 },

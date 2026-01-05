@@ -364,7 +364,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
     while(1)
     {
-        VM_LOG("IP=%p SP=%d: ", pvm->ip, pvm->sp);
+        VM_LOG("IP=%p SP=%d RP=%d: ", pvm->ip, pvm->sp, pvm->return_sp);
 
         VMCode_t opcode = *pvm->ip++;
 

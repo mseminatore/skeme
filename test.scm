@@ -3,6 +3,14 @@
 ;(load "io.scm")
 ;(load "../fib.scm")
 
+;----------------------
+; define assertion test
+;----------------------
+(define (assert condition message)
+  (if (not condition)
+      (error "Assertion failed:" message)
+      condition))
+
 ; turn on VM logging
 ;(vmlog)
 
@@ -13,11 +21,10 @@
 ;(gclog)
 
 ; construct a pair
-(cons 1 2)
+(assert (cons 1 2) "pair cons failed")
 (define p (cons 1 2))
-
-(pair? (cons 1 2))
-(pair? p)
+(assert (pair? (cons 1 2)) "cons not a pair")
+(assert (pair? p) "p not a pair")
 
 ; make a list via nested cons
 (cons 1 (cons 2 ()))
@@ -47,15 +54,8 @@
 ;(define (cadr x) (car (cdr x)))
 ;(define (cddr x) (cdr (cdr x)))
 
-; a function
-;(define (fib n)
-;    (if (<= n 2)
-;        1
-;        (+ (fib (- n 1)) (fib (- n 2)))))
-
-;(define (assert condition message)
-;  (if (not condition)
-;      (error "Assertion failed:" message)
-;      condition))
+; define a function
+(define (add a b)
+    (+ a b))
 
 ;(define (assert condition message) (if (not condition) (error "Assertion failed:" message) condition))
