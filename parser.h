@@ -29,8 +29,9 @@
 #endif
 
 #define SK_ARITY_ANY -1
-#define SK_ARITY_ONE_OR_MORE -2
-#define SK_ARITY_TWO_OR_MORE -3
+#define SK_ARITY_ZERO_OR_ONE -2
+#define SK_ARITY_ONE_OR_MORE -3
+#define SK_ARITY_TWO_OR_MORE -4
 
 // function set structure
 typedef struct

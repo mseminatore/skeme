@@ -511,7 +511,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                     if (nargs != arity)
                     {
                         yyerror("incorrect number of arguments to native function");
-                        // clear stack
+                        
+                        // clear args from stack
                         vm_pop_n(pvm, nargs);
                         break;
                     }

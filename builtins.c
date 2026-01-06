@@ -358,11 +358,29 @@ static int sk_exit(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
+    // get arg count from stack
+    Object* raw_n = vm_pop(&vm);
+    int nargs = AS_NUM(raw_n);
+    int exit_code = 0;
+
+    if (nargs > 0)
+    {
+        Object* obj = vm_pop(&vm);
+        if (obj && IS_NUM(obj))
+        {
+            exit_code = AS_NUM(obj);
+        }
+        else
+        {
+            yyerror("invalid parameter to 'exit'");
+        }
+	}
+
     g_bDone = TRUE;
 
-    printf(TERM_GREEN"\nExiting skeme interpreter. Goodbye!\n\n"TERM_RESET);
+    printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
 
-    //exit(0);
+    exit(exit_code);
     return SK_TRUE;
 }
 
@@ -402,6 +420,7 @@ static int sk_error(SKState* pSK)
 
 	fprintf(stderr, TERM_RED"Error: ");
     error_helper();
+    
     return SK_TRUE;
 }
 
@@ -414,6 +433,7 @@ static int sk_warn(SKState* pSK)
 
     fprintf(stderr, TERM_YELLOW"Warning: ");
     error_helper();
+    
     return SK_TRUE;
 }
 
@@ -426,6 +446,7 @@ static int sk_info(SKState* pSK)
 
     fprintf(stderr, TERM_GREEN"Info: ");
     error_helper();
+
     return SK_TRUE;
 }
 
@@ -539,6 +560,8 @@ static int sk_load(SKState* pSK)
     else
         yyerror("invalid parameter");
 
+	// TODO - execute the loaded file here?!
+
     return SK_TRUE;
 }
 
@@ -587,12 +610,14 @@ static int sk_mathop(SKState* pSK, char op)
     int n = AS_NUM(raw_n);
 
     Object * obj1 = vm_peek(&vm, n - 1);   // get first term
-    int result = AS_NUM(obj1);
     if (!IS_NUM(obj1))
     {
         yyerror("arguments to mathop must be numbers");
         return SK_FALSE;
 	}
+
+    int result = AS_NUM(obj1);
+    int logic_result = TRUE;
 
     for (int i = n - 2; i >= 0; i--)
     {
@@ -630,7 +655,7 @@ static int sk_mathop(SKState* pSK, char op)
             {
                 if (result != AS_NUM(obj2))
                 {
-                    result = FALSE;
+                    logic_result = FALSE;
                 }
             }
             break;
@@ -642,7 +667,7 @@ static int sk_mathop(SKState* pSK, char op)
 		vm_push(&vm, MAKE_NUM(result));
     else
     {
-        vm_push(&vm, result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
+        vm_push(&vm, logic_result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
     }
 
     return SK_TRUE;
@@ -764,7 +789,7 @@ static int sk_greater(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: >
+// built-in function: >=
 //-----------------------------------------------
 static int sk_greater_equal(SKState* pSK)
 {
@@ -1216,7 +1241,7 @@ static SKFuncSet built_in_funcs[] =
     { "gc-stats", sk_gc_stats, 0 },
     
     // control functions
-    { "exit", sk_exit, 0 },
+    { "exit", sk_exit, SK_ARITY_ZERO_OR_ONE },
 
     // higher-order functions
     { "map", sk_map, 2 },
