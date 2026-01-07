@@ -1210,15 +1210,12 @@ static SKFuncSet built_in_funcs[] =
 	{ "cls", sk_cls, 0 },
     { "read", sk_read, 0 },
     { "write", sk_write, 1 },
-
-    // environment functions
-	{ "getenv", sk_getenv, 1 }, 
-	//{ "setenv", sk_setenv, 2 },
-	{ "command-line", sk_command_line, 0 },
+    // { "print", sk_print },
 
     // predicate functions
     { "null?", sk_nullp, 1 },
     { "eq?", sk_eqp, 2},
+    //{ "equal", sk_equalp, 2},
     { "number?", sk_numberp, 1 },
     { "boolean?", sk_booleanp, 1 },
     { "pair?", sk_pairp, 1},
@@ -1226,16 +1223,20 @@ static SKFuncSet built_in_funcs[] =
     { "list?", sk_listp, 1 },
     { "zero?", sk_zerop, 1 },
     { "atom?", sk_atomp, 1 },
+	{ "integer?", sk_numberp, 1 }, // TODO - replace alias for number?
+
+    // logic
+    { "not", sk_not, 1 },
 
     // list functions
     { "length", sk_length, 1 },
     { "set-car!", sk_set_car, 2 },
     { "set-cdr!", sk_set_cdr, 2 },
     { "cons", sk_cons, 2 },
-    { "not", sk_not, 1 },
     { "car", sk_car, 1 },
     { "cdr", sk_cdr, 1 },
-    
+	//{ "append", sk_cons, 2 }, // TODO - replace with real append?
+
     // memory management
     { "gc", sk_gc, 0 },
     { "gc-stats", sk_gc_stats, 0 },
@@ -1249,9 +1250,12 @@ static SKFuncSet built_in_funcs[] =
     { "apply", sk_apply, 2 },
     { "eval", sk_eval, 1 },
 
-    // system functions
+    // system/environment functions
 	{ "pwd", sk_pwd, 0 },
 	{ "mem-allocated", sk_mem_allocated, 0 },
+    { "getenv", sk_getenv, 1 },
+    //{ "setenv", sk_setenv, 2 },
+    { "command-line", sk_command_line, 0 },
 
     // logging functions
     { "gclog", sk_gclog, 0 },
@@ -1279,21 +1283,16 @@ static SKFuncSet built_in_funcs[] =
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
 
-    // { "print", sk_print },
-    // { "integer?", sk_integerp },
     // { "real?", sk_realp },
     // { "float?", sk_floatp },
     // { "char?", sk_charp },
 	// { "symbol?", sk_symbolp },
-	// { "read", sk_read },
 	// { "eval", sk_eval },
-	// { "map", sk_map },
-	// { "filter", sk_filter },
     { NULL, NULL }
 };
 
 //-----------------------------------------------
-//
+// register built-in functions
 //-----------------------------------------------
 int sk_init_builtins(SKState* pSK)
 {

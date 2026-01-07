@@ -4,12 +4,8 @@
 ;(load "../fib.scm")
 
 ;----------------------
-; define assertion test
+; enable logging options
 ;----------------------
-(define (assert condition message)
-  (if (not condition)
-      (error "Assertion failed:" message)
-      condition))
 
 ; turn on VM logging
 ;(vmlog)
@@ -20,41 +16,86 @@
 ; turn on GC logging
 ;(gclog)
 
+;----------------------
+; define assertion test
+;----------------------
+(define (assert condition message)
+  (if (not condition)
+      (error "Assertion failed:" message)
+      condition))
+
+;----------------------
+; define a variable
+;----------------------
+(define five 5)
+
+;----------------------
 ; construct a pair
+;----------------------
 (assert (cons 1 2) "pair cons failed")
 (define p (cons 1 2))
 (assert (pair? (cons 1 2)) "cons not a pair")
 (assert (pair? p) "p not a pair")
 
-; make a list via nested cons
-(cons 1 (cons 2 ()))
-(list? (cons 1 (cons 2 ())))
+;----------------------
+; make list via nested cons
+;----------------------
+(assert (cons 1 (cons 2 ())) "nested cons failed")
+(assert (list? (cons 1 (cons 2 ()))) "list? failed")
 
+;----------------------
 ; make a list
-(list 1 2 3)
+;----------------------
+(assert (list 1 2 3) "list failed")
 (define l (list 1 2 3))
-(list? l)
-(car l)
-(cdr l)
+(assert (list? l) "list? failed")
+(assert (= (car l) 1) "car failed")
+(assert (list? (cdr l)) "cdr failed")
 
-(zero? 0)
-(zero? 1)
-(null? ())
-(number? 1)
-(boolean? #t)
-(and 1 2 3)
-(or 1 1 1)
-(if (< 1 2) #t)
-(cond ((< 1 2) #t))
-(cond ((> 1 2) #f) (else #t))
+;----------------------
+; characterization operations
+;----------------------
+(assert (zero? 0) "zero? failed")
+(assert (not (zero? 1)) "zero? failed")
+(assert (null? ()) "empty list check failed")
+(assert (number? 1) "number? failed")
+(assert (not (number? #t)) "number? failed")
+(assert (string? "foo") "string? failed")
+(assert (atom? 1) "atom? failed")
+(assert (atom? five) "atom? failed")
+(assert (not (atom? l)) "atom? failed")
+(assert (not (atom? p)) "atom? failed")
+(assert (= (length "foo") 3) "length failed")
+(assert (eq? "foo" "foo") "eq? strings failed")
+(assert (not (eq? "foo" "bar")) "eq? strings failed")
 
-; define a variable
-;(define foo 5)
+;(assert (integer? 1) "integer? failed")
+;(assert (not (integer? 1.5)) "integer? failed")
+
+;----------------------
+; logical operations
+;----------------------
+(assert (boolean? #t) "boolean? failed")
+(assert (boolean? #f) "boolean? failed")
+(assert (not (boolean? 1)) "boolean? failed")
+
+(assert (and 1 2 3) "and failed")
+(assert (or 1 1 1) "or failed")
+(assert (not #f) "not failed")
+
+;----------------------
+; comparison operations
+;----------------------
+(assert (if (< 1 2) #t) "if failed")
+(assert (cond ((< 1 2) #t)) "cond failed")
+(assert (cond ((> 1 2) #f) (else #t)) "cond else failed")
 
 ;(define (cadr x) (car (cdr x)))
 ;(define (cddr x) (cdr (cdr x)))
 
+;----------------------
 ; define a function
+;----------------------
 (define (add a b)
     (+ a b))
 
@@ -63,7 +104,9 @@
 (assert (= (add 0 0) 0) "add(0,0) failed")
 (assert (= (add 100 200) 300) "add(100, 200) failed")
 
+;----------------------
 ; recursive function
+;----------------------
 (define (factorial n)
     (if (zero? n)
         1
@@ -75,9 +118,9 @@
 (assert (= (factorial 6) 720) "factorial function failed")
 (assert (= (factorial 10) 3628800) "factorial function failed")
 
-;
+;----------------------
 ; test fibonacci function
-;
+;----------------------
 (define (fibonacci n)
     (if (<= n 2)
         1
@@ -92,6 +135,9 @@
 (assert (= (fibonacci 25) 75025) "fibonacci(25) )failed")
 (assert (= (fibonacci 30) 832040) "fibonacci(30) failed")
 
+;----------------------
+; test tail-recursive fibonacci
+;----------------------
 (define (fib-iter a b count)
   (if (= count 0)
     b
@@ -100,7 +146,8 @@
 (define (fib n)
   (fib-iter 1 0 n))
 
+;----------------------
 ; if reached here, all tests passed
+;----------------------
 (display "All tests passed successfully.")
 (newline)
-; end of test.scm
