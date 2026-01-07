@@ -26,6 +26,8 @@ int g_bParseLog = FALSE;
 static int expr();
 int sk_init_builtins(SKState* pSK);
 
+static int expr_level = 0;
+
 #define PARSE_LOG(...) (void)(g_bParseLog && indent() && fprintf(stderr, __VA_ARGS__))
 
 //------------------------
@@ -683,6 +685,8 @@ static int expr()
 {
     PARSE_LOG("expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
+    expr_level++;
+
     if (lookahead == '(')
     {
         match('(');
@@ -768,6 +772,13 @@ static int expr()
         atom();
 
     unindent();
+
+    expr_level--;
+
+    // TODO - if interactive mode, print result of top-level expr
+    // if (expr_level == 0)
+    //     vm_emit(&vm, OP_POP);   // discard top-level expr result
+
     return 0;
 }
 

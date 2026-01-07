@@ -162,6 +162,8 @@ int main(int argc, char *argv[])
     if (g_bSymbols)
         dump_symbols();
 
+    LOG("max stack size: %d, max call depth: %d\n", vm.max_stack_size, vm.max_call_depth);
+
     LOG("Shutting down...");
     //sk_shutdown(&sk);
     LOG("Done.\n");

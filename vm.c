@@ -1295,7 +1295,7 @@ void vm_freeObjects(VM* pvm) {
 
     while (obj) {
         Object* next = obj->next;
-        free(obj);
+        free(obj);  // TODO - use vm_alloc for obj dtors?
         obj = next;
     }
 
@@ -1308,5 +1308,11 @@ void vm_freeObjects(VM* pvm) {
     pvm->allocatedBytes = 0;
     pvm->peakAllocatedBytes = 0;
     pvm->peakObjects = 0;
+    pvm->gc_cycles = 0;
+    pvm->max_call_depth = 0;
+    pvm->max_stack_size = 0;
+    pvm->sp = 0;
+    pvm->fp = 0;
+    pvm->return_sp = 0;
 }
 
