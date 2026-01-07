@@ -198,6 +198,8 @@ typedef struct VM {
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
+	size_t max_stack_size;         // Maximum stack size reached
+	size_t max_call_depth;         // Maximum call depth reached
 
     HashTable *global_table;          // Hash table for global variables
 	HashTable* interned_strings;      // Hash table for interned strings

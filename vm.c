@@ -69,6 +69,13 @@ int vm_init(VM* pvm) {
     pvm->allocatedBytes = 0;
     pvm->gc_cycles = 0;
 
+	pvm->max_call_depth = 0;
+	pvm->max_stack_size = 0;
+
+    // clear stack
+    //memset(pvm->stack, 0, sizeof(pvm->stack));
+	//memset(pvm->return_stack, 0, sizeof(pvm->return_stack));
+
 	// init globals - since we use pointer keys, use default hash and compare funcs
     pvm->global_table = ht_create();
 
@@ -896,6 +903,10 @@ void vm_push_ip(VM* pvm, VMCode_t *ip)
 	}
 
 	pvm->return_stack[pvm->return_sp++] = ip;
+
+    if (pvm->return_sp > pvm->max_call_depth) {
+        pvm->max_call_depth = pvm->return_sp;
+    }
 }
 
 //--------------------------------------------------------------
@@ -921,6 +932,10 @@ void vm_push(VM* pvm, Object* obj) {
     }
 
     pvm->stack[pvm->sp++] = obj;
+
+    if (pvm->sp > pvm->max_stack_size) {
+        pvm->max_stack_size = pvm->sp;
+	}
 }
 
 //--------------------------------------------------------------

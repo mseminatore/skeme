@@ -92,6 +92,14 @@
 (assert (= (fibonacci 25) 75025) "fibonacci(25) )failed")
 (assert (= (fibonacci 30) 832040) "fibonacci(30) failed")
 
+(define (fib-iter a b count)
+  (if (= count 0)
+    b
+    (fib-iter (+ a b) a (- count 1))))
+
+(define (fib n)
+  (fib-iter 1 0 n))
+
 ; if reached here, all tests passed
 (display "All tests passed successfully.")
 (newline)
