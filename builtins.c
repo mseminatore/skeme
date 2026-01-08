@@ -1060,8 +1060,8 @@ static int sk_command_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    //vm_push(&vm, vm_get_global(&vm, vm_new_string(&vm, "env__")));
 	vm_push_global(&vm, "env__");
+
     return SK_TRUE;
 }
 
@@ -1125,7 +1125,9 @@ static int sk_typeof(SKState* pSK)
 static int sk_mem_allocated(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
+
     vm_push(&vm, MAKE_NUM((int)vm.allocatedBytes));
+
     return SK_TRUE;
 }
 
@@ -1196,6 +1198,53 @@ static int sk_write(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: string-append
+//-----------------------------------------------
+static int sk_string_append(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+	char buffer[1024] = { 0 };
+
+    // get message count from stack
+    Object* raw_n = vm_pop(&vm);
+    int n = AS_NUM(raw_n);
+
+    for (int i = n - 1; i >= 0; i--)
+    {
+        Object* obj = vm_peek(&vm, i);
+        if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
+        {
+            // Get the error message from the string object
+			strcat(buffer, ((String*)obj)->value);
+        }
+        else
+            {
+            yyerror("arguments to 'string-append' must be strings");
+            vm_pop_n(&vm, n);            // remove message strings from stack
+			vm_push(&vm, NULL);          // push nil
+            return SK_FALSE;
+		}
+    }
+
+    vm_pop_n(&vm, n);               // remove message strings from stack
+	vm_push_string(&vm, buffer);    // push concatenated string
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: printf
+//-----------------------------------------------
+static int sk_printf(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'printf' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1211,6 +1260,9 @@ static SKFuncSet built_in_funcs[] =
     { "read", sk_read, 0 },
     { "write", sk_write, 1 },
     // { "print", sk_print },
+    
+    { "string-append", sk_string_append, SK_ARITY_TWO_OR_MORE },
+	{ "printf", sk_printf, SK_ARITY_ONE_OR_MORE },
 
     // predicate functions
     { "null?", sk_nullp, 1 },

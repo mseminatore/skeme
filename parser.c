@@ -289,7 +289,10 @@ static int local_body()
 {
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
     
-    expr();
+	// TODO  - handle local definitions
+
+	while (lookahead == '(')
+        expr();
 
 	unindent();
     return 0;

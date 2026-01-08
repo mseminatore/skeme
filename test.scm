@@ -25,6 +25,15 @@
       condition))
 
 ;----------------------
+; define test case runner
+;----------------------
+;(define (test-case name test-fn)
+;  (display (string-append "Running test case: " name "... "))
+;  (test-fn)
+;  (display "OK.")
+;  (newline)))
+
+;----------------------
 ; define a variable
 ;----------------------
 (define five 5)
