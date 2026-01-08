@@ -743,7 +743,17 @@ static int expr()
                 match(lookahead);
                 if (key)
                 {
+#if 1
                     Object *proc = vm_get_global(&vm, key);
+#else
+                    // look first for a local variable or param
+                    Object* proc = vm_get_var(&vm, ((String*)key)->value);
+
+					// if not found, look in globals
+                    if (!proc)
+                        proc = vm_get_global(&vm, key);
+#endif
+
                     if (proc && proc->type == OBJ_FUNCTION)
                     {
                         expr_tail(); // parse function arguments (if any)
