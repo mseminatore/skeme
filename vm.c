@@ -1241,7 +1241,7 @@ void vm_set_var(VM* pvm, const char* name, Object* value)
 //--------------------------------------------------------------
 // Get a variable from current scope
 //--------------------------------------------------------------
-Object* vm_get_var(VM* pvm, const char* name)
+Object* vm_get_local_var(VM* pvm, const char* name)
 {
     Object* key = vm_new_string(pvm, name);
 

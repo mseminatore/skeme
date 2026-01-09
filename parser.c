@@ -206,8 +206,8 @@ static int atom()
         {
             PARSE_LOG("ID: '%s'\n", yylval.word);
 
-            // TODO - check if var is local, if so emit stack read
-			Object* obj = vm_get_var(&vm, yylval.word);
+            // check if var is local, if so emit stack read
+			Object* obj = vm_get_local_var(&vm, yylval.word);
 
             // handle variable and check for undefined symbol
             Object* key = vm_get_string(&vm, yylval.word);

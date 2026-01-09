@@ -271,6 +271,6 @@ Object* vm_get_global(VM *pvm, Object *key);
 Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);
 void vm_set_var(VM* pvm, const char* name, Object* value);
-Object* vm_get_var(VM* pvm, const char* name);
+Object* vm_get_local_var(VM* pvm, const char* name);
 
 #endif // __VM_H
