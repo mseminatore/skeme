@@ -23,6 +23,83 @@ int g_bVMLog = FALSE;
 
 CodeChunk* g_current_chunk = NULL;
 
+//-----------------------------------------------
+// print an object
+//-----------------------------------------------
+void vm_print_object(Object* obj)
+{
+    if (!obj)
+    {
+        printf("'()");   // nil
+        return;
+    }
+
+    if (IS_BOOL(obj))
+    {
+        if (IS_TRUE(obj))
+            printf("#t");
+        else
+            printf("#f");
+
+        return;
+    }
+
+    if (IS_OBJ(obj))
+    {
+        switch (OBJ_TYPE(obj))
+        {
+        case OBJ_STRING:
+        {
+            String* strObj = (String*)obj;
+            printf("\"%s\"", strObj->value);
+        }
+        break;
+
+        case OBJ_PAIR:
+        {
+            Pair* pair = (Pair*)obj;
+            printf("'(");
+
+            vm_print_object(pair->car); // display car
+
+            Object* cdr = pair->cdr;
+            while (cdr && IS_OBJ(cdr) && OBJ_TYPE(cdr) == OBJ_PAIR)
+            {
+                pair = (Pair*)cdr;
+                printf(" ");
+                vm_print_object(pair->car); // display car
+                cdr = pair->cdr;
+            }
+
+            if (cdr && !IS_NIL(cdr))
+            {
+                printf(" . ");
+                vm_print_object(pair->cdr); // display cdr
+            }
+            printf(")");
+        }
+        break;
+
+        case OBJ_FUNCTION:
+            printf("#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
+            break;
+
+        case OBJ_NATIVE_FN:
+            printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
+            break;
+
+        default:
+            printf("#<obj type=%d>", OBJ_TYPE(obj));
+            break;
+        }
+    }
+    else
+    {
+        // print number
+        printf("%d", AS_NUM(obj));
+    }
+}
+
 //--------------------------------------
 // Get the current code chunk
 //--------------------------------------
@@ -339,6 +416,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("SET_LOCAL\n");
             break;
 
+        case OP_PRINT_TOS:
+            printf("PRINT_TOS\n");
+			break;
+
         default:
             printf("Unknown opcode: %zd\n", instruction);
             break;
@@ -597,6 +678,19 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 			// push the constructed list onto the stack
             vm_push(pvm, (Object*)alist);
         }
+            break;
+
+        case OP_PRINT_TOS:
+            VM_LOG("PRINT_TOS\n");
+
+            if (pvm->sp)
+            {
+                printf(TERM_BRIGHT_BLUE);
+                vm_print_object(vm_pop(pvm));
+                printf(TERM_RESET"\n");
+
+            }
+
             break;
 
         default:

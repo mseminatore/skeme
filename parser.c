@@ -788,9 +788,9 @@ static int expr()
 
     expr_level--;
 
-    // TODO - if interactive mode, print result of top-level expr
-    // if (expr_level == 0)
-    //     vm_emit(&vm, OP_POP);   // discard top-level expr result
+    // print result of top-level exprs
+    if (expr_level == 0)
+        vm_emit(&vm, OP_PRINT_TOS);   // print and discard top-level expr result
 
     return 0;
 }

@@ -34,83 +34,6 @@
 //
 
 //-----------------------------------------------
-// print an object
-//-----------------------------------------------
-static void printObject(Object *obj)
-{
-    if (!obj)
-    {
-        printf("'()");   // nil
-        return;
-    }
-
-    if (IS_BOOL(obj))
-    {
-        if (IS_TRUE(obj))
-            printf("#t");
-        else
-            printf("#f");
-
-        return;
-    }
-
-    if (IS_OBJ(obj))
-    {
-        switch (OBJ_TYPE(obj))
-        {
-        case OBJ_STRING:
-            {
-                String* strObj = (String*)obj;
-                printf("\"%s\"", strObj->value);
-            }
-            break;
-
-        case OBJ_PAIR:
-            {
-                Pair* pair = (Pair*)obj;
-                printf("'(");
-
-                printObject(pair->car); // display car
-
-                Object* cdr = pair->cdr;
-                while (cdr && IS_OBJ(cdr) && OBJ_TYPE(cdr) == OBJ_PAIR)
-                {
-                    pair = (Pair*)cdr;
-                    printf(" ");
-                    printObject(pair->car); // display car
-                    cdr = pair->cdr;
-                }
-
-                if (cdr && !IS_NIL(cdr))
-                {
-                    printf(" . ");
-                    printObject(pair->cdr); // display cdr
-                }
-                printf(")");
-            }
-			break;
-
-        case OBJ_FUNCTION:
-            printf("#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
-			break;
-
-        case OBJ_NATIVE_FN:
-            printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
-			break;
-
-        default:
-            printf("#<obj type=%d>", OBJ_TYPE(obj));
-            break;
-        }
-    }
-    else
-    {
-        // print number
-        printf("%d", AS_NUM(obj));
-    }
-}
-
-//-----------------------------------------------
 // built-in function: display
 //-----------------------------------------------
 int sk_display(SKState *pSK)
@@ -121,7 +44,7 @@ int sk_display(SKState *pSK)
     Object *obj = vm_pop(&vm);
 
     printf(TERM_BRIGHT_BLUE);
-        printObject(obj);
+        vm_print_object(obj);
     printf(TERM_RESET"\n");
 
     return SK_TRUE;
@@ -856,7 +779,7 @@ static int sk_globals(SKState* pSK)
     {
 		String* strKey = (String*)key;
         printf("%10s\t", (const char*)strKey->value);
-        printObject((Object*)value);
+        vm_print_object((Object*)value);
         puts("");
         count++;
     }

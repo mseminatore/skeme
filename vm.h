@@ -122,7 +122,7 @@ enum
 // opcode definitions
 enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
     OP_LOAD, OP_NATIVE, OP_RET, OP_CALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP, OP_PROC, OP_CLOSURE,
-	OP_LIST, OP_GET_LOCAL, OP_SET_LOCAL, OP_LAST
+	OP_LIST, OP_GET_LOCAL, OP_SET_LOCAL, OP_PRINT_TOS, OP_LAST
 };
 
 // opcode type
@@ -223,6 +223,7 @@ typedef struct VM {
 int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
+void vm_print_object(Object* obj);
 
 // stack management
 void vm_push(VM* pvm, Object* obj);
