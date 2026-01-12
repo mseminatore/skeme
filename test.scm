@@ -131,12 +131,12 @@
 ; test fibonacci function
 ;----------------------
 (define (fibonacci n)
-    (if (<= n 2)
-        1
+    (if (<= n 1)
+        n
         (+ (fibonacci (- n 1)) (fibonacci (- n 2)))))
 
 (assert (= (fibonacci 10) 55) "fibonacci(10) failed")
-;(assert (= (fibonacci 0) 0) "fibonacci(0) failed")
+(assert (= (fibonacci 0) 0) "fibonacci(0) failed")
 (assert (= (fibonacci 1) 1) "fibonacci(1) failed")
 (assert (= (fibonacci 5) 5) "fibonacci(5) failed")
 (assert (= (fibonacci 15) 610) "fibonacci(15) failed")
@@ -158,5 +158,6 @@
 ;----------------------
 ; if reached here, all tests passed
 ;----------------------
+(gc-stats)
 (display "All tests passed successfully.")
 (newline)

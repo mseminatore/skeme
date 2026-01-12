@@ -912,7 +912,7 @@ static int sk_disasm(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Object* obj = vm_pop(&vm);
-    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_FUNCTION)
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PROCEDURE)
     {
         yyerror("argument to 'disasm' is not a function");
         return SK_FALSE;
@@ -1024,8 +1024,8 @@ static int sk_typeof(SKState* pSK)
                 type_name = "pair";
             break;
 
-        case OBJ_FUNCTION:
-            type_name = "function";
+        case OBJ_PROCEDURE:
+            type_name = "procedure";
             break;
 
         case OBJ_NATIVE_FN:

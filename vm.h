@@ -23,8 +23,12 @@
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
 
-#define GROW_CAPACITY(capacity) ((capacity) < 8 ? 8 : (capacity) * 2)
+#define ARRAY_MIN_CAPACITY 8
+#define ARRAY_GROWTH_FACTOR 2
+
+#define GROW_CAPACITY(capacity) ((capacity) < ARRAY_MIN_CAPACITY ? ARRAY_MIN_CAPACITY : (capacity) * ARRAY_GROWTH_FACTOR)
 #define GROW_ARRAY(type, array, oldCount, newCount) (type*)vm_realloc(&vm, array, sizeof(type) * (oldCount), sizeof(type) * (newCount))
+//#define SHRINK_CAPACITY(capacity) ((capacity) >> 1)
 
 #ifdef _WIN32
 #   define UNUSED //__declspec(unused)
@@ -72,13 +76,18 @@ typedef struct Object {
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
+// object tagging definitions
+#define TAG_BITS 2
+#define TAG_BIT_SHIFT TAG_BITS
+#define TAG_MASK ((1 << TAG_BITS) - 1)
+#define TAG_NUM 0x1
+#define TAG_OBJ 0x0
+#define TAG_BOOL 0x2    // lowest bit set for booleans
+
 // macros to check and convert to object pointers
-#define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & 0x3))
+#define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & TAG_MASK))
 #define AS_OBJ(ObjT, obj)   (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
-#define MAKE_NUM(val)       ((Object*)((uintptr_t)((val)<<2) | 0x1))
-#define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> 2)))
-#define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x3) == 0x1))
-#define IS_NIL(obj)         (obj == NULL)
+#define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> TAG_BIT_SHIFT)))
 #define AS_STRING(obj)      (IS_OBJ(obj) ? (String*)(obj) : NULL)
 
 #define OBJ_TYPE(obj)       (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
@@ -88,15 +97,25 @@ typedef struct Object {
 #define UNMARK_OBJ(obj)     do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 0; } while(0)
 #define IS_MARKED(obj)      (IS_OBJ(obj) ? AS_OBJ(Object, obj)->marked : 0)
 
-#define IS_BOOL(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & 0x2)))
-#define IS_STRING(obj)  (OBJ_TYPE(obj) == OBJ_STRING)
-#define IS_PAIR(obj)    (OBJ_TYPE(obj) == OBJ_PAIR)
+// object classification
+#define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_NUM))
+#define IS_NIL(obj)         (obj == NULL)
+#define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_BOOL)))
+#define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
+#define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
 #define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_FUNCTION)
 #define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
-#define IS_TRUE(obj)    (((intptr_t)(obj)) == 3)
-#define IS_FALSE(obj)   (((intptr_t)(obj)) == 2)
-#define MAKE_TRUE()     ((Object*)3)
-#define MAKE_FALSE()    ((Object*)2)
+#define IS_FUNCTION(obj)    (IS_PROCEDURE(obj) || IS_NATIVE_FN(obj))
+#define IS_FLOAT(obj)       (OBJ_TYPE(obj) == OBJ_FLOAT)
+#define IS_ENVIRONMENT(obj) (OBJ_TYPE(obj) == OBJ_ENVIRONMENT)
+#define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
+#define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x1))
+#define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
+
+// macros to create tagged objects
+#define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x1))
+#define MAKE_FALSE()        ((Object*)TAG_BOOL)
+#define MAKE_NUM(val)       ((Object*)((uintptr_t)((val) << TAG_BIT_SHIFT) | TAG_NUM))
 
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
@@ -108,14 +127,15 @@ enum
     OBJ_NULL,
     OBJ_STRING,
     OBJ_PAIR,
-    // OBJ_LIST,
-	OBJ_FUNCTION,
+	OBJ_PROCEDURE,
+    OBJ_NATIVE_FN,
     OBJ_CLOSURE,
     OBJ_UPVALUE,
-    OBJ_NATIVE_FN,
     OBJ_CHAR,
     OBJ_ENVIRONMENT,
     OBJ_FLOAT,
+
+	// mark the last object type
     OBJ_LAST
 };
 

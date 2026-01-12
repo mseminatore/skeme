@@ -80,7 +80,7 @@ void vm_print_object(Object* obj)
         }
         break;
 
-        case OBJ_FUNCTION:
+        case OBJ_PROCEDURE:
             printf("#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
             break;
 
@@ -779,7 +779,7 @@ static void freeObject(VM* pvm, Object* object)
 	// clean up based on object type
     switch (OBJ_TYPE(object))
     {
-    case OBJ_FUNCTION:
+    case OBJ_PROCEDURE:
         {
             // free function-specific resources
             Procedure * proc = (Procedure*)object;
@@ -872,7 +872,7 @@ static void blackenObject(VM* pvm, Object* object)
         }
         break;
 
-    case OBJ_FUNCTION:
+    case OBJ_PROCEDURE:
         {
             Procedure* proc = (Procedure*)object;
 
@@ -1276,7 +1276,7 @@ Object* vm_new_proc(VM* pvm)
     if (!pvm) return NULL;
 
     // create new procedure object
-    Object* obj = vm_newObject(pvm, sizeof(Procedure), OBJ_FUNCTION);
+    Object* obj = vm_newObject(pvm, sizeof(Procedure), OBJ_PROCEDURE);
 
     Procedure* proc = AS_OBJ(Procedure, obj);
     if (!proc)

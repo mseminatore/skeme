@@ -754,7 +754,7 @@ static int expr()
                         proc = vm_get_global(&vm, key);
 #endif
 
-                    if (proc && proc->type == OBJ_FUNCTION)
+                    if (proc && proc->type == OBJ_PROCEDURE)
                     {
                         expr_tail(); // parse function arguments (if any)
 
