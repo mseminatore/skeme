@@ -1032,6 +1032,26 @@ static int sk_typeof(SKState* pSK)
             type_name = "native-function";
             break;
 
+        case OBJ_FLOAT:
+            type_name = "float";
+            break;
+
+        case OBJ_CLOSURE:
+            type_name = "closure";
+            break;
+
+        case OBJ_ENVIRONMENT:
+            type_name = "environment";
+            break;
+
+        case OBJ_UPVALUE:
+            type_name = "upvalue";
+            break;
+
+        case OBJ_CHAR:
+            type_name = "char";
+            break;
+
         default:
             type_name = "object";
             break;
