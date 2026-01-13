@@ -6,6 +6,10 @@ project(skeme VERSION 1.0 LANGUAGES C)
 # Print the source directory
 message(STATUS "Project source directory: ${PROJECT_SOURCE_DIR}")
 
+# testing
+#enable_testing()
+#add_test(NAME skeme_test COMMAND skeme ${PROJECT_SOURCE_DIR}/test.scm)
+
 # add the includes
 include_directories(${PROJECT_SOURCE_DIR})
 
