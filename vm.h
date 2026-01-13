@@ -272,7 +272,7 @@ Object* vm_get_string(VM* pvm, const char* str);
 int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
-void vm_emit_object(VM* pvm, Object* obj);
+void vm_emit_push_object(VM* pvm, Object* obj);
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
 CodeChunk* vm_get_current_chunk();
 CodeChunk* vm_set_current_chunk(CodeChunk* chunk);

@@ -275,7 +275,7 @@ void vm_emit_string(VM* pvm, const char* str)
 //--------------------------------------------------------------
 // Emit an object as bytecode
 //--------------------------------------------------------------
-void vm_emit_object(VM* pvm, Object* obj)
+void vm_emit_push_object(VM* pvm, Object* obj)
 {
     vm_emit(pvm, OP_PUSH);
     vm_emit(pvm, (VMCode_t)obj);
@@ -541,6 +541,38 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
             break;
 
+        case OP_NATIVE:
+        {
+            NativeFunction* proc = (NativeFunction*)*pvm->ip++;
+            VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
+            SKFunc func = (SKFunc)proc->func;
+
+            if (func)
+            {
+                int arity = proc->arity;
+                if (arity >= 0)
+                {
+                    Object* n = vm_pop(pvm);
+                    int nargs = AS_NUM(n);
+                    if (nargs != arity)
+                    {
+                        yyerror("incorrect number of arguments to native function");
+
+                        // clear args from stack
+                        vm_pop_n(pvm, nargs);
+                        break;
+                    }
+                }
+
+                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+
+            }
+            else {
+                fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+            }
+        }
+        break;
+
         case OP_BNT:
             VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
@@ -582,37 +614,6 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             pvm->ip += *pvm->ip;
         }
 			break;
-
-        case OP_NATIVE:
-        {
-            NativeFunction* proc = (NativeFunction*)*pvm->ip++;
-            VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
-            SKFunc func = (SKFunc)proc->func;
-
-            if (func) 
-            {
-                int arity = proc->arity;
-                if (arity >= 0)
-                {
-                    Object* n = vm_pop(pvm);
-                    int nargs = AS_NUM(n);
-                    if (nargs != arity)
-                    {
-                        yyerror("incorrect number of arguments to native function");
-                        
-                        // clear args from stack
-                        vm_pop_n(pvm, nargs);
-                        break;
-                    }
-                }
-
-                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
-
-            } else {
-                fprintf(stderr, "NULL function pointer in NATIVE call!\n");
-            }
-		}
-            break;
 
         case OP_STORE:
         {

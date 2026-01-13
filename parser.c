@@ -197,7 +197,7 @@ static int atom()
     case NIL:
         PARSE_LOG("NIL\n");
 
-		vm_emit_object(&vm, NULL);
+        vm_emit_push_object(&vm, NULL);
         match(NIL);
         unindent();
         break;
@@ -220,12 +220,12 @@ static int atom()
             else if (IS_NUM(obj))
             {
                 vm_emit_number(&vm, AS_NUM(obj));
-                //vm_emit_object(&vm, obj);
+                //vm_emit_push_object(&vm, obj);
                 vm_emit(&vm, OP_GET_LOCAL);
             }
             else
             {
-                vm_emit_object(&vm, key);
+                vm_emit_push_object(&vm, key);
                 vm_emit(&vm, OP_LOAD);
             }
 
@@ -354,7 +354,7 @@ static int definition()
 		// variable definition
         Object* key = vm_new_string(&vm, yylval.word);
 		vm_define_global(&vm, key, NULL);   // needs to be in global table before expr() in case of GC
-        vm_emit_object(&vm, key);
+        vm_emit_push_object(&vm, key);
 
         match(ID);
         expr();
@@ -411,7 +411,7 @@ static int lambda()
     // function body
     local_body();
 
-    vm_emit_object(&vm, proc_obj);
+    vm_emit_push_object(&vm, proc_obj);
 
     // return from function
     vm_emit(&vm, OP_RET);
@@ -468,7 +468,7 @@ static int set()
 
     if (key)
     {
-        vm_emit_object(&vm, key);
+        vm_emit_push_object(&vm, key);
         expr();
         vm_emit(&vm, OP_STORE);
     }
@@ -597,7 +597,7 @@ static int and_expr()
 
     match(AND);
 
-    vm_emit_object(&vm, NULL);  // push a dummy nil value onto the stack
+    vm_emit_push_object(&vm, NULL);  // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {
@@ -647,7 +647,7 @@ static int or_expr()
 
     match(OR);
 
-    vm_emit_object(&vm, NULL);      // push a dummy nil value onto the stack
+    vm_emit_push_object(&vm, NULL);      // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {
