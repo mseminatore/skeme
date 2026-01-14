@@ -103,7 +103,7 @@ typedef struct Object {
 #define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_BOOL)))
 #define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
 #define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
-#define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_FUNCTION)
+#define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
 #define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
 #define IS_FUNCTION(obj)    (IS_PROCEDURE(obj) || IS_NATIVE_FN(obj))
 #define IS_FLOAT(obj)       (OBJ_TYPE(obj) == OBJ_FLOAT)
