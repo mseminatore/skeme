@@ -516,62 +516,65 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_CALL:
         {
-            Procedure* proc = (Procedure*)*pvm->ip;
-            VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+            Object* fn_obj = (Object*)*pvm->ip;
 
-            Object* n = vm_pop(pvm);
-        	int nargs = AS_NUM(n);
+            if (IS_PROCEDURE(fn_obj))
+            { 
+                Procedure* proc = (Procedure*)fn_obj;
+                VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
 
-            if (proc->arity != nargs)
-            {
-                yyerror("incorrect number of arguments to function");
-                
-                vm_pop_n(pvm, nargs);   // clear args from stack
-                pvm->ip++;              // skip to the start of next instruction
-                break;
-            }
+                Object* n = vm_pop(pvm);
+                int nargs = AS_NUM(n);
 
-            vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
-
-            // call function by setting IP to function address
-            pvm->ip = proc->chunk.code;
-
-            vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
-            pvm->fp = pvm->sp;                  // set-up new frame pointer
-        }
-            break;
-
-        case OP_NATIVE:
-        {
-            NativeFunction* proc = (NativeFunction*)*pvm->ip++;
-            VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
-            SKFunc func = (SKFunc)proc->func;
-
-            if (func)
-            {
-                int arity = proc->arity;
-                if (arity >= 0)
+                if (proc->arity != nargs)
                 {
-                    Object* n = vm_pop(pvm);
-                    int nargs = AS_NUM(n);
-                    if (nargs != arity)
-                    {
-                        yyerror("incorrect number of arguments to native function");
+                    yyerror("incorrect number of arguments to function");
 
-                        // clear args from stack
-                        vm_pop_n(pvm, nargs);
-                        break;
-                    }
+                    vm_pop_n(pvm, nargs);   // clear args from stack
+                    pvm->ip++;              // skip to the start of next instruction
+                    break;
                 }
 
-                func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+                vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
 
+                // call function by setting IP to function address
+                pvm->ip = proc->chunk.code;
+
+                vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
+                pvm->fp = pvm->sp;                  // set-up new frame pointer
             }
-            else {
-                fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+            else
+            {
+				pvm->ip++;  // move to next instruction
+                NativeFunction* proc = (NativeFunction*)fn_obj;
+                VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
+                SKFunc func = (SKFunc)proc->func;
+
+                if (func)
+                {
+                    int arity = proc->arity;
+                    if (arity >= 0)
+                    {
+                        Object* n = vm_pop(pvm);
+                        int nargs = AS_NUM(n);
+                        if (nargs != arity)
+                        {
+                            yyerror("incorrect number of arguments to native function");
+
+                            // clear args from stack
+                            vm_pop_n(pvm, nargs);
+                            break;
+                        }
+                    }
+
+                    func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+                }
+                else {
+                    fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+                }
             }
         }
-        break;
+            break;
 
         case OP_BNT:
             VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));

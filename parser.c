@@ -754,18 +754,11 @@ static int expr()
                         proc = vm_get_global(&vm, key);
 #endif
 
-                    if (proc && proc->type == OBJ_PROCEDURE)
+                    if (IS_FUNCTION(proc))
                     {
                         expr_tail(); // parse function arguments (if any)
 
                         vm_emit(&vm, OP_CALL);
-                        vm_emit(&vm, (VMCode_t)proc);
-                    }
-                    else if (proc && proc->type == OBJ_NATIVE_FN)
-                    {
-                        expr_tail(); // parse function arguments (if any)
-
-                        vm_emit(&vm, OP_NATIVE);
                         vm_emit(&vm, (VMCode_t)proc);
                     }
                     else
