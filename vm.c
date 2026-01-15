@@ -520,7 +520,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         case OP_CALL:
         {
-            Object* fn_obj = (Object*)*pvm->ip;
+            Object* fn_obj = vm_pop(pvm);   // get function object
 
             if (IS_PROCEDURE(fn_obj))
             { 
@@ -539,7 +539,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                     break;
                 }
 
-                vm_push_ip(pvm, pvm->ip + 1);   // push return address onto stack
+                vm_push_ip(pvm, pvm->ip);   // push return address onto stack
 
                 // call function by setting IP to function address
                 pvm->ip = proc->chunk.code;
@@ -549,7 +549,6 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             }
             else
             {
-				pvm->ip++;  // move to next instruction
                 NativeFunction* proc = (NativeFunction*)fn_obj;
                 VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
                 SKFunc func = (SKFunc)proc->func;

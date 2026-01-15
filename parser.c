@@ -758,8 +758,9 @@ static int expr()
                     {
                         expr_tail(); // parse function arguments (if any)
 
+                        vm_emit_push_object(&vm, proc); // push function name for debugging
                         vm_emit(&vm, OP_CALL);
-                        vm_emit(&vm, (VMCode_t)proc);
+//                        vm_emit(&vm, (VMCode_t)proc);
                     }
                     else
                     {

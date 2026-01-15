@@ -78,7 +78,8 @@
 (assert (eq? "foo" "foo") "eq? strings failed")
 (assert (not (eq? "foo" "bar")) "eq? strings failed")
 
-;(assert (integer? 1) "integer? failed")
+(assert (integer? 1) "integer? failed")
+(assert (not (integer? #t)) "integer? failed")
 ;(assert (not (integer? 1.5)) "integer? failed")
 
 ;----------------------
