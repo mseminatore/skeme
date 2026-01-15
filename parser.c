@@ -747,10 +747,15 @@ static int expr()
                     Object *proc = vm_get_global(&vm, key);
 #else
                     // look first for a local variable or param
-                    Object* proc = vm_get_var(&vm, ((String*)key)->value);
+                    Object* proc = vm_get_local_var(&vm, ((String*)key)->value);
 
 					// if not found, look in globals
-                    if (!proc)
+                    if (proc && IS_NUM(proc))
+                    {
+                        vm_emit_number(&vm, AS_NUM(proc));
+                        vm_emit(&vm, OP_GET_LOCAL);
+                    }
+                    else
                         proc = vm_get_global(&vm, key);
 #endif
 
