@@ -328,7 +328,8 @@ static int definition()
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
-		vm_define_global(&vm, proc_name, proc_obj); // TODO - add to current scope instead of global
+		if (!vm_define_global(&vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
+            yyerror("failed to add global var");
 
         match(ID);
 		

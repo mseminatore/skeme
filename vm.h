@@ -14,12 +14,15 @@
 // uncomment to enable GC stress testing (collect on every allocation)
 #define VM_STRESS_GC
 
+// uncomment to disallow redefining globals
+// TODO - only redefines work at present! Must handle code gen into chunk that would get stored in var
+//#define VM_NO_REDEFINE
+
 // uncomment to enable VM debug logging
  //#define VM_DEBUG_LOG
 
-#define VM_STACK_SIZE 256
+#define VM_STACK_SIZE 1024
 #define VM_FREE_LIST 128
-#define VM_MAX_GLOBALS 64
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
 
@@ -35,9 +38,6 @@
 #else
 #   define UNUSED __attribute__((unused))
 #endif
-
-// TODO - use dynamic code buffer
-#define VM_MAX_CODE 1024
 
 #ifndef TRUE
 #   define TRUE 1
@@ -286,8 +286,8 @@ void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
 
 // local/global variable management
-void vm_define_global(VM* pvm, Object* key, Object* value);
-void vm_update_global(VM *pvm, Object* key, Object *value);
+int vm_define_global(VM* pvm, Object* key, Object* value);
+int vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
 Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);

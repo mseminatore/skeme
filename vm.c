@@ -790,7 +790,8 @@ static void freeObject(VM* pvm, Object* object)
         {
             // free function-specific resources
             Procedure * proc = (Procedure*)object;
-			vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
+            GC_LOG("-- gc freeing proc: '%s'\n", ((String*)proc->name)->value);
+            vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
         }
 		break;
     
@@ -1299,18 +1300,23 @@ Object* vm_new_proc(VM* pvm)
 //--------------------------------------------------------------
 // Define a global object
 //--------------------------------------------------------------
-void vm_define_global(VM *pvm, Object* key, Object *value)
+int vm_define_global(VM *pvm, Object* key, Object *value)
 {
-    // use ht_add() if we can redefine a global
-    ht_insert(pvm->global_table, key, value);
+    // determine if we can redefine a global
+#ifdef VM_NO_REDEFINE
+    return ht_insert(pvm->global_table, key, value);
+#else
+    return ht_add(pvm->global_table, key, value);
+#endif
+
 }
 
 //--------------------------------------------------------------
 // Update a global object
 //--------------------------------------------------------------
-void vm_update_global(VM *pvm, Object* key, Object *value)
+int vm_update_global(VM *pvm, Object* key, Object *value)
 {
-    ht_add(pvm->global_table, key, value);
+    return ht_add(pvm->global_table, key, value);
 }
 
 //--------------------------------------------------------------
