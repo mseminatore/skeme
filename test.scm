@@ -27,11 +27,11 @@
 ;----------------------
 ; define test case runner
 ;----------------------
-;(define (test-case name test-fn)
-;  (display (string-append "Running test case: " name "... "))
-;  (test-fn)
-;  (display "OK.")
-;  (newline)))
+(define (test-case name test-fn)
+  (display (string-append "Running test case: " name "..."))
+  (test-fn)
+  (display "OK.")
+  (newline))
 
 ;----------------------
 ; define a variable
@@ -155,6 +155,23 @@
 
 (define (fib n)
   (fib-iter 1 0 n))
+
+(assert (= (fib 10) 55) "tail-recursive fib(10) failed")
+(assert (= (fib 0) 0) "tail-recursive fib(0) failed")
+(assert (= (fib 1) 1) "tail-recursive fib(1) failed")
+(assert (= (fib 5) 5) "tail-recursive fib(5) failed")
+(assert (= (fib 15) 610) "tail-recursive fib(15) failed")
+(assert (= (fib 20) 6765) "tail-recursive fib(20) failed")
+
+;----------------------
+; passed param test
+;----------------------
+(define (bind1 f x) (f x))
+(define (sqr x) (* x x))
+(assert (= (bind1 sqr 5) 25) "passed param test failed")
+
+;(assert (= (bind (lambda (y) (+ y 10)) 5) 15) "passed param test failed")
+
 
 ;----------------------
 ; if reached here, all tests passed

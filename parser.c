@@ -741,10 +741,13 @@ static int expr()
                 // handle native and regular function calls
                 // handle variable and check for undefined symbol
                 Object* key = vm_get_string(&vm, yylval.word);
+                
                 match(lookahead);
+
                 if (key)
                 {
-#if 1
+                    int local_fn = FALSE;
+#if 0
                     Object *proc = vm_get_global(&vm, key);
 #else
                     // look first for a local variable or param
@@ -753,8 +756,7 @@ static int expr()
 					// if not found, look in globals
                     if (proc && IS_NUM(proc))
                     {
-                        vm_emit_number(&vm, AS_NUM(proc));
-                        vm_emit(&vm, OP_GET_LOCAL);
+                        local_fn = TRUE;
                     }
                     else
                         proc = vm_get_global(&vm, key);
@@ -764,9 +766,16 @@ static int expr()
                     {
                         expr_tail(); // parse function arguments (if any)
 
-                        vm_emit_push_object(&vm, proc); // push function name for debugging
+                        vm_emit_push_object(&vm, proc);
                         vm_emit(&vm, OP_CALL);
-//                        vm_emit(&vm, (VMCode_t)proc);
+                    }
+                    else if (local_fn)
+                    {
+                        expr_tail(); // parse function arguments (if any)
+
+                        vm_emit_number(&vm, AS_NUM(proc));
+                        vm_emit(&vm, OP_GET_LOCAL);
+                        vm_emit(&vm, OP_CALL);
                     }
                     else
                     {

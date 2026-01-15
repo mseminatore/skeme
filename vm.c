@@ -362,7 +362,8 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 
         case OP_CALL:
         {
-            Object *fn_obj = (Object*)*ip++;
+#if 0
+            Object* fn_obj = (Object*)*ip++;
 
             if (IS_PROCEDURE(fn_obj))
             {
@@ -374,6 +375,9 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
                 NativeFunction* proc = (NativeFunction*)fn_obj;
                 printf("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
             }
+#else
+            printf("CALL [SP]\n");
+#endif
         }
             break;
 
