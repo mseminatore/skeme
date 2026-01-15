@@ -356,20 +356,24 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("DUP\n");
             break;
 
-        case OP_NATIVE:
-            printf("CALL NATIVE FN '%s'\n", ((String*)((NativeFunction*)*ip)->name)->value);
-            ip++;  // skip native function pointer
-            break;
-
         case OP_RET:
             printf("RET\n");
             break;
 
         case OP_CALL:
         {
-            Procedure* proc = (Procedure*)*ip;
-            printf("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
-            ip++;
+            Object *fn_obj = (Object*)*ip++;
+
+            if (IS_PROCEDURE(fn_obj))
+            {
+                Procedure* proc = (Procedure*)fn_obj;
+                printf("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+            }
+            else
+            {
+                NativeFunction* proc = (NativeFunction*)fn_obj;
+                printf("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
+            }
         }
             break;
 
