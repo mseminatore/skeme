@@ -26,7 +26,7 @@ CodeChunk* g_current_chunk = NULL;
 //-----------------------------------------------
 // print an object
 //-----------------------------------------------
-void vm_print_object(Object* obj)
+void vm_print_object(Object* obj, int flags)
 {
     if (!obj)
     {
@@ -51,7 +51,10 @@ void vm_print_object(Object* obj)
         case OBJ_STRING:
         {
             String* strObj = (String*)obj;
-            printf("\"%s\"", strObj->value);
+            if (VM_PRINT_PLAIN == flags)
+                printf("%s", strObj->value);
+            else
+                printf("\"%s\"", strObj->value);
         }
         break;
 
@@ -60,21 +63,21 @@ void vm_print_object(Object* obj)
             Pair* pair = (Pair*)obj;
             printf("'(");
 
-            vm_print_object(pair->car); // display car
+            vm_print_object(pair->car, flags); // display car
 
             Object* cdr = pair->cdr;
             while (cdr && IS_OBJ(cdr) && OBJ_TYPE(cdr) == OBJ_PAIR)
             {
                 pair = (Pair*)cdr;
                 printf(" ");
-                vm_print_object(pair->car); // display car
+                vm_print_object(pair->car, flags); // display car
                 cdr = pair->cdr;
             }
 
             if (cdr && !IS_NIL(cdr))
             {
                 printf(" . ");
-                vm_print_object(pair->cdr); // display cdr
+                vm_print_object(pair->cdr, flags); // display cdr
             }
             printf(")");
         }
@@ -697,9 +700,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             if (pvm->sp)
             {
                 printf(TERM_BRIGHT_BLUE);
-                vm_print_object(vm_pop(pvm));
+                    vm_print_object(vm_pop(pvm), VM_PRINT_FANCY);
                 printf(TERM_RESET"\n");
-
             }
 
             break;

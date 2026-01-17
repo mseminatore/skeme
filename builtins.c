@@ -44,8 +44,8 @@ int sk_display(SKState *pSK)
     Object *obj = vm_pop(&vm);
 
     printf(TERM_BRIGHT_BLUE);
-        vm_print_object(obj);
-    printf(TERM_RESET"\n");
+        vm_print_object(obj, VM_PRINT_PLAIN);
+    printf(TERM_RESET);
 
     return SK_TRUE;
 }
@@ -779,7 +779,7 @@ static int sk_globals(SKState* pSK)
     {
 		String* strKey = (String*)key;
         printf("%10s\t", (const char*)strKey->value);
-        vm_print_object((Object*)value);
+        vm_print_object((Object*)value, VM_PRINT_FANCY);
         puts("");
         count++;
     }

@@ -29,8 +29,7 @@
 ;----------------------
 (define (test-case name test-fn)
   (display (string-append "Running test case: " name "..."))
-  (test-fn)
-  (display "OK.")
+  (if test-fn (display "OK.") test-fn)
   (newline))
 
 ;----------------------

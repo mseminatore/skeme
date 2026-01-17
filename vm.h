@@ -60,6 +60,9 @@
 //// #   define VM_LOG __noop
 //#endif
 
+#define VM_PRINT_FANCY 0
+#define VM_PRINT_PLAIN 1
+
 extern int g_bGCLog;
 extern int g_bVMLog;
 extern int g_bGCStress;
@@ -243,7 +246,7 @@ typedef struct VM {
 int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
-void vm_print_object(Object* obj);
+void vm_print_object(Object* obj, int flags);
 
 // stack management
 void vm_push(VM* pvm, Object* obj);
