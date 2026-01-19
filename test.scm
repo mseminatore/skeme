@@ -32,6 +32,17 @@
   (if test-fn (display "OK.") test-fn)
   (newline))
 
+(define (plus1 a) (+ 1 a))
+
+(define (apply fn lst)
+  (cond
+    ((null? lst) '())
+    (else (cons (fn (car lst)) (apply fn (cdr lst))))
+  )
+)
+
+(apply plus1 l)
+
 ;----------------------
 ; define a variable
 ;----------------------
