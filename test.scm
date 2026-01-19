@@ -32,6 +32,9 @@
   (if test-fn (display "OK.") test-fn)
   (newline))
 
+;----------------------
+; define apply
+;----------------------
 (define (plus1 a) (+ 1 a))
 
 (define (apply fn lst)
@@ -42,6 +45,22 @@
 )
 
 (apply plus1 l)
+
+;----------------------
+; define filter
+;----------------------
+(define (filter fn lst)
+  (cond
+    ((null? lst) '())
+    ((fn (car lst))
+    (cons (car lst) (filter fn (cdr lst))))
+    (else (filter fn (cdr lst)))
+  )
+)
+
+(define (one? n) (= 1 n))
+
+(filter one? (list 1 2 1 1))
 
 ;----------------------
 ; define a variable
