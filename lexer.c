@@ -378,7 +378,11 @@ yylex01:
     if (c == '\'')
     {
         c = getch();
-        if (follow('\'', TRUE, FALSE))
+        if (c == '(' && follow(')', TRUE, FALSE))
+        {
+            return NIL;
+        }
+        else if (follow('\'', TRUE, FALSE))
         {
             yylval.ival = backslash(c);
             return CHAR;
