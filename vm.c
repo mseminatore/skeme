@@ -530,7 +530,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             Object* fn_obj = vm_pop(pvm);   // get function object
 
             if (IS_PROCEDURE(fn_obj))
-            { 
+            {
                 Procedure* proc = (Procedure*)fn_obj;
                 VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
 
@@ -554,7 +554,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                 vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
                 pvm->fp = pvm->sp;                  // set-up new frame pointer
             }
-            else
+            else if (IS_NATIVE_FN(fn_obj))
             {
                 NativeFunction* proc = (NativeFunction*)fn_obj;
                 VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
@@ -583,6 +583,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                     fprintf(stderr, "NULL function pointer in NATIVE call!\n");
                 }
             }
+            else
+                yyerror("procedure expected!");
         }
             break;
 

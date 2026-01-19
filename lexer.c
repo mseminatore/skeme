@@ -294,7 +294,7 @@ int getNumber()
 //-------------------------------
 int backslash(int c)
 {
-	static char translation_tab[] = "b\bf\fn\nr\rt\t";
+	static char translation_tab[] = "a\ab\bf\fn\nr\rt\te\x1b";
 
 	if (c != '\\')
 		return c;

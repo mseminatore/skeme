@@ -3,6 +3,13 @@
 ;(load "io.scm")
 ;(load "../fib.scm")
 
+(define ESC "\e")
+(define TERM_CLEAR (string-append ESC "[2J" ESC "[H"))
+(define TERM_RESET (string-append ESC "[0m"))
+(define TERM_RED (string-append ESC "[31m"))
+(define TERM_GREEN (string-append ESC "[32m"))
+(define TERM_MAGENTA (string-append ESC "[35m"))
+
 ;----------------------
 ; enable logging options
 ;----------------------
@@ -22,15 +29,18 @@
 (define (assert condition message)
   (if (not condition)
       (error "Assertion failed:" message)
-      condition))
+      condition)
+)
 
 ;----------------------
 ; define test case runner
 ;----------------------
 (define (test-case name test-fn)
-  (display (string-append "Running test case: " name "..."))
-  (if test-fn (display "OK.") test-fn)
-  (newline))
+  (display (string-append "Running test case: '" TERM_MAGENTA name TERM_RESET "'..."))
+  (if test-fn (display (string-append TERM_GREEN "OK." TERM_RESET)) (display (string-append TERM_RED "failed!" TERM_RESET)))
+  (newline)
+  (not (not test-fn))
+)
 
 ;----------------------
 ; define apply
@@ -44,7 +54,7 @@
   )
 )
 
-(apply plus1 l)
+(apply plus1 (list 1 2 3))
 
 ;----------------------
 ; define filter
@@ -63,6 +73,24 @@
 (filter one? (list 1 2 1 1))
 
 ;----------------------
+; even?
+;----------------------
+(define (even? n)
+  (= (modulo n 2) 0)
+)
+
+(test-case "even? test" (and (even? 2) (not (even? 3))))
+
+;----------------------
+; odd?
+;----------------------
+(define (odd? n)
+  (not (even? n))
+)
+
+(test-case "odd? test" (and (odd? 3) (not (odd? 2))))
+
+;----------------------
 ; define a variable
 ;----------------------
 (define five 5)
@@ -70,25 +98,26 @@
 ;----------------------
 ; construct a pair
 ;----------------------
-(assert (cons 1 2) "pair cons failed")
+(test-case "cons a pair" (cons 1 2))
+;(assert (cons 1 2) "cons pair failed")
 (define p (cons 1 2))
-(assert (pair? (cons 1 2)) "cons not a pair")
-(assert (pair? p) "p not a pair")
+(test-case "pair? a pair" (pair? (cons 1 2)))
+(test-case "pair? a pair var" (pair? p))
 
 ;----------------------
 ; make list via nested cons
 ;----------------------
-(assert (cons 1 (cons 2 ())) "nested cons failed")
-(assert (list? (cons 1 (cons 2 ()))) "list? failed")
+(test-case "nested cons" (cons 1 (cons 2 ())))
+(test-case "list? nested cons list" (list? (cons 1 (cons 2 ()))))
 
 ;----------------------
 ; make a list
 ;----------------------
-(assert (list 1 2 3) "list failed")
+(test-case "make a list" (list 1 2 3))
 (define l (list 1 2 3))
-(assert (list? l) "list? failed")
-(assert (= (car l) 1) "car failed")
-(assert (list? (cdr l)) "cdr failed")
+(test-case "list? list var "(list? l))
+(test-case "car of list" (= (car l) 1))
+(test-case "cdr of list" (list? (cdr l)))
 
 ;----------------------
 ; characterization operations
@@ -131,6 +160,15 @@
 
 ;(define (cadr x) (car (cdr x)))
 ;(define (cddr x) (cdr (cdr x)))
+
+;----------------------
+; arithmetic operations
+;----------------------
+(assert (= (+ 1 2) 3) "+ failed")
+(assert (= (- 5 2) 3) "- failed")
+(assert (= (* 2 3) 6) "* failed")
+(assert (= (/ 6 2) 3) "/ failed")
+(assert (= (modulo 7 3) 1) "modulo failed")
 
 ;----------------------
 ; define a function

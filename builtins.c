@@ -1088,24 +1088,24 @@ static int sk_map(SKState* pSK)
 //-----------------------------------------------
 // built-in function: apply
 //-----------------------------------------------
-static int sk_apply(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    yyerror("built-in function 'apply' not implemented yet");
-    return SK_FALSE;
-}
+//static int sk_apply(SKState* pSK)
+//{
+//    if (!pSK) return SK_FALSE;
+//
+//    yyerror("built-in function 'apply' not implemented yet");
+//    return SK_FALSE;
+//}
 
 //-----------------------------------------------
 // built-in function: filter
 //-----------------------------------------------
-static int sk_filter(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    yyerror("built-in function 'filter' not implemented yet");
-    return SK_FALSE;
-}
+//static int sk_filter(SKState* pSK)
+//{
+//    if (!pSK) return SK_FALSE;
+//
+//    yyerror("built-in function 'filter' not implemented yet");
+//    return SK_FALSE;
+//}
 
 //-----------------------------------------------
 // built-in function: eval
@@ -1188,6 +1188,35 @@ static int sk_printf(SKState* pSK)
 }
 
 //-----------------------------------------------
+//
+//-----------------------------------------------
+static int sk_modulo(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* modulus_obj = vm_pop(&vm);
+    Object* dividend_obj = vm_pop(&vm);
+
+    if (!dividend_obj || !IS_NUM(dividend_obj) || !modulus_obj || !IS_NUM(modulus_obj))
+    {
+        yyerror("arguments to modulo must be numbers");
+        return SK_FALSE;
+    }
+
+    int dividend = AS_NUM(dividend_obj);
+    int modulus = AS_NUM(modulus_obj);
+    if (modulus == 0)
+	{
+		yyerror("modulo by zero");
+		return SK_FALSE;
+	}
+
+    vm_push(&vm, MAKE_NUM(dividend % modulus));
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1241,8 +1270,8 @@ static SKFuncSet built_in_funcs[] =
 
     // higher-order functions
     { "map", sk_map, 2 },
-    { "filter", sk_filter, 2 },
-    { "apply", sk_apply, 2 },
+    //{ "filter", sk_filter, 2 },
+    //{ "apply", sk_apply, 2 },
     { "eval", sk_eval, 1 },
 
     // system/environment functions
@@ -1269,6 +1298,7 @@ static SKFuncSet built_in_funcs[] =
     { "*", sk_multiply, SK_ARITY_TWO_OR_MORE },
 	{ "/", sk_divide, SK_ARITY_TWO_OR_MORE },
     { "=", sk_equalnum, SK_ARITY_TWO_OR_MORE },
+    { "modulo", sk_modulo, 2},
 
 	// debugging functions
     { "disasm", sk_disasm, 1 },
