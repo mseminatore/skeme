@@ -74,7 +74,7 @@
   )
 )
 
-(apply plus1 (list 1 2 3))
+(test-case "apply plus1" (equal? (list 2 3 4) (apply plus1 (list 1 2 3))))
 
 ;----------------------
 ; define filter
@@ -90,7 +90,8 @@
 
 (define (one? n) (= 1 n))
 
-(test-case "filter a list" (= 3 (length (filter one? (list 1 2 1 1)))))
+(test-case "length of filter list" (= 3 (length (filter one? (list 1 2 1 1)))))
+(test-case "equal of filter list" (equal? (filter one? (list 1 2 1 1)) (list 1 1 1)))
 
 ;----------------------
 ; even?
@@ -153,6 +154,11 @@
 (test-case "cdr of list" (list? (cdr alist)))
 (test-case "cadr of list" (= (cadr alist) 2))
 (test-case "cddr of list" (list? (cddr alist)))
+
+;----------------------
+; reverse a list
+;----------------------
+(test-case "reverse a list" (equal? (reverse (list 1 2 3)) (list 3 2 1)))
 
 ;----------------------
 ; characterization operations

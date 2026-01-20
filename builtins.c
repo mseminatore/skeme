@@ -159,8 +159,58 @@ static int sk_equalp(SKState* pSK)
     Object* obj2 = vm_pop(&vm);
     Object* obj1 = vm_pop(&vm);
 
+	// check for pointer equality first, covers nil, boolean, interned string and number too
     if (obj1 == obj2)
+    {
         bool = MAKE_TRUE();
+        vm_push(&vm, bool);
+		return SK_TRUE;
+    }
+
+	// check for string equality
+    if (IS_STRING(obj1) && IS_STRING(obj2))
+    {
+        String* str1 = (String*)obj1;
+        String* str2 = (String*)obj2;
+        if (strcmp(str1->value, str2->value) == 0)
+        {
+            bool = MAKE_TRUE();
+            vm_push(&vm, bool);
+            return SK_TRUE;
+        }
+	}
+
+	// checks (pairs, lists, etc.)
+    if (IS_PAIR(obj1) && IS_PAIR(obj2))
+    {
+        Pair* pair1 = (Pair*)obj1;
+        Pair* pair2 = (Pair*)obj2;
+
+        // check car and cdr for equality
+        vm_push(&vm, pair1->car);
+        vm_push(&vm, pair2->car);
+        sk_equalp(pSK);
+        Object* car_equal = vm_pop(&vm);
+
+        if (IS_FALSE(car_equal))
+        {
+            vm_push(&vm, bool);
+            return SK_TRUE;
+        }
+
+        vm_push(&vm, pair1->cdr);
+        vm_push(&vm, pair2->cdr);
+        sk_equalp(pSK);
+        Object* cdr_equal = vm_pop(&vm);
+        if (IS_FALSE(cdr_equal))
+        {
+            vm_push(&vm, bool);
+            return SK_TRUE;
+        }
+
+        // both car and cdr are equal
+        bool = MAKE_TRUE();
+	}
 
     vm_push(&vm, bool);
     return SK_TRUE;
