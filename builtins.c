@@ -1284,6 +1284,42 @@ static int sk_close_file(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: reverse
+//-----------------------------------------------
+static int sk_reverse(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object *obj = vm_peek(&vm, 0);
+    if (!IS_PAIR(obj))
+    {
+		yyerror("argument to 'reverse' is not a list");
+        vm_pop(&vm);
+		return SK_FALSE;
+    }
+
+    Pair* current = (Pair*)obj;
+    Pair* reversed = NULL;
+    vm_push(&vm, NULL); // push dummy on stack to keep new list alive in case of GC
+
+    while (current && IS_PAIR(current))
+	{
+		Pair* new_pair = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
+        vm_pop(&vm);            // remove dummy
+		new_pair->car = current->car;
+		new_pair->cdr = (Object*)reversed;
+		reversed = new_pair;
+        vm_push(&vm, reversed);  // keep alive in case of GC
+		current = (Pair*)current->cdr;
+	}
+    
+    vm_pop_n(&vm, 2);                   // remove original list and dummy
+    vm_push(&vm, (Object*)reversed);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1328,7 +1364,8 @@ static SKFuncSet built_in_funcs[] =
     { "cons", sk_cons, 2 },
     { "car", sk_car, 1 },
     { "cdr", sk_cdr, 1 },
-	//{ "append", sk_cons, 2 }, // TODO - replace with real append?
+    { "reverse", sk_reverse, 1},
+    //{ "append", sk_append, SK_ARITY_TWO_OR_MORE },
 
     // memory management
     { "gc", sk_gc, 0 },
