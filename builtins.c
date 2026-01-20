@@ -149,6 +149,24 @@ static int sk_eqp(SKState *pSK)
 }
 
 //-----------------------------------------------
+// built-in function: equal?
+//-----------------------------------------------
+static int sk_equalp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+    Object* obj2 = vm_pop(&vm);
+    Object* obj1 = vm_pop(&vm);
+
+    if (obj1 == obj2)
+        bool = MAKE_TRUE();
+
+    vm_push(&vm, bool);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: number?
 //-----------------------------------------------
 static int sk_numberp(SKState *pSK)
@@ -1344,7 +1362,7 @@ static SKFuncSet built_in_funcs[] =
     // predicate functions
     { "null?", sk_nullp, 1 },
     { "eq?", sk_eqp, 2},
-    //{ "equal", sk_equalp, 2},
+    { "equal?", sk_equalp, 2},
     { "number?", sk_numberp, 1 },
     { "boolean?", sk_booleanp, 1 },
     { "pair?", sk_pairp, 1},

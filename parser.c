@@ -335,8 +335,6 @@ static int definition()
         // parameters
         formals(proc);
 
-        // TODO - emit code to create stack frame and store parameters
-
         match(')');
         
         // function body
