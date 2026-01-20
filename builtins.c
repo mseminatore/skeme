@@ -1309,7 +1309,7 @@ static int sk_reverse(SKState* pSK)
 		new_pair->car = current->car;
 		new_pair->cdr = (Object*)reversed;
 		reversed = new_pair;
-        vm_push(&vm, reversed);  // keep alive in case of GC
+        vm_push(&vm, (Object*)reversed);  // keep alive in case of GC
 		current = (Pair*)current->cdr;
 	}
     
