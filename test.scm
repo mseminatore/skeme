@@ -91,6 +91,21 @@
 (test-case "odd? test" (and (odd? 3) (not (odd? 2))))
 
 ;----------------------
+; min/max
+;----------------------
+(define (min a b)
+    (if (< a b) a b)
+)
+
+(define (max a b)
+    (if (> a b) a b)
+)
+
+
+(test-case "min test" (= 1 (min 1 2)))
+(test-case "max test" (= 2 (max 1 2)))
+
+;----------------------
 ; define a variable
 ;----------------------
 (define five 5)
@@ -122,9 +137,11 @@
 ;----------------------
 ; characterization operations
 ;----------------------
-(assert (zero? 0) "zero? failed")
+(test-case "zero? 0" (zero? 0))
 (assert (not (zero? 1)) "zero? failed")
 (assert (null? ()) "empty list check failed")
+(assert (null? '()) "empty list check failed")
+(assert (null? nil) "empty list check failed")
 (assert (number? 1) "number? failed")
 (assert (not (number? #t)) "number? failed")
 (assert (string? "foo") "string? failed")
@@ -132,11 +149,12 @@
 (assert (atom? five) "atom? failed")
 (assert (not (atom? l)) "atom? failed")
 (assert (not (atom? p)) "atom? failed")
-(assert (= (length "foo") 3) "length failed")
-(assert (eq? "foo" "foo") "eq? strings failed")
+(test-case "length string" (= (length "foo") 3))
+(test-case "length list" (= (length (list 1 2 3 4 5)) 5))
+(test-case "foo = foo" (eq? "foo" "foo"))
 (assert (not (eq? "foo" "bar")) "eq? strings failed")
 
-(assert (integer? 1) "integer? failed")
+(test-case "integer? 1" (integer? 1))
 (assert (not (integer? #t)) "integer? failed")
 ;(assert (not (integer? 1.5)) "integer? failed")
 

@@ -91,6 +91,10 @@ void vm_print_object(Object* obj, int flags)
             printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
+        case OBJ_FILE:
+            printf("#<file:'%s'>", ((String*)((File*)obj)->name)->value);
+			break;
+
         default:
             printf("#<obj type=%d>", OBJ_TYPE(obj));
             break;
@@ -145,6 +149,7 @@ int vm_init(VM* pvm) {
     pvm->return_sp = 0;
     pvm->head = NULL;
     pvm->numObjects = 0;
+    pvm->objectsCollected = 0;
     pvm->nextGC = VM_INITIAL_GC_THRESHOLD; // initial threshold
     pvm->allocatedBytes = 0;
     pvm->gc_cycles = 0;
@@ -788,6 +793,7 @@ static void freeObject(VM* pvm, Object* object)
 {
 	GC_LOG("-- gc freeing object of type %d\n", OBJ_TYPE(object));
 
+    // we can only free Objects
     if (!IS_OBJ(object))
 		return;
 
@@ -811,10 +817,25 @@ static void freeObject(VM* pvm, Object* object)
         }
         break;
 
+    case OBJ_FILE:
+    {
+        File* file = (File*)object;
+        GC_LOG("-- gc closing file: '%s'\n", ((String*)file->name)->value);
+
+        if (file->fptr)
+            fclose(file->fptr);
+        file->fptr = NULL;
+        file->name = NULL;
+    }
+        break;
+
     default:
         // nothing to do!
         break;
     }
+
+    // track objects collected
+    pvm->objectsCollected++;
 
     // Free the memory associated with the object
     vm_alloc(pvm, object, object->size, 0);
@@ -1429,5 +1450,6 @@ void vm_freeObjects(VM* pvm) {
     pvm->sp = 0;
     pvm->fp = 0;
     pvm->return_sp = 0;
+    pvm->objectsCollected = 0;
 }
 

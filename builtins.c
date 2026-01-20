@@ -453,9 +453,10 @@ static int sk_gc_stats(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    fprintf(stderr, "\t Live objects: %zu (%zu peak)\n\tBytes alloc'd: %zu (%zu peak)\n\t    GC passes: %zu\n\t   Next GC at: %zu bytes\n",
+    fprintf(stderr, "\t Live objects: %zu (%zu peak)\n\tObj Collected: %zu\n\tBytes alloc'd: %zu (%zu peak)\n\t    GC passes: %zu\n\t   Next GC at: %zu bytes\n",
         vm.numObjects,
         vm.peakObjects,
+        vm.objectsCollected,
         vm.allocatedBytes,
         vm.peakAllocatedBytes,
         vm.gc_cycles,
@@ -1052,6 +1053,10 @@ static int sk_typeof(SKState* pSK)
             type_name = "char";
             break;
 
+        case OBJ_FILE:
+            type_name = "file";
+            break;
+
         default:
             type_name = "object";
             break;
@@ -1217,6 +1222,68 @@ static int sk_modulo(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: open-file
+//-----------------------------------------------
+static int sk_open_file(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    String* name = (String*)vm_peek(&vm, 0);
+    if (!IS_STRING(name))
+    {
+        yyerror("open-file expects a string filename");
+        vm_pop(&vm);
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    File* file = (File*)vm_newObject(&vm, sizeof(File), OBJ_FILE);
+    file->fptr = NULL;
+    file->name = NULL;
+
+    FILE* fptr = fopen(name->value, "rt");
+	if (!fptr)
+	{
+		yyerror("failed to open file");
+		vm_pop(&vm);           // remove filename
+		vm_push(&vm, NULL);     // push nil
+		return SK_FALSE;
+	}
+
+	file->fptr = fptr;          // store the file pointer
+    file->name = name;          // store the filename
+    vm_pop(&vm);                // remove filename from stack
+    vm_push(&vm, (Object*)file);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: close-file
+//-----------------------------------------------
+static int sk_close_file(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&vm);
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_FILE)
+	{
+		yyerror("close-file expects a file object");
+		return SK_FALSE;
+	}
+
+    File* file = (File*)obj;
+    if (file->fptr)
+	{
+		fclose(file->fptr);
+		file->fptr = NULL;
+        file->name = NULL;
+	}
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1229,6 +1296,8 @@ static SKFuncSet built_in_funcs[] =
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 	{ "cls", sk_cls, 0 },
+    { "open-file", sk_open_file, 1 },
+    { "close-file", sk_close_file, 1 },
     { "read", sk_read, 0 },
     { "write", sk_write, 1 },
     // { "print", sk_print },

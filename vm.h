@@ -137,6 +137,7 @@ enum
     OBJ_CHAR,
     OBJ_ENVIRONMENT,
     OBJ_FLOAT,
+    OBJ_FILE,
 
 	// mark the last object type
     OBJ_LAST
@@ -208,6 +209,13 @@ typedef struct Closure {
     // upvalues?
 } Closure;
 
+// file object
+typedef struct File {
+    Object base;            // base object
+    FILE* fptr;             // file handle
+    String* name;           // file name
+} File;
+
 // Define the VM structure
 typedef struct VM {
 	int sp;                         // Stack pointer, should be size_t or uint?
@@ -217,17 +225,18 @@ typedef struct VM {
     Object* stack[VM_STACK_SIZE];   // Stack of object pointers
     size_t numObjects;              // Number of allocated objects should be size_t
     size_t peakObjects;             // Peak number of allocated objects
+    size_t objectsCollected;        // Number of objects garbage collected
 	size_t peakAllocatedBytes;      // Peak allocated bytes
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
-	size_t max_stack_size;         // Maximum stack size reached
-	size_t max_call_depth;         // Maximum call depth reached
+	size_t max_stack_size;          // Maximum stack size reached
+	size_t max_call_depth;          // Maximum call depth reached
 
-    HashTable *global_table;          // Hash table for global variables
-	HashTable* interned_strings;      // Hash table for interned strings
+    HashTable *global_table;        // Hash table for global variables
+	HashTable* interned_strings;    // Hash table for interned strings
 
-    Environment *current_scope;   // Current environment/scope
+    Environment *current_scope;     // Current environment/scope
 
     VMCode_t *return_stack[VM_STACK_SIZE]; // Return address stack
     int return_sp;                        // Return address stack pointer
