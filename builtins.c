@@ -1519,6 +1519,11 @@ static int sk_reverse(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Object *obj = vm_peek(&vm, 0);
+    if (IS_NIL(obj))
+    {
+        return SK_TRUE;
+    }
+
     if (!IS_PAIR(obj))
     {
 		yyerror("argument to 'reverse' is not a list");

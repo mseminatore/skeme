@@ -130,6 +130,11 @@
 ;----------------------
 (define five 5)
 
+(test-case "five = 5" (= five 5))
+(set! five 4)
+(test-case "set five to 4" (= 4 five))
+(set! five 5)
+
 ;----------------------
 ; construct a pair
 ;----------------------
@@ -154,11 +159,59 @@
 (test-case "cdr of list" (list? (cdr alist)))
 (test-case "cadr of list" (= (cadr alist) 2))
 (test-case "cddr of list" (list? (cddr alist)))
+(test-case "cddr length" (= (length (cddr alist)) 1))
+(test-case "cddr value" (= (car (cddr alist)) 3))
+
+;----------------------
+; set car and cdr
+;----------------------
+;(set-car! apair 10)
+(test-case "set-car! apair to 10" (= (car (set-car! apair 10)) 10))
+;(set-cdr! apair 20)
+(test-case "set-cdr! apair to 20" (= (cdr (set-cdr! apair 20)) 20))
+
+; set back to original values
+(test-case "set-car! apair back to 1" (= (car (set-car! apair 1)) 1))
+(test-case "set-cdr! apair back to 2" (= (cdr (set-cdr! apair 2)) 2))
+
+;----------------------
+; typeof tests
+;----------------------
+(test-case "typeof number" (eq? "number" (typeof 42)))
+(test-case "typeof string" (eq? "string" (typeof "hello")))
+(test-case "typeof boolean" (eq? "boolean" (typeof #t)))
+(test-case "typeof pair" (eq? "pair" (typeof apair)))
+(test-case "typeof list" (eq? "list" (typeof alist)))
+
+;----------------------
+; append two lists
+;----------------------
+(define (append lst1 lst2)
+  (if (null? lst1)
+      lst2
+      (cons (car lst1) (append (cdr lst1) lst2))
+  )
+)
+
+(test-case "append two lists" (equal? (append (list 1 2) (list 3 4)) (list 1 2 3 4)))
+
+;----------------------
+; map function over a list
+;----------------------
+(define (map fn lst)
+  (if (null? lst)
+      '()
+      (cons (fn (car lst)) (map fn (cdr lst)))
+  )
+)
+
+(test-case "map plus1 over list" (equal? (map plus1 (list 1 2 3)) (list 2 3 4)))
 
 ;----------------------
 ; reverse a list
 ;----------------------
 (test-case "reverse a list" (equal? (reverse (list 1 2 3)) (list 3 2 1)))
+(test-case "reverse empty list" (equal? (reverse ()) ()))
 
 ;----------------------
 ; characterization operations
