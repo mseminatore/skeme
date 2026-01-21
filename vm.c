@@ -26,20 +26,20 @@ CodeChunk* g_current_chunk = NULL;
 //-----------------------------------------------
 // print an object
 //-----------------------------------------------
-void vm_print_object(Object* obj, int flags)
+void vm_print_object(Object* obj, int flags, FILE* stream)
 {
     if (!obj)
     {
-        printf("'()");   // nil
+        fprintf(stream, "'()");   // nil
         return;
     }
 
     if (IS_BOOL(obj))
     {
         if (IS_TRUE(obj))
-            printf("#t");
+            fprintf(stream, "#t");
         else
-            printf("#f");
+            fprintf(stream, "#f");
 
         return;
     }
@@ -52,43 +52,43 @@ void vm_print_object(Object* obj, int flags)
         {
             String* strObj = (String*)obj;
             if (VM_PRINT_PLAIN == flags)
-                printf("%s", strObj->value);
+                fprintf(stream, "%s", strObj->value);
             else
-                printf("\"%s\"", strObj->value);
+                fprintf(stream, "\"%s\"", strObj->value);
         }
         break;
 
         case OBJ_PAIR:
         {
             Pair* pair = (Pair*)obj;
-            printf("'(");
+            fprintf(stream, "'(");
 
-            vm_print_object(pair->car, flags); // display car
+            vm_print_object(pair->car, flags, stream); // display car
 
             Object* cdr = pair->cdr;
             while (cdr && IS_OBJ(cdr) && OBJ_TYPE(cdr) == OBJ_PAIR)
             {
                 pair = (Pair*)cdr;
-                printf(" ");
-                vm_print_object(pair->car, flags); // display car
+                fprintf(stream, " ");
+                vm_print_object(pair->car, flags, stream); // display car
                 cdr = pair->cdr;
             }
 
             if (cdr && !IS_NIL(cdr))
             {
-                printf(" . ");
-                vm_print_object(pair->cdr, flags); // display cdr
+                fprintf(stream, " . ");
+                vm_print_object(pair->cdr, flags, stream); // display cdr
             }
-            printf(")");
+            fprintf(stream, ")");
         }
         break;
 
         case OBJ_PROCEDURE:
-            printf("#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
+            fprintf(stream, "#<procedure:%s>", ((String*)((Procedure*)obj)->name)->value);
             break;
 
         case OBJ_NATIVE_FN:
-            printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
+            fprintf(stream, "#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
         case OBJ_PORT:
@@ -98,19 +98,19 @@ void vm_print_object(Object* obj, int flags)
             if (port && port->fptr && port->name)
                 str = (char*)port->name->value;
 
-            printf("#<file:'%s'>", str);
+            fprintf(stream, "#<file:'%s'>", str);
         }
 			break;
 
         default:
-            printf("#<obj type=%d>", OBJ_TYPE(obj));
+            fprintf(stream, "#<obj type=%d>", OBJ_TYPE(obj));
             break;
         }
     }
     else
     {
         // print number
-        printf("%d", AS_NUM(obj));
+        fprintf(stream, "%d", AS_NUM(obj));
     }
 }
 
@@ -713,9 +713,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
             if (pvm->sp)
             {
-                printf(TERM_BRIGHT_BLUE);
-                    vm_print_object(vm_pop(pvm), VM_PRINT_FANCY);
-                printf(TERM_RESET"\n");
+                fprintf(stdout, TERM_BRIGHT_BLUE);
+                    vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
+                fprintf(stdout, TERM_RESET"\n");
             }
 
             break;

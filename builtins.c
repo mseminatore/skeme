@@ -46,9 +46,9 @@ int sk_display(SKState *pSK)
     // pop the top of the stack and print it
     Object *obj = vm_pop(&vm);
 
-    printf(TERM_BRIGHT_BLUE);
-        vm_print_object(obj, VM_PRINT_PLAIN);
-    printf(TERM_RESET);
+    fprintf(stdout, TERM_BRIGHT_BLUE);
+        vm_print_object(obj, VM_PRINT_PLAIN, stdout);
+    fprintf(stdout, TERM_RESET);
 
     return SK_TRUE;
 }
@@ -846,17 +846,17 @@ static int sk_globals(SKState* pSK)
     int count = 0;
 
     // print interned strings
-    printf("Global objects:\n");
+    fprintf(stdout, "Global objects:\n");
     while (ht_next(vm.global_table, &index, &key, &value))
     {
 		String* strKey = (String*)key;
-        printf("%10s\t", (const char*)strKey->value);
-        vm_print_object((Object*)value, VM_PRINT_FANCY);
-        puts("");
+        fprintf(stdout, "%10s\t", (const char*)strKey->value);
+        vm_print_object((Object*)value, VM_PRINT_FANCY, stdout);
+        fputs("\n", stdout);
         count++;
     }
 
-    printf("%d globals total.\n", count);
+    fprintf(stdout, "%d globals total.\n", count);
 
     return SK_TRUE;
 }
@@ -871,7 +871,7 @@ static int sk_pwd(SKState* pSK)
 	if (NULL == getcwd(cwd, sizeof(cwd)))
 		yyerror("failed to get current working directory");
     else
-        printf("Current working directory: '%s'\n", cwd);
+        fprintf(stdout, "Current working directory: '%s'\n", cwd);
 
     return SK_TRUE;
 }

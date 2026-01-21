@@ -256,7 +256,7 @@ typedef struct VM {
 int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
-void vm_print_object(Object* obj, int flags);
+void vm_print_object(Object* obj, int flags, FILE *stream);
 
 // stack management
 void vm_push(VM* pvm, Object* obj);
