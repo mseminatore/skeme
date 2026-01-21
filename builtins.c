@@ -1412,6 +1412,7 @@ static SKFuncSet built_in_funcs[] =
     // predicate functions
     { "null?", sk_nullp, 1 },
     { "eq?", sk_eqp, 2},
+    { "eqv?", sk_eqp, 2},
     { "equal?", sk_equalp, 2},
     { "number?", sk_numberp, 1 },
     { "boolean?", sk_booleanp, 1 },
