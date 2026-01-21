@@ -1124,7 +1124,7 @@ static int sk_typeof(SKState* pSK)
             type_name = "char";
             break;
 
-        case OBJ_FILE:
+        case OBJ_PORT:
             type_name = "file";
             break;
 
@@ -1254,8 +1254,8 @@ static int sk_read_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    File *file = (File*) vm_pop(&vm);
-    if (!IS_OBJ(file) || OBJ_TYPE(file) != OBJ_FILE)
+    Port *port = (Port*) vm_pop(&vm);
+    if (!IS_OBJ(port) || !IS_PORT(port))
     {
         yyerror("read-line expects a file object");
         vm_push(&vm, NULL);
@@ -1263,7 +1263,7 @@ static int sk_read_line(SKState* pSK)
     }
 
     char buffer[LARGE_BUFFER] = { 0 };
-    if (fgets(buffer, sizeof(buffer), file->fptr) == NULL)
+    if (fgets(buffer, sizeof(buffer), port->fptr) == NULL)
     {
         // EOF or error
         vm_push(&vm, NULL); // push nil
@@ -1311,8 +1311,8 @@ static int sk_write_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    File *file = (File*) vm_pop(&vm);
-    if (!IS_OBJ(file) || OBJ_TYPE(file) != OBJ_FILE)
+    Port *port = (Port*) vm_pop(&vm);
+    if (!IS_OBJ(port) || !IS_PORT(port))
     {
         yyerror("write-line expects a file object");
         vm_push(&vm, NULL);
@@ -1327,7 +1327,7 @@ static int sk_write_line(SKState* pSK)
         return SK_FALSE;
     }
 
-    fprintf(file->fptr, "%s\n", str->value);
+    fprintf(port->fptr, "%s\n", str->value);
 
     vm_push(&vm, MAKE_TRUE());
     return SK_TRUE;
@@ -1447,9 +1447,9 @@ static int sk_open_file(SKState* pSK, char *mode)
         return SK_FALSE;
     }
 
-    File* file = (File*)vm_newObject(&vm, sizeof(File), OBJ_FILE);
-    file->fptr = NULL;
-    file->name = NULL;
+    Port* port = (Port*)vm_newObject(&vm, sizeof(Port), OBJ_PORT);
+    port->fptr = NULL;
+    port->name = NULL;
 
     FILE* fptr = fopen(name->value, mode);
 	if (!fptr)
@@ -1460,10 +1460,10 @@ static int sk_open_file(SKState* pSK, char *mode)
 		return SK_FALSE;
 	}
 
-	file->fptr = fptr;          // store the file pointer
-    file->name = name;          // store the filename
+	port->fptr = fptr;          // store the file pointer
+    port->name = name;          // store the filename
     vm_pop(&vm);                // remove filename from stack
-    vm_push(&vm, (Object*)file);
+    vm_push(&vm, (Object*)port);
 
     return SK_TRUE;
 }
@@ -1492,19 +1492,19 @@ static int sk_close_file(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Object* obj = vm_pop(&vm);
-    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_FILE)
+    if (!IS_OBJ(obj) || !IS_PORT(obj))
 	{
 		yyerror("close-file expects a file object");
         vm_push(&vm, MAKE_FALSE());
 		return SK_FALSE;
 	}
 
-    File* file = (File*)obj;
-    if (file->fptr)
+    Port* port = (Port*)obj;
+    if (port->fptr)
 	{
-		fclose(file->fptr);
-		file->fptr = NULL;
-        file->name = NULL;
+		fclose(port->fptr);
+		port->fptr = NULL;
+        port->name = NULL;
 	}
 
     vm_push(&vm, MAKE_TRUE());

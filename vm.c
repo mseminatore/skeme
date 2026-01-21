@@ -91,8 +91,15 @@ void vm_print_object(Object* obj, int flags)
             printf("#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
-        case OBJ_FILE:
-            printf("#<file:'%s'>", ((String*)((File*)obj)->name)->value);
+        case OBJ_PORT:
+        {
+            char* str = "<null>";
+            Port* port = (Port*)obj;
+            if (port && port->fptr && port->name)
+                str = port->name->value;
+
+            printf("#<file:'%s'>", str);
+        }
 			break;
 
         default:
@@ -817,15 +824,15 @@ static void freeObject(VM* pvm, Object* object)
         }
         break;
 
-    case OBJ_FILE:
+    case OBJ_PORT:
     {
-        File* file = (File*)object;
-        GC_LOG("-- gc closing file: '%s'\n", ((String*)file->name)->value);
+        Port* port = (Port*)object;
+        GC_LOG("-- gc closing file: '%s'\n", ((String*)port->name)->value);
 
-        if (file->fptr)
-            fclose(file->fptr);
-        file->fptr = NULL;
-        file->name = NULL;
+        if (port->fptr)
+            fclose(port->fptr);
+        port->fptr = NULL;
+        port->name = NULL;
     }
         break;
 

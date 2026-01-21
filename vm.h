@@ -114,6 +114,7 @@ typedef struct Object {
 #define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
 #define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x1))
 #define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
+#define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
 
 // macros to create tagged objects
 #define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x1))
@@ -137,7 +138,7 @@ enum
     OBJ_CHAR,
     OBJ_ENVIRONMENT,
     OBJ_FLOAT,
-    OBJ_FILE,
+    OBJ_PORT,
 
 	// mark the last object type
     OBJ_LAST
@@ -209,12 +210,12 @@ typedef struct Closure {
     // upvalues?
 } Closure;
 
-// file object
+// port object
 typedef struct File {
     Object base;            // base object
     FILE* fptr;             // file handle
     String* name;           // file name
-} File;
+} Port;
 
 // Define the VM structure
 typedef struct VM {
