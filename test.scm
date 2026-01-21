@@ -40,7 +40,7 @@
 ;----------------------
 (define err_count 0)
 (define test_count 0)
-(define test-pass-msg (string-append TERM_GREEN "OK." TERM_RESET))
+(define test-pass-msg (string-append TERM_GREEN "OK " TERM_RESET))
 (define test-fail-msg (string-append TERM_RED "failed!" TERM_RESET))
 
 (define (test-report-error)
@@ -49,9 +49,9 @@
 )
 
 (define (test-case name test-fn)
-  (display (string-append "Running test case: '" TERM_MAGENTA name "'..."))
+  (display (string-append (number->string (+ 1 test_count)) " test case: " TERM_MAGENTA name "..."))
   (if test-fn (display test-pass-msg) (test-report-error))
-  (newline)
+;  (newline)
   (set! test_count (+ 1 test_count))
   (not (not test-fn))
 )
