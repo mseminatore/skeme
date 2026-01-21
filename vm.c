@@ -96,7 +96,7 @@ void vm_print_object(Object* obj, int flags)
             char* str = "<null>";
             Port* port = (Port*)obj;
             if (port && port->fptr && port->name)
-                str = port->name->value;
+                str = (char*)port->name->value;
 
             printf("#<file:'%s'>", str);
         }
@@ -912,7 +912,7 @@ static void blackenObject(VM* pvm, Object* object)
             // If the native function has any references, mark them here
 
             // mark the function name object
-            markObject(pvm, nativeFn->name);
+            markObject(pvm, (Object*)nativeFn->name);
         }
         break;
 
@@ -923,7 +923,7 @@ static void blackenObject(VM* pvm, Object* object)
             // mark any constants or references in the function's code chunk if needed
 
             // mark the function's name object
-            markObject(pvm, proc->name);
+            markObject(pvm, (Object*)proc->name);
         }
         break;
 

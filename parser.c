@@ -323,7 +323,7 @@ static int definition()
 		vm_pop(&vm);                                // remove function name from stack
 
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
-        proc->name = proc_name;               // set function name
+        proc->name = (String*)proc_name;               // set function name
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
@@ -380,8 +380,8 @@ static int lambda()
     vm_push(&vm, proc_obj);
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
-	proc->name = vm_new_string(&vm, "<lambda>");
-    vm_define_global(&vm, proc->name, NULL);   // ensure name is in global table
+	proc->name = (String*)vm_new_string(&vm, "<lambda>");
+    vm_define_global(&vm, (Object*)proc->name, NULL);   // ensure name is in global table
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
@@ -847,7 +847,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 
         nf->func = funcs[i].func;
         nf->arity = funcs[i].arity;
-        nf->name = key;
+        nf->name = (String*) key;
         
         vm_define_global(&vm, vm_pop(&vm), native_fn);
 
