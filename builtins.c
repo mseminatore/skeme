@@ -27,6 +27,9 @@
     #define getcwd _getcwd
 #endif
 
+#define SMALL_BUFFER 32
+#define LARGE_BUFFER 1024
+
 //
 //[]-----------------------------------------------
 //  built-in functions
@@ -1159,28 +1162,6 @@ static int sk_map(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: apply
-//-----------------------------------------------
-//static int sk_apply(SKState* pSK)
-//{
-//    if (!pSK) return SK_FALSE;
-//
-//    yyerror("built-in function 'apply' not implemented yet");
-//    return SK_FALSE;
-//}
-
-//-----------------------------------------------
-// built-in function: filter
-//-----------------------------------------------
-//static int sk_filter(SKState* pSK)
-//{
-//    if (!pSK) return SK_FALSE;
-//
-//    yyerror("built-in function 'filter' not implemented yet");
-//    return SK_FALSE;
-//}
-
-//-----------------------------------------------
 // built-in function: eval
 //-----------------------------------------------
 static int sk_eval(SKState* pSK)
@@ -1189,6 +1170,167 @@ static int sk_eval(SKState* pSK)
 
     yyerror("built-in function 'eval' not implemented yet");
     return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: number-to-string
+//-----------------------------------------------
+static int sk_number_to_string(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&vm);
+    if (!IS_NUM(obj))
+    {
+        yyerror("number-to-string expects a number");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    int num = AS_NUM(obj);
+    char buffer[SMALL_BUFFER];
+    snprintf(buffer, sizeof(buffer), "%d", num);
+    vm_push_string(&vm, buffer);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string-to-number
+//-----------------------------------------------
+static int sk_string_to_number(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&vm);
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
+    {
+        yyerror("string-to-number expects a string");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    String* str = (String*)obj;
+    int num = atoi(str->value);
+    vm_push(&vm, MAKE_NUM(num));
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: delete-file
+//-----------------------------------------------
+static int sk_delete_file(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&vm);
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
+    {
+        yyerror("delete-file expects a string filename");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    String* filename = (String*)obj;
+    int result = remove(filename->value);
+    if (result == 0)
+    {
+        vm_push(&vm, MAKE_TRUE());
+    }
+    else
+    {
+        yyerror("failed to delete file");
+        vm_push(&vm, MAKE_FALSE());
+    }
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: read-line
+//-----------------------------------------------
+static int sk_read_line(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    File *file = (File*) vm_pop(&vm);
+    if (!IS_OBJ(file) || OBJ_TYPE(file) != OBJ_FILE)
+    {
+        yyerror("read-line expects a file object");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    char buffer[LARGE_BUFFER] = { 0 };
+    if (fgets(buffer, sizeof(buffer), file->fptr) == NULL)
+    {
+        // EOF or error
+        vm_push(&vm, NULL); // push nil
+    }
+    else
+    {
+        // remove newline character if present
+        size_t len = strlen(buffer);
+        if (len > 0 && buffer[len - 1] == '\n')
+        {
+            buffer[len - 1] = '\0';
+        }
+        vm_push_string(&vm, buffer);
+    }   
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: read-char
+//-----------------------------------------------
+static int sk_read_char(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'read-char' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: write-char
+//-----------------------------------------------
+static int sk_write_char(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    yyerror("built-in function 'write-char' not implemented yet");
+    return SK_FALSE;
+}
+
+//-----------------------------------------------
+// built-in function: write-line
+//-----------------------------------------------
+static int sk_write_line(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    File *file = (File*) vm_pop(&vm);
+    if (!IS_OBJ(file) || OBJ_TYPE(file) != OBJ_FILE)
+    {
+        yyerror("write-line expects a file object");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    String* str = (String*) vm_pop(&vm);
+    if (!IS_OBJ(str) || OBJ_TYPE(str) != OBJ_STRING)
+    {
+        yyerror("write-line expects a string");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
+
+    fprintf(file->fptr, "%s\n", str->value);
+
+    vm_push(&vm, MAKE_TRUE());
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1220,7 +1362,7 @@ static int sk_string_append(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	char buffer[1024] = { 0 };
+	char buffer[LARGE_BUFFER] = { 0 };
 
     // get message count from stack
     Object* raw_n = vm_pop(&vm);
@@ -1292,7 +1434,7 @@ static int sk_modulo(SKState* pSK)
 //-----------------------------------------------
 // built-in function: open-file
 //-----------------------------------------------
-static int sk_open_file(SKState* pSK)
+static int sk_open_file(SKState* pSK, char *mode)
 {
     if (!pSK) return SK_FALSE;
 
@@ -1309,7 +1451,7 @@ static int sk_open_file(SKState* pSK)
     file->fptr = NULL;
     file->name = NULL;
 
-    FILE* fptr = fopen(name->value, "rt");
+    FILE* fptr = fopen(name->value, mode);
 	if (!fptr)
 	{
 		yyerror("failed to open file");
@@ -1327,6 +1469,22 @@ static int sk_open_file(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: open-input-file
+//-----------------------------------------------
+static int sk_open_input_file(SKState* pSK)
+{
+    return sk_open_file(pSK, "r");
+}
+
+//-----------------------------------------------
+// built-in function: open-output-file
+//-----------------------------------------------
+static int sk_open_output_file(SKState* pSK)
+{
+    return sk_open_file(pSK, "w");
+}
+
+//-----------------------------------------------
 // built-in function: close-file
 //-----------------------------------------------
 static int sk_close_file(SKState* pSK)
@@ -1337,6 +1495,7 @@ static int sk_close_file(SKState* pSK)
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_FILE)
 	{
 		yyerror("close-file expects a file object");
+        vm_push(&vm, MAKE_FALSE());
 		return SK_FALSE;
 	}
 
@@ -1348,6 +1507,7 @@ static int sk_close_file(SKState* pSK)
         file->name = NULL;
 	}
 
+    vm_push(&vm, MAKE_TRUE());
     return SK_TRUE;
 }
 
@@ -1400,10 +1560,16 @@ static SKFuncSet built_in_funcs[] =
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
     { "load", sk_load, 1 },
 	{ "cls", sk_cls, 0 },
-    { "open-file", sk_open_file, 1 },
+    { "open-input-file", sk_open_input_file, 1 },
+    { "open-output-file", sk_open_output_file, 1 },
     { "close-file", sk_close_file, 1 },
-    { "read", sk_read, 0 },
-    { "write", sk_write, 1 },
+    { "delete-file", sk_delete_file, 1 },
+    { "read", sk_read, 1 },
+    { "read-line", sk_read_line, 1 },
+    { "read-char", sk_read_char, 1 },
+    { "write-char", sk_write_char, 2 },
+    { "write-line", sk_write_line, 2 },
+    { "write", sk_write, 2 },
     // { "print", sk_print },
     
     { "string-append", sk_string_append, SK_ARITY_TWO_OR_MORE },
@@ -1445,8 +1611,6 @@ static SKFuncSet built_in_funcs[] =
 
     // higher-order functions
     { "map", sk_map, 2 },
-    //{ "filter", sk_filter, 2 },
-    //{ "apply", sk_apply, 2 },
     { "eval", sk_eval, 1 },
 
     // system/environment functions
@@ -1460,6 +1624,16 @@ static SKFuncSet built_in_funcs[] =
     { "gclog", sk_gclog, 0 },
 	{ "parselog", sk_parselog, 0 },
 	{ "vmlog", sk_vmlog, 0 },
+
+    // converstion functions
+    { "number->string", sk_number_to_string, 1 },
+    { "string->number", sk_string_to_number, 1 },
+    // { "string->symbol", sk_string_to_symbol, 1 },
+    // { "symbol->string", sk_symbol_to_string, 1 },
+    // { "char->integer", sk_char_to_integer, 1 },
+    // { "integer->char", sk_integer_to_char, 1 },
+    // { "float->string", sk_float_to_string, 1 },
+    // { "string->float", sk_string_to_float, 1 },
 
     // comparison operators
     { "<", sk_less, 2 },

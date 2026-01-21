@@ -428,7 +428,7 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || isalnum(c)));
+        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || isalnum(c)));
         
         // put back the last character!
         ungetch(c);
@@ -471,6 +471,7 @@ yylex01:
         goto yylex01;
     }
 
+    // handle two-character tokens
     switch (c)
     {
     case '<':

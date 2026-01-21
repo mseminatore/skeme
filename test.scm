@@ -178,10 +178,32 @@
 (test-case "length string" (= (length "foo") 3))
 (test-case "length list" (= (length (list 1 2 3 4 5)) 5))
 (test-case "foo = foo" (eq? "foo" "foo"))
-(test-case "foo = bar" (not (eq? "foo" "bar")))
+(test-case "foo != bar" (not (eq? "foo" "bar")))
 (test-case "integer? 1" (integer? 1))
 (test-case "integer? #t" (not (integer? #t)))
 ;(assert (not (integer? 1.5)) "integer? failed")
+
+;----------------------
+; file operations
+;----------------------
+(define out (open-output-file "test.tmp"))
+(test-case "open output file" (eq? "file" (typeof out)))
+(test-case "write-line" (write-line "testing123" out))
+(test-case "close output file" (close-file out))
+
+(define in (open-input-file "test.tmp"))
+(test-case "open input file" (eq? "file" (typeof in)))
+(test-case "read-line" (eq? "testing123" (read-line in)))
+(test-case "close input file" (close-file in))
+
+; cleanup
+(test-case "delete file" (delete-file "test.tmp"))
+
+;----------------------
+; conversion operations
+;----------------------
+(test-case "number->string" (eq? "32" (number->string 32)))
+(test-case "string->number" (= 32 (string->number "32")))
 
 ;----------------------
 ; logical operations
