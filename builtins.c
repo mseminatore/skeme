@@ -987,7 +987,11 @@ static int sk_disasm(SKState* pSK)
     Object* obj = vm_pop(&vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PROCEDURE)
     {
-        yyerror("argument to 'disasm' is not a function");
+        if (IS_FUNCTION(obj))
+            yyerror("argument to 'disasm' is a native function");
+        else
+            yyerror("argument to 'disasm' is not a function");
+
         return SK_FALSE;
     }
 

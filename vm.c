@@ -390,12 +390,12 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             if (IS_PROCEDURE(fn_obj))
             {
                 Procedure* proc = (Procedure*)fn_obj;
-                printf("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+                printf("CALL '%s' %p\n", proc->name->value, proc->chunk.code);
             }
             else
             {
                 NativeFunction* proc = (NativeFunction*)fn_obj;
-                printf("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
+                printf("CALL NATIVE FN '%s'\n", proc->name->value);
             }
 #else
             printf("CALL [SP]\n");
@@ -545,15 +545,18 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             break;
 
         case OP_ICALL:
+        {
+            Object* fn_obj = vm_pop(pvm);   // get function object
+                
+            // indirect call to address on stack
             VM_LOG("ICALL %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-            {
-                // indirect call to address on stack
-                VMCode_t* addr = (VMCode_t*)*pvm->ip++;
-                vm_push_ip(pvm, pvm->ip);   // push return address onto stack
 
-                // call function by setting IP to function address
-                pvm->ip = addr;
-            }
+            VMCode_t* addr = (VMCode_t*)*pvm->ip++;
+            vm_push_ip(pvm, pvm->ip);   // push return address onto stack
+
+            // call function by setting IP to function address
+            pvm->ip = addr;
+        }
             break;
 
         case OP_CALL:
@@ -563,7 +566,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             if (IS_PROCEDURE(fn_obj))
             {
                 Procedure* proc = (Procedure*)fn_obj;
-                VM_LOG("CALL '%s' %p\n", ((String*)proc->name)->value, proc->chunk.code);
+                VM_LOG("CALL '%s' %p\n", proc->name->value, proc->chunk.code);
 
                 Object* n = vm_pop(pvm);
                 int nargs = AS_NUM(n);
@@ -588,7 +591,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             else if (IS_NATIVE_FN(fn_obj))
             {
                 NativeFunction* proc = (NativeFunction*)fn_obj;
-                VM_LOG("CALL NATIVE FN '%s'\n", ((String*)proc->name)->value);
+                VM_LOG("CALL NATIVE FN '%s'\n", proc->name->value);
                 SKFunc func = (SKFunc)proc->func;
 
                 if (func)

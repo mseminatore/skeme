@@ -744,9 +744,7 @@ static int expr()
                 if (key)
                 {
                     int local_fn = FALSE;
-#if 0
-                    Object *proc = vm_get_global(&vm, key);
-#else
+
                     // look first for a local variable or param
                     Object* proc = vm_get_local_var(&vm, ((String*)key)->value);
 
@@ -757,7 +755,6 @@ static int expr()
                     }
                     else
                         proc = vm_get_global(&vm, key);
-#endif
 
                     if (IS_FUNCTION(proc))
                     {
@@ -765,6 +762,7 @@ static int expr()
 
                         vm_emit_push_object(&vm, proc);
                         vm_emit(&vm, OP_CALL);
+//                        vm_emit(&vm, (VMCode_t)proc);
                     }
                     else if (local_fn)
                     {
