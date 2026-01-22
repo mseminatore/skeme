@@ -112,7 +112,8 @@ static int sk_gc_stress(SKState* pSK)
     
     g_bGCStress = !g_bGCStress;
     yyinfo(g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
-    
+//    printf("GC stress mode %s\n", vm.gc_stress ? "enabled" : "disabled");
+
     return SK_TRUE;
 }
 
@@ -1255,9 +1256,9 @@ static int sk_read_line(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Port *port = (Port*) vm_pop(&vm);
-    if (!IS_OBJ(port) || !IS_PORT(port))
+    if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
-        yyerror("read-line expects a file object");
+        yyerror("read-line expects a valid port object");
         vm_push(&vm, NULL);
         return SK_FALSE;
     }
@@ -1312,9 +1313,9 @@ static int sk_write_line(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Port *port = (Port*) vm_pop(&vm);
-    if (!IS_OBJ(port) || !IS_PORT(port))
+    if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
-        yyerror("write-line expects a file object");
+        yyerror("write-line expects a valid port object");
         vm_push(&vm, NULL);
         return SK_FALSE;
     }
@@ -1327,6 +1328,7 @@ static int sk_write_line(SKState* pSK)
         return SK_FALSE;
     }
 
+    // TODO - check return value
     fprintf(port->fptr, "%s\n", str->value);
 
     vm_push(&vm, MAKE_TRUE());
@@ -1350,9 +1352,19 @@ static int sk_read(SKState* pSK)
 static int sk_write(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
+    
+    Port* port = (Port*)vm_pop(&vm);
+    if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
+    {
+        yyerror("write expects a valid port object");
+        vm_push(&vm, NULL);
+        return SK_FALSE;
+    }
 
-    yyerror("built-in function 'write' not implemented yet");
-    return SK_FALSE;
+	vm_print_object(vm_pop(&vm), VM_PRINT_READABLE, port->fptr);
+
+    vm_push(&vm, MAKE_TRUE());
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1679,5 +1691,8 @@ int sk_init_builtins(SKState* pSK)
 
     sk_register_functions(pSK, built_in_funcs);
     
+	// create default ports
+	vm_create_default_ports(&vm);
+
     return SK_TRUE;
 }

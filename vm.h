@@ -62,6 +62,11 @@
 
 #define VM_PRINT_FANCY 0
 #define VM_PRINT_PLAIN 1
+#define VM_PRINT_READABLE 1
+
+#define PRINT_TRUE  "true"      // historically this would be #t
+#define PRINT_FALSE "false"     // historically this would be #f
+#define PRINT_NIL   "nil"       // historically '()
 
 extern int g_bGCLog;
 extern int g_bVMLog;
@@ -252,7 +257,7 @@ typedef struct VM {
 #endif
 } VM;
 
-// function decls
+// basic functions
 int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
@@ -268,7 +273,7 @@ int vm_clear_stack(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);
 void vm_print_stack(VM* pvm);
-void vm_push_string(VM* pvm, const char* str);
+String* vm_push_string(VM* pvm, const char* str);
 void vm_push_global(VM* pvm, const char* name);
 
 // object allocation
@@ -280,6 +285,8 @@ void vm_freeObjects(VM* pvm);
 Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
 Object* vm_get_string(VM* pvm, const char* str);
+Port* vm_new_port(VM* pvm, const char* name, FILE* fptr);
+int vm_create_default_ports(VM* pvm);
 
 // code generation
 int vm_emit(VM* pvm, VMCode_t opcode);

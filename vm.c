@@ -30,16 +30,16 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
 {
     if (!obj)
     {
-        fprintf(stream, "'()");   // nil
+        fprintf(stream, PRINT_NIL);   // nil
         return;
     }
 
     if (IS_BOOL(obj))
     {
         if (IS_TRUE(obj))
-            fprintf(stream, "#t");
+            fprintf(stream, PRINT_TRUE);
         else
-            fprintf(stream, "#f");
+            fprintf(stream, PRINT_FALSE);
 
         return;
     }
@@ -61,7 +61,10 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         case OBJ_PAIR:
         {
             Pair* pair = (Pair*)obj;
-            fprintf(stream, "'(");
+            if (VM_PRINT_PLAIN == flags)
+                fprintf(stream, "(");
+            else
+                fprintf(stream, "'(");
 
             vm_print_object(pair->car, flags, stream); // display car
 
@@ -847,6 +850,7 @@ static void freeObject(VM* pvm, Object* object)
 
         if (port->fptr)
             fclose(port->fptr);
+
         port->fptr = NULL;
         port->name = NULL;
     }
@@ -958,6 +962,12 @@ static void blackenObject(VM* pvm, Object* object)
         }
 	    break;
 
+    case OBJ_PORT:
+        {
+            markObject(pvm, (Object*)((Port*)object)->name);
+        }
+        break;
+
     default:
         // Handle other object types as needed
         break;
@@ -1031,15 +1041,17 @@ void vm_gc(VM* pvm) {
 }
 
 //--------------------------------------------------------------
-//
+// Push a string onto the stack
 //--------------------------------------------------------------
-void vm_push_string(VM* pvm, const char *str)
+String *vm_push_string(VM* pvm, const char *str)
 {
-    vm_push(pvm, vm_new_string(pvm, str));
+	Object* string_obj = vm_new_string(pvm, str);
+    vm_push(pvm, string_obj);
+	return (String*)string_obj;
 }
 
 //--------------------------------------------------------------
-//
+// Push a global variable onto the stack
 //--------------------------------------------------------------
 void vm_push_global(VM* pvm, const char *name)
 {
@@ -1444,6 +1456,45 @@ void vm_print_stack(VM* pvm)
         }
     }
     printf("-------------------------\n");
+}
+
+//--------------------------------------------------------------
+// Create a new port object
+//--------------------------------------------------------------
+Port *vm_new_port(VM* pvm, const char* name, FILE* fptr)
+{
+    Port* port = (Port*)vm_newObject(pvm, sizeof(Port), OBJ_PORT);
+    vm_push(pvm, (Object*)port); // save on stack for GC
+
+    port->name = (String*)vm_new_string(pvm, name);
+    port->fptr = fptr;
+
+    vm_pop(pvm);
+    return port;
+}
+
+//--------------------------------------------------------------
+// Create default ports (stdin, stdout, stderr)
+//--------------------------------------------------------------
+int vm_create_default_ports(VM* pvm)
+{
+	Port* input_port, * output_port, * error_port;
+
+	input_port = (Port*)vm_new_port(pvm, "stdin", stdin);
+    vm_push(pvm, (Object*)input_port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-input-port"), (Object*)input_port);
+
+    output_port = (Port*)vm_new_port(pvm, "stdout", stdout);
+	vm_push(pvm, (Object*)output_port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-output-port"), (Object*)output_port);
+
+	error_port = (Port*)vm_new_port(pvm, "stderr", stderr);
+	vm_push(pvm, (Object*)error_port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-error-port"), (Object*)error_port);
+
+    vm_pop_n(pvm, 3); // pop the ports off the stack
+
+    return TRUE;
 }
 
 //--------------------------------------------------------------
