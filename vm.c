@@ -375,6 +375,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("RET\n");
             break;
 
+        case OP_ICALL:
+            printf("ICALL [SP]\n");
+            break;
+
         case OP_CALL:
         {
 #if 0
@@ -535,6 +539,18 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         case OP_FALSE:
             VM_LOG("PUSH FALSE\n");
             vm_pushBoolean(pvm, FALSE);
+            break;
+
+        case OP_ICALL:
+            VM_LOG("ICALL %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+            {
+                // indirect call to address on stack
+                VMCode_t* addr = (VMCode_t*)*pvm->ip++;
+                vm_push_ip(pvm, pvm->ip);   // push return address onto stack
+
+                // call function by setting IP to function address
+                pvm->ip = addr;
+            }
             break;
 
         case OP_CALL:
