@@ -7,8 +7,8 @@ project(skeme VERSION 1.0 LANGUAGES C)
 message(STATUS "Project source directory: ${PROJECT_SOURCE_DIR}")
 
 # testing
-#enable_testing()
-#add_test(NAME skeme_test COMMAND skeme ${PROJECT_SOURCE_DIR}/test.scm)
+enable_testing()
+add_test(NAME skeme_test COMMAND skeme ${PROJECT_SOURCE_DIR}/test.scm)
 
 # add the includes
 include_directories(${PROJECT_SOURCE_DIR})
@@ -22,7 +22,7 @@ include_directories(${PROJECT_SOURCE_DIR})
 
 # add the executable
 add_executable(skeme main.c parser.c lexer.c vm.c builtins.c io.c)
-add_subdirectory(${PROJECT_SOURCE_DIR}/hash EXCLUDE_FROM_ALL)
+add_subdirectory(${PROJECT_SOURCE_DIR}/hash)
 
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme PRIVATE ht)
