@@ -272,6 +272,7 @@
 ; comparison operations
 ;----------------------
 (test-case "if test" (if (< 1 2) #t))
+(test-case "if test" (if (> 1 2) #f #t))
 (test-case "cond test" (cond ((< 1 2) #t)))
 (test-case "cond else test" (cond ((> 1 2) #f) (else #t)))
 
@@ -358,7 +359,11 @@
 ; if reached here, all tests passed
 ;----------------------
 (gc-stats)
+(newline)
+(display err_count)
+(display " failures, ")
 (display test_count)
 (display " tests passed successfully.")
 (newline)
+;(exit err_count)
 ;(display (string-append err_count " tests failed."))

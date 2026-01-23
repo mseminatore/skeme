@@ -1320,7 +1320,10 @@ static int sk_write_line(SKState* pSK)
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
         yyerror("write-line expects a valid port object");
-        vm_push(&vm, NULL);
+
+        // replace output object with return value
+        vm_stack_replace_n(&vm, 0, NULL);
+
         return SK_FALSE;
     }
 
@@ -1361,7 +1364,10 @@ static int sk_write(SKState* pSK)
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
         yyerror("write expects a valid port object");
-        vm_push(&vm, NULL);
+        
+        // replace output object with return value
+        vm_stack_replace_n(&vm, 0, NULL);
+
         return SK_FALSE;
     }
 

@@ -1108,6 +1108,21 @@ void vm_push(VM* pvm, Object* obj) {
 }
 
 //--------------------------------------------------------------
+// Replace an object on the stack
+//--------------------------------------------------------------
+void vm_stack_replace_n(VM* pvm, int distance, Object* obj)
+{
+    int stack_loc = pvm->sp - 1 - distance;
+
+    if (stack_loc < 0 || stack_loc >= VM_STACK_SIZE) {
+        fprintf(stderr, "Stack bounds error!\n");
+        return;
+    }
+
+    pvm->stack[stack_loc] = obj;
+}
+
+//--------------------------------------------------------------
 // Pop an object from the stack
 //--------------------------------------------------------------
 Object* vm_pop(VM* pvm) {

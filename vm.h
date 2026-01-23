@@ -267,6 +267,7 @@ void vm_print_object(Object* obj, int flags, FILE *stream);
 void vm_push(VM* pvm, Object* obj);
 Object* vm_pop(VM* pvm);
 Object* vm_peek(VM* pvm, int distance);
+void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
 void vm_pop_n(VM* pvm, int n);
 Object* vm_fp_peek(VM* pvm, int distance);
 int vm_clear_stack(VM* pvm);
