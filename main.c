@@ -81,6 +81,20 @@ int getopt(int n, char *args[])
 }
 
 //-----------------------------------
+// define a variable
+//-----------------------------------
+int sk_define(SKState* pSK, const char *key, Object *value)
+{
+    if (!pSK) return SK_FALSE;
+
+    vm_push(&vm, value);
+    vm_define_global(&vm, (Object*)vm_new_string(&vm, key), value);
+    vm_pop(&vm);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------
 //
 //-----------------------------------
 int main(int argc, char *argv[])
@@ -99,6 +113,11 @@ int main(int argc, char *argv[])
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&repl_chunk);
+
+	sk_define((SKState*)1, "__version__", vm_new_string(&vm, APP_VER));
+	sk_define((SKState*)1, "__author__", vm_new_string(&vm, "Mark Seminatore"));
+	sk_define((SKState*)1, "__app_name__", vm_new_string(&vm, APP_NAME));
+	sk_define((SKState*)1, "interactive", vm_newBoolean(&vm, g_bInteractive));
 
     if (argc != iFirstArg)
     {

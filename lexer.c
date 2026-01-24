@@ -422,7 +422,7 @@ yylex01:
 	}
 
     // look for start of a token
-    if (c == '#' || isalpha(c))
+    if (c == '#' || isalpha(c) || c == '_')
     {
         char buf[BUF_SIZE], *p = buf;
 

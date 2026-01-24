@@ -366,4 +366,4 @@
 (display " tests passed successfully.")
 (newline)
 ;(if err_count (display (string-append err_count " tests failed!")))
-(exit err_count)
+(if (not interactive) (exit err_count))
