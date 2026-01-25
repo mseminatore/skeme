@@ -96,8 +96,6 @@ int push_fileptr_stack(FILE *fptr, const char* filename)
 //-----------------------------------
 int push_filename_stack(const char* filename)
 {
-    printf("Loading file '%s'...\n", filename);
-    
     FILE* fptr = fopen(filename, "rt");
     if (!fptr)
     {

@@ -8,7 +8,7 @@ message(STATUS "Project source directory: ${PROJECT_SOURCE_DIR}")
 
 # testing
 enable_testing()
-add_test(NAME skeme_test COMMAND skeme -v ${PROJECT_SOURCE_DIR}/test.scm WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test(NAME skeme_test COMMAND skeme -v test.scm WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # add the includes
 include_directories(${PROJECT_SOURCE_DIR})
