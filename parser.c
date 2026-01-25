@@ -446,6 +446,33 @@ static int parse_list()
 }
 
 //-----------------------------------------------
+// load_expr := '(' 'load' STRING ')'
+//-----------------------------------------------
+static int load_expr()
+{
+    PARSE_LOG("load_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+
+    match(LOAD);
+
+    if (lookahead != STRING)
+    {
+        yyerror("expected string filename in 'load' expression");
+        unindent();
+        return 0;
+    }
+
+    // get filename
+    const char* filename = symbols[yylval.symbol].name;
+    match(STRING);
+
+    // load (parse) the file
+    push_filename_stack(filename);
+
+    unindent();
+    return 0;
+}
+
+//-----------------------------------------------
 // set := '(' 'set!' ID expr ')'
 //-----------------------------------------------
 static int set()
@@ -708,6 +735,10 @@ static int expr()
 
         case SET:
             set();
+            break;
+
+        case LOAD:
+            load_expr();
             break;
 
         case IF:

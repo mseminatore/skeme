@@ -39,6 +39,7 @@ Tokens tokens[] =
     {"or",      OR },
     {"cond",    COND },
     {"else",    ELSE },
+    {"load",    LOAD },
     // { "begin",   BEGIN },
 
     // { "case",    CASE_TOKEN },

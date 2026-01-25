@@ -80,7 +80,9 @@ extern FILE *yyin;
 
 // token values
 enum { ID = 256, DEFINE, LAMBDA, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FALSE, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
-       LIST, CASE_TOKEN, PRINT, READ, EVAL, AND, OR };
+       LIST, CASE_TOKEN, AND, OR , LOAD,
+//       PRINT, READ, EVAL,
+};
 
 // externals
 extern int lookahead;

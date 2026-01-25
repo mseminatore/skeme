@@ -539,29 +539,6 @@ static int sk_gc_stats(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: load
-//-----------------------------------------------
-static int sk_load(SKState* pSK)
-{
-    if (!pSK) return SK_FALSE;
-
-    // implement load
-	Object* obj = vm_pop(&vm);
-    if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
-    {
-        // Get the filename from the string object
-        const char* filename = ((String*)obj)->value;
-        push_filename_stack(filename);
-    }
-    else
-        yyerror("invalid parameter");
-
-	// TODO - execute the loaded file here?!
-
-    return SK_TRUE;
-}
-
-//-----------------------------------------------
 // built-in function: zero?
 //-----------------------------------------------
 static int sk_zerop(SKState* pSK)
@@ -1585,7 +1562,6 @@ static SKFuncSet built_in_funcs[] =
 	{ "error", sk_error, SK_ARITY_ONE_OR_MORE },
 	{ "warn", sk_warn, SK_ARITY_ONE_OR_MORE },
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
-    { "load", sk_load, 1 },
 	{ "cls", sk_cls, 0 },
     { "open-input-file", sk_open_input_file, 1 },
     { "open-output-file", sk_open_output_file, 1 },

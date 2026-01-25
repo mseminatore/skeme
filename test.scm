@@ -1,21 +1,19 @@
-;(load "stdlib.scm")
+;-----------------------------------------------
+; Skeme test cases
+;
+; Copyright (C) 2026 by Mark Seminatore
+;-----------------------------------------------
+
+(load "stdlib.scm")
+(load "skunit.scm")
+
 ;(load "core.scm")
 ;(load "io.scm")
 ;(load "../fib.scm")
 
-;----------------------
-; terminal control sequences
-;----------------------
-(define ESC "\e")
-(define TERM_CLEAR (string-append ESC "[2J" ESC "[H"))
-(define TERM_RESET (string-append ESC "[0m"))
-(define TERM_RED (string-append ESC "[31m"))
-(define TERM_GREEN (string-append ESC "[32m"))
-(define TERM_MAGENTA (string-append ESC "[35m"))
-
-;----------------------
+;-----------------------
 ; enable logging options
-;----------------------
+;-----------------------
 
 ; turn on VM logging
 ;(vmlog)
@@ -27,106 +25,37 @@
 ;(gclog)
 
 ;----------------------
-; define assertion test
+; test apply
 ;----------------------
-(define (assert condition message)
-  (if (not condition)
-      (error "Assertion failed:" message)
-      condition)
-)
-
-;----------------------
-; define test case runner
-;----------------------
-(define err_count 0)
-(define test_count 0)
-(define test-pass-msg (string-append TERM_GREEN "OK " TERM_RESET))
-(define test-fail-msg (string-append TERM_RED "failed!" TERM_RESET))
-
-(define (test-report-error)
-    (display test-fail-msg)
-    (set! err_count (+ 1 err_count))
-)
-
-(define (test-case name test-fn)
-  (display (string-append (number->string (+ 1 test_count)) " test case: " TERM_MAGENTA name "..."))
-  (if test-fn (display test-pass-msg) (test-report-error))
-;  (newline)
-  (set! test_count (+ 1 test_count))
-  (not (not test-fn))
-)
-
-;----------------------
-; define cadr and cddr
-;----------------------
-(define (cadr x) (car (cdr x)))
-(define (cddr x) (cdr (cdr x)))
-
-;----------------------
-; define apply
-;----------------------
+;(test-suite "apply")
 (define (plus1 a) (+ 1 a))
-
-(define (apply fn lst)
-  (cond
-    ((null? lst) '())
-    (else (cons (fn (car lst)) (apply fn (cdr lst))))
-  )
-)
-
 (test-case "apply plus1" (equal? (list 2 3 4) (apply plus1 (list 1 2 3))))
 
 ;----------------------
-; define filter
+; test filter
 ;----------------------
-(define (filter fn lst)
-  (cond
-    ((null? lst) '())
-    ((fn (car lst))
-    (cons (car lst) (filter fn (cdr lst))))
-    (else (filter fn (cdr lst)))
-  )
-)
-
 (define (one? n) (= 1 n))
-
 (test-case "length of filter list" (= 3 (length (filter one? (list 1 2 1 1)))))
 (test-case "equal of filter list" (equal? (filter one? (list 1 2 1 1)) (list 1 1 1)))
 
 ;----------------------
-; even?
+; test even?
 ;----------------------
-(define (even? n)
-  (= (modulo n 2) 0)
-)
-
 (test-case "even? test" (and (even? 2) (not (even? 3))))
 
 ;----------------------
-; odd?
+; test odd?
 ;----------------------
-(define (odd? n)
-  (not (even? n))
-)
-
 (test-case "odd? test" (and (odd? 3) (not (odd? 2))))
 
 ;----------------------
-; min/max
+; test min/max
 ;----------------------
-(define (min a b)
-    (if (< a b) a b)
-)
-
-(define (max a b)
-    (if (> a b) a b)
-)
-
 (test-case "min test" (= 1 (min 1 2)))
 (test-case "max test" (= 2 (max 1 2)))
 
 ;----------------------
-; define a variable
+; test variable define and set!
 ;----------------------
 (define five 5)
 
@@ -184,27 +113,13 @@
 (test-case "typeof list" (eq? "list" (typeof alist)))
 
 ;----------------------
-; append two lists
+; test append
 ;----------------------
-(define (append lst1 lst2)
-  (if (null? lst1)
-      lst2
-      (cons (car lst1) (append (cdr lst1) lst2))
-  )
-)
-
 (test-case "append two lists" (equal? (append (list 1 2) (list 3 4)) (list 1 2 3 4)))
 
 ;----------------------
-; map function over a list
+; test map
 ;----------------------
-(define (map fn lst)
-  (if (null? lst)
-      '()
-      (cons (fn (car lst)) (map fn (cdr lst)))
-  )
-)
-
 (test-case "map plus1 over list" (equal? (map plus1 (list 1 2 3)) (list 2 3 4)))
 
 ;----------------------
@@ -354,16 +269,8 @@
 
 ;(assert (= (bind (lambda (y) (+ y 10)) 5) 15) "passed param test failed")
 
+;----------------------
+; report test results
+;----------------------
+(test-end)
 
-;----------------------
-; if reached here, all tests passed
-;----------------------
-(gc-stats)
-(newline)
-(display err_count)
-(display " failures, ")
-(display test_count)
-(display " tests passed successfully.")
-(newline)
-;(if err_count (display (string-append err_count " tests failed!")))
-(if (not interactive) (exit err_count))
