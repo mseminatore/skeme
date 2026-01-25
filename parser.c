@@ -893,7 +893,7 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     }
     
     vm_push(&vm, (Object*)alist);
-    Object* key = vm_new_string(&vm, "env__");
+    Object* key = vm_new_string(&vm, "__env__");
     vm_pop(&vm);
     vm_define_global(&vm, key, (Object*)alist);
 

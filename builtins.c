@@ -1060,7 +1060,7 @@ static int sk_command_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	vm_push_global(&vm, "env__");
+	vm_push_global(&vm, "__env__");
 
     return SK_TRUE;
 }
