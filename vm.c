@@ -1236,6 +1236,8 @@ Object* vm_newObject(VM* pvm, size_t size, int type)
         size = sizeof(Object);
 
     Object* obj = (Object*)vm_alloc(pvm, NULL, 0, size);
+    memset(obj, 0, size); // zero out memory
+
 	UNMARK_OBJ(obj);        // new objects are unmarked
     obj->type = type;       // default type
 	obj->size = size;       // set size
@@ -1481,13 +1483,15 @@ void vm_print_stack(VM* pvm)
 //--------------------------------------------------------------
 Port *vm_new_port(VM* pvm, const char* name, FILE* fptr)
 {
-    Port* port = (Port*)vm_newObject(pvm, sizeof(Port), OBJ_PORT);
-    vm_push(pvm, (Object*)port); // save on stack for GC
+    String *port_name= (String*)vm_new_string(pvm, name);
+    vm_push(pvm, (Object*)port_name); // save on stack for GC
 
-    port->name = (String*)vm_new_string(pvm, name);
+    Port* port = (Port*)vm_newObject(pvm, sizeof(Port), OBJ_PORT);
+
+    port->name = port_name;
     port->fptr = fptr;
 
-    vm_pop(pvm);
+    vm_pop(pvm);    // remove string from stack
     return port;
 }
 
@@ -1496,19 +1500,20 @@ Port *vm_new_port(VM* pvm, const char* name, FILE* fptr)
 //--------------------------------------------------------------
 int vm_create_default_ports(VM* pvm)
 {
-	Port* input_port, * output_port, * error_port;
+	Port* port;
 
-	input_port = (Port*)vm_new_port(pvm, "stdin", stdin);
-    vm_push(pvm, (Object*)input_port);
-    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-input-port"), (Object*)input_port);
+    // create standard ports
+	port = (Port*)vm_new_port(pvm, "stdin", stdin);
+    vm_push(pvm, (Object*)port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-input-port"), (Object*)port);
 
-    output_port = (Port*)vm_new_port(pvm, "stdout", stdout);
-	vm_push(pvm, (Object*)output_port);
-    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-output-port"), (Object*)output_port);
+    port = (Port*)vm_new_port(pvm, "stdout", stdout);
+	vm_push(pvm, (Object*)port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-output-port"), (Object*)port);
 
-	error_port = (Port*)vm_new_port(pvm, "stderr", stderr);
-	vm_push(pvm, (Object*)error_port);
-    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-error-port"), (Object*)error_port);
+	port = (Port*)vm_new_port(pvm, "stderr", stderr);
+	vm_push(pvm, (Object*)port);
+    vm_define_global(pvm, (Object*)vm_new_string(pvm, "current-error-port"), (Object*)port);
 
     vm_pop_n(pvm, 3); // pop the ports off the stack
 
