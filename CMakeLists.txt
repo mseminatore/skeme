@@ -23,6 +23,7 @@ include_directories(${PROJECT_SOURCE_DIR})
 # add the executable
 add_executable(skeme main.c parser.c lexer.c vm.c builtins.c io.c)
 add_subdirectory(${PROJECT_SOURCE_DIR}/hash)
+set_property(TARGET skeme PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme PRIVATE ht)

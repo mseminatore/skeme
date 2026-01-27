@@ -519,7 +519,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             VM_LOG("RET\n");
             {
 				Object* nargs_obj = vm_pop(pvm);    // pop number of args
-				Object* ret_val = vm_pop(pvm);      // get return value
+				Object* ret_val = vm_pop(pvm);      // get return value TODO - will there always be a return value?!!
 				Object* nframe_obj = vm_pop(pvm);   // pop old frame pointer
 				pvm->fp = AS_NUM(nframe_obj);       // restore old frame pointer
 				vm_pop_n(pvm, AS_NUM(nargs_obj));   // pop args from stack
