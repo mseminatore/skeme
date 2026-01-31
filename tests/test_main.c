@@ -12,6 +12,7 @@ void test_gc(int argc, char *argv[]);
 void test_lexer(int argc, char *argv[]);
 void test_parser(int argc, char *argv[]);
 void test_builtins(int argc, char *argv[]);
+void test_error(int argc, char *argv[]);
 
 void test_main(int argc, char *argv[]) {
     // Run VM tests
@@ -28,4 +29,7 @@ void test_main(int argc, char *argv[]) {
     
     // Run builtins tests
     test_builtins(argc, argv);
+    
+    // Run error tests
+    test_error(argc, argv);
 }

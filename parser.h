@@ -3,6 +3,7 @@
 
 #include "lexer.h"
 #include "vm.h"
+#include "error.h"
 
 #define MAX_REL_CLAUSES 16
 //#define IF_ELSE_REQUIRED
@@ -69,6 +70,9 @@ struct SKState
     int err_count;
     int warn_count;
     int parse_log_enabled;
+    SKErrorHandler error_handler;
+    FILE* error_stream;
+    FILE* output_stream;
 };
 
 extern int g_bDone;

@@ -1,0 +1,191 @@
+//--------------------------------------------------------------
+// test_error.c - Tests for unified error reporting infrastructure
+//--------------------------------------------------------------
+#include <stdio.h>
+#include <string.h>
+#include "../hash/testy/test.h"
+#include "../parser.h"
+#include "../error.h"
+
+// Test context for custom handler
+typedef struct {
+    int error_count;
+    int warning_count;
+    int info_count;
+    int debug_count;
+    char last_message[512];
+    const char* last_file;
+    int last_line;
+} ErrorTestContext;
+
+static ErrorTestContext g_test_ctx;
+
+//--------------------------------------------------------------
+// Custom error handler for testing
+//--------------------------------------------------------------
+static void test_error_handler(SKState* sk, SKLogLevel level,
+                                const char* file, int line, const char* msg)
+{
+    switch (level) {
+        case SK_LOG_ERROR:
+            g_test_ctx.error_count++;
+            break;
+        case SK_LOG_WARNING:
+            g_test_ctx.warning_count++;
+            break;
+        case SK_LOG_INFO:
+            g_test_ctx.info_count++;
+            break;
+        case SK_LOG_DEBUG:
+            g_test_ctx.debug_count++;
+            break;
+    }
+    
+    strncpy(g_test_ctx.last_message, msg, sizeof(g_test_ctx.last_message) - 1);
+    g_test_ctx.last_file = file;
+    g_test_ctx.last_line = line;
+}
+
+//--------------------------------------------------------------
+// Reset test context
+//--------------------------------------------------------------
+static void reset_test_context(void)
+{
+    memset(&g_test_ctx, 0, sizeof(ErrorTestContext));
+}
+
+//--------------------------------------------------------------
+// Run all error tests
+//--------------------------------------------------------------
+void test_error(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    
+    MODULE("Error Reporting");
+    
+    // Test: sk_log with custom handler
+    SUITE("Custom Error Handler");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk.error_handler = sk_default_error_handler;
+        sk.error_stream = stderr;
+        sk.output_stream = stdout;
+        
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+        
+        COMMENT("Test error logging...");
+        sk_log(&sk, SK_LOG_ERROR, "Test error message");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strcmp(g_test_ctx.last_message, "Test error message") == 0);
+        TEST(sk.err_count == 1);
+        
+        COMMENT("Test warning logging...");
+        sk_log(&sk, SK_LOG_WARNING, "Test warning message");
+        TEST(g_test_ctx.warning_count == 1);
+        TEST(strcmp(g_test_ctx.last_message, "Test warning message") == 0);
+        TEST(sk.warn_count == 1);
+        
+        COMMENT("Test info logging...");
+        sk_log(&sk, SK_LOG_INFO, "Test info message");
+        TEST(g_test_ctx.info_count == 1);
+        TEST(strcmp(g_test_ctx.last_message, "Test info message") == 0);
+        
+        COMMENT("Test debug logging...");
+        sk_log(&sk, SK_LOG_DEBUG, "Test debug message");
+        TEST(g_test_ctx.debug_count == 1);
+        TEST(strcmp(g_test_ctx.last_message, "Test debug message") == 0);
+    }
+    
+    // Test: sk_log with file/line information
+    SUITE("Error with File Info");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        
+        // Setup file stack
+        sk.file_stack_capacity = 10;
+        sk.file_stack = (FileNode*)calloc(sk.file_stack_capacity, sizeof(FileNode));
+        sk.file_stack_ptr = 0;
+        sk.file_stack[0].filename = "test.scm";
+        sk.file_stack[0].yylineno = 42;
+        
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+        
+        COMMENT("Test file and line info...");
+        sk_log(&sk, SK_LOG_ERROR, "Error at line 42");
+        
+        TEST(g_test_ctx.last_file != NULL);
+        TEST(strcmp(g_test_ctx.last_file, "test.scm") == 0);
+        TEST(g_test_ctx.last_line == 42);
+        
+        free(sk.file_stack);
+    }
+    
+    // Test: Error counter increments
+    SUITE("Error Counting");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk.error_handler = sk_default_error_handler;
+        sk.error_stream = stderr;
+        sk.err_count = 0;
+        sk.warn_count = 0;
+        
+        COMMENT("Log multiple errors...");
+        sk_log(&sk, SK_LOG_ERROR, "Error 1");
+        sk_log(&sk, SK_LOG_ERROR, "Error 2");
+        sk_log(&sk, SK_LOG_ERROR, "Error 3");
+        
+        TEST(sk.err_count == 3);
+        
+        COMMENT("Log multiple warnings...");
+        sk_log(&sk, SK_LOG_WARNING, "Warning 1");
+        sk_log(&sk, SK_LOG_WARNING, "Warning 2");
+        TEST(sk.warn_count == 2);
+        
+        COMMENT("Info/debug should not increment counters...");
+        sk_log(&sk, SK_LOG_INFO, "Info");
+        sk_log(&sk, SK_LOG_DEBUG, "Debug");
+        TEST(sk.err_count == 3);
+        TEST(sk.warn_count == 2);
+    }
+    
+    // Test: Variadic format strings
+    SUITE("Variadic Messages");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+        
+        COMMENT("Test formatted messages...");
+        sk_log(&sk, SK_LOG_ERROR, "Error code: %d", 42);
+        TEST(strcmp(g_test_ctx.last_message, "Error code: 42") == 0);
+        
+        sk_log(&sk, SK_LOG_WARNING, "Value: %s = %d", "x", 100);
+        TEST(strcmp(g_test_ctx.last_message, "Value: x = 100") == 0);
+    }
+    
+    // Test: NULL safety
+    SUITE("NULL Safety");
+    {
+        COMMENT("Should not crash with NULL sk...");
+        sk_log(NULL, SK_LOG_ERROR, "Should not crash");
+        TEST(1); // If we get here, we didn't crash
+        
+        COMMENT("Should not crash with NULL fmt...");
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_log(&sk, SK_LOG_ERROR, NULL);
+        TEST(1); // If we get here, we didn't crash
+        
+        COMMENT("Set NULL handler should not crash...");
+        sk_set_error_handler(NULL, test_error_handler);
+        TEST(1); // Should not crash
+    }
+}

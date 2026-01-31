@@ -50,14 +50,15 @@ void LOG(const char *fmt, ...)
         return;
     }
     
-	char buf[BUF_SIZE];
-	va_list valist;
+    // For backward compatibility, print directly to stdout for debug
+    char buf[BUF_SIZE];
+    va_list valist;
 
-	va_start(valist, fmt);
-	vsprintf(buf, fmt, valist);
-	va_end(valist);
+    va_start(valist, fmt);
+    vsprintf(buf, fmt, valist);
+    va_end(valist);
 
-	fputs(buf, stdout);
+    fputs(buf, stdout);
 }
 
 //-----------------------------------

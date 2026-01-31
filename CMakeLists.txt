@@ -22,7 +22,7 @@ include_directories(${PROJECT_SOURCE_DIR})
 #add_subdirectory(./hash ./lib)
 
 # add the executable
-add_executable(skeme main.c parser.c lexer.c vm.c builtins.c io.c platform.c)
+add_executable(skeme main.c parser.c lexer.c vm.c builtins.c io.c platform.c error.c)
 add_subdirectory(${PROJECT_SOURCE_DIR}/hash)
 set_property(TARGET skeme PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -38,12 +38,14 @@ add_executable(skeme_tests
     tests/test_parser.c
     tests/test_builtins.c
     tests/test_helpers.c
+    tests/test_error.c
     parser.c
     lexer.c
     vm.c
     builtins.c
     io.c
     platform.c
+    error.c
 )
 target_compile_definitions(skeme_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme_tests PRIVATE ht testy)
