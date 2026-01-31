@@ -251,6 +251,8 @@ typedef struct VM {
     int grayCapacity;
     Object** grayStack;
 
+    struct SKState* sk_state;       // Back-pointer to SKState
+
 #ifdef VM_USE_FREE_LIST
     int freeObjects;      // Number of free objects in the free list
     Object *freeList[VM_FREE_LIST];    // Free list for object reuse

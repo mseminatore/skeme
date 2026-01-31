@@ -931,10 +931,16 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     }
 
     pSK->symbol_count = 0;
-    pSK->file_stack_ptr = -1;  // start at -1, will be 0 after first push
+    pSK->file_stack_ptr = 0;  // start at 0 with sentinel entry
     pSK->err_count = 0;
     pSK->warn_count = 0;
     pSK->parse_log_enabled = 0;
+
+    // initialize sentinel entry at index 0
+    pSK->file_stack[0].fptr = NULL;
+    pSK->file_stack[0].filename = strdup("<unknown>");
+    pSK->file_stack[0].yylineno = 0;
+    pSK->file_stack[0].column = 0;
 
     // set current state for parser
     g_current_sk = pSK;
@@ -947,6 +953,9 @@ int sk_init(SKState *pSK, int argc, char* argv[])
         free(pSK->file_stack);
         return FALSE;
     }
+
+    // set back-pointer from VM to SKState
+    pSK->vm.sk_state = pSK;
 
     // register built-in functions
     if (SK_TRUE != sk_init_builtins(pSK))
@@ -1011,6 +1020,10 @@ int sk_shutdown(SKState *pSK)
     // free file stack
     if (pSK->file_stack)
     {
+        // free sentinel entry filename if it exists
+        if (pSK->file_stack[0].filename)
+            free(pSK->file_stack[0].filename);
+        
         free(pSK->file_stack);
         pSK->file_stack = NULL;
     }

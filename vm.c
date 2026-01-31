@@ -611,7 +611,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                         }
                     }
 
-                    func((SKState*)1); // TODO - In a real implementation, pass the VM or context
+                    func(pvm->sk_state); // Pass the SKState via back-pointer
                 }
                 else {
                     fprintf(stderr, "NULL function pointer in NATIVE call!\n");

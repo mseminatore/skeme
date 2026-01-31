@@ -120,9 +120,9 @@ int pop_file_stack(SKState* pSK)
 {
     if (!pSK) return FALSE;
 
-    if (pSK->file_stack_ptr < 0)
+    if (pSK->file_stack_ptr <= 0)
     {
-        yyerror("file stack underflow!");
+        // Can't pop sentinel entry
         return FALSE;
     }
 
@@ -139,11 +139,7 @@ int pop_file_stack(SKState* pSK)
     }
 
     pSK->file_stack_ptr--;
-    
-    if (pSK->file_stack_ptr >= 0)
-        yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
-    else
-        yyin = NULL;
+    yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
 
     if (NULL == yyin || stdin == yyin)
         return FALSE;
@@ -194,8 +190,9 @@ int add_symbol(SKState* pSK, const char *name, int lineno)
         return -1;
 
     pSK->symbols[pSK->symbol_count].name      = strdup(name);
-    pSK->symbols[pSK->symbol_count].lineno    = CURRENT_LINENO;
-    pSK->symbols[pSK->symbol_count].filename  = CURRENT_FILE ? strdup(CURRENT_FILE) : "noname";
+    pSK->symbols[pSK->symbol_count].lineno    = (pSK->file_stack_ptr >= 0) ? CURRENT_LINENO : 0;
+    const char* current_file = (pSK->file_stack_ptr >= 0) ? CURRENT_FILE : NULL;
+    pSK->symbols[pSK->symbol_count].filename  = current_file ? strdup(current_file) : strdup("noname");
     pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
     pSK->symbols[pSK->symbol_count].value     = -1;
     pSK->symbols[pSK->symbol_count].refd      = 0;
@@ -487,7 +484,8 @@ yylex01:
     if (c == '\n')
     {
         lineno++;           // update global line count
-        CURRENT_LINENO++;   // update file local line number
+        if (pSK && pSK->file_stack_ptr >= 0)
+            CURRENT_LINENO++;   // update file local line number
         
         if (yyin == stdin)
             return DONE;
