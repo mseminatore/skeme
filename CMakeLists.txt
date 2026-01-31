@@ -38,6 +38,7 @@ add_executable(skeme_tests
     tests/test_parser.c
     tests/test_builtins.c
     tests/test_helpers.c
+    tests/test_error.c
     parser.c
     lexer.c
     vm.c
