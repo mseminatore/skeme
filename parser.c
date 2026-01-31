@@ -139,7 +139,7 @@ static int compare_fn(const void *a, const void *b)
     Symbol_t *s1 = (Symbol_t*)a;
     Symbol_t *s2 = (Symbol_t*)b;
 
-    return strcasecmp(s1->name, s2->name);
+    return sk_strcasecmp(s1->name, s2->name);
 }
 
 //------------------------
@@ -938,7 +938,7 @@ int sk_init(SKState *pSK, int argc, char* argv[])
 
     // initialize sentinel entry at index 0
     pSK->file_stack[0].fptr = NULL;
-    pSK->file_stack[0].filename = strdup(SK_UNKNOWN_FILE);
+    pSK->file_stack[0].filename = sk_strdup(SK_UNKNOWN_FILE);
     pSK->file_stack[0].yylineno = 0;
     pSK->file_stack[0].column = 0;
 

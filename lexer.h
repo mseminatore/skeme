@@ -2,6 +2,7 @@
 #define __LEXER_H
 
 #include <stdio.h>
+#include "platform.h"
 
 #define DONE 0
 #define MAX_SYMBOLS 4096
@@ -15,11 +16,6 @@
 
 #ifndef FALSE
 #   define FALSE 0
-#endif
-
-#ifdef _WIN32
-#   define strcasecmp _stricmp
-#   define strdup _strdup
 #endif
 
 #define LAST_SYMBOL       (pSK->symbols[pSK->symbol_count - 1])

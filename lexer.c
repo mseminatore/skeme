@@ -83,7 +83,7 @@ int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename)
 
     pSK->file_stack_ptr++;
     pSK->file_stack[pSK->file_stack_ptr].fptr = fptr;
-    pSK->file_stack[pSK->file_stack_ptr].filename = strdup(filename);
+    pSK->file_stack[pSK->file_stack_ptr].filename = sk_strdup(filename);
     pSK->file_stack[pSK->file_stack_ptr].yylineno = 1;
     pSK->file_stack[pSK->file_stack_ptr].column = 1;
 
@@ -161,7 +161,7 @@ int lookup_symbol(SKState* pSK, const char *name)
 
     for (int i = 0; i < pSK->symbol_count; i++)
     {
-        if (!strcasecmp(name, pSK->symbols[i].name))
+        if (!sk_strcasecmp(name, pSK->symbols[i].name))
             return i;
     }
 
@@ -194,10 +194,10 @@ int add_symbol(SKState* pSK, const char *name, int lineno)
     if (lookup_symbol(pSK, name) > 0)
         return -1;
 
-    pSK->symbols[pSK->symbol_count].name      = strdup(name);
+    pSK->symbols[pSK->symbol_count].name      = sk_strdup(name);
     pSK->symbols[pSK->symbol_count].lineno    = (pSK->file_stack_ptr >= 0) ? CURRENT_LINENO : 0;
     const char* current_file = (pSK->file_stack_ptr >= 0) ? CURRENT_FILE : NULL;
-    pSK->symbols[pSK->symbol_count].filename  = current_file ? strdup(current_file) : strdup(SK_NONAME_FILE);
+    pSK->symbols[pSK->symbol_count].filename  = current_file ? sk_strdup(current_file) : sk_strdup(SK_NONAME_FILE);
     pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
     pSK->symbols[pSK->symbol_count].value     = -1;
     pSK->symbols[pSK->symbol_count].refd      = 0;
@@ -247,7 +247,7 @@ int isToken(const char *s)
 
     for (; pTokens->lexeme != NULL; pTokens++)
     {
-        if (!strcasecmp(s, pTokens->lexeme))
+        if (!sk_strcasecmp(s, pTokens->lexeme))
             return pTokens->token;
     }
 
