@@ -8,6 +8,18 @@
 //#define IF_ELSE_REQUIRED
 
 //-----------------
+// Error codes
+//-----------------
+typedef enum {
+    SK_OK = 0,
+    SK_ERR_MEMORY,
+    SK_ERR_SYMBOL_TABLE_FULL,
+    SK_ERR_FILE_STACK_OVERFLOW,
+    SK_ERR_INVALID_ARGUMENT,
+    SK_ERR_NULL_POINTER
+} SKError;
+
+//-----------------
 // constant decls
 //-----------------
 #define APP_NAME "skeme"

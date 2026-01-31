@@ -49,8 +49,10 @@
 
 #ifdef _DEBUG
 #   define CHECK_THAT(cond)            do { assert(cond); if (!(cond)) return VM_ERR; } while(0)
+#   define CHECK_THAT_MSG(cond, msg)   do { if (!(cond)) { yyerror(msg); return VM_ERR; } } while(0)
 #else
 #   define CHECK_THAT(cond)            do { if (!(cond)) return VM_ERR; } while(0)
+#   define CHECK_THAT_MSG(cond, msg)   do { if (!(cond)) { yyerror(msg); return VM_ERR; } } while(0)
 #endif
 
 //#ifdef VM_DEBUG_LOG
