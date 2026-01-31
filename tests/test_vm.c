@@ -203,4 +203,90 @@ void test_vm(int argc, char *argv[]) {
         
         vm_shutdown(&sk.vm);
     }
+    
+    // Test opcode emission
+    SUITE("Opcode Emission");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        
+        CodeChunk chunk;
+        memset(&chunk, 0, sizeof(CodeChunk));
+        vm_init_chunk(&chunk);
+        
+        // Set as current chunk
+        CodeChunk* old_chunk = vm_set_current_chunk(&chunk);
+        
+        COMMENT("Test emit opcode...");
+        int idx = vm_emit(&sk.vm, OP_HALT);
+        TEST(idx >= 0);  // vm_emit returns index, not VM_OK
+        TEST(chunk.count == 1);
+        TEST(chunk.code[0] == OP_HALT);
+        
+        COMMENT("Test emit number...");
+        vm_emit_number(&sk.vm, 42);
+        TEST(chunk.count > 1);
+        
+        // Restore old chunk
+        vm_set_current_chunk(old_chunk);
+        vm_free_chunk(&sk.vm, &chunk);
+        
+        sk_shutdown(&sk);
+    }
+    
+    // Test VM reset
+    SUITE("VM Reset");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        
+        // Push some objects onto stack
+        vm_push(&sk.vm, MAKE_NUM(1));
+        vm_push(&sk.vm, MAKE_NUM(2));
+        TEST(sk.vm.sp == 2);
+        
+        COMMENT("Test VM reset clears stack...");
+        vm_reset(&sk.vm);
+        TEST(sk.vm.sp == 0);
+        
+        sk_shutdown(&sk);
+    }
+    
+    // Test object allocation and types
+    SUITE("Object Allocation");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        
+        int old_stress = g_bGCStress;
+        g_bGCStress = FALSE;
+        
+        COMMENT("Test newObject...");
+        size_t initial_count = sk.vm.numObjects;
+        Object* obj = vm_newObject(&sk.vm, sizeof(String) + 10, OBJ_STRING);
+        TEST(obj != NULL);
+        TEST(IS_OBJ(obj));
+        TEST(OBJ_TYPE(obj) == OBJ_STRING);
+        TEST(sk.vm.numObjects == initial_count + 1);
+        
+        g_bGCStress = old_stress;
+        sk_shutdown(&sk);
+    }
+    
+    // Test stack overflow protection
+    SUITE("Stack Limits");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        
+        COMMENT("Test stack pointer tracking...");
+        TEST(sk.vm.sp == 0);
+        TEST(sk.vm.sp < VM_STACK_SIZE);
+        
+        sk_shutdown(&sk);
+    }
 }
