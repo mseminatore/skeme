@@ -1,4 +1,4 @@
-; error_test.scm - Demonstrates unified error reporting
+; error_demo.scm - Demonstrates unified error reporting
 
 ; Test 1: Basic display and newline output
 (display "Testing unified error reporting...")

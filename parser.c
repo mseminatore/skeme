@@ -55,7 +55,11 @@ static void unindent()
 //------------------------
 // error routine
 //------------------------
-void yyerror(const char *s)
+//------------------------
+// Helper function to log with optional stdin context clearing
+//------------------------
+static void log_with_stdin_check(SKLogLevel level, const char *s, 
+                                   const char* fallback_color, const char* level_str)
 {
     if (g_current_sk) {
         // Check if stdin to avoid file context
@@ -72,7 +76,7 @@ void yyerror(const char *s)
                 g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
             }
             
-            sk_log(g_current_sk, SK_LOG_ERROR, "%s", s);
+            sk_log(g_current_sk, level, "%s", s);
             
             // Restore
             if (g_current_sk->file_stack_ptr >= 0) {
@@ -80,11 +84,19 @@ void yyerror(const char *s)
                 g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
             }
         } else {
-            sk_log(g_current_sk, SK_LOG_ERROR, "%s", s);
+            sk_log(g_current_sk, level, "%s", s);
         }
     } else {
-        fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
+        fprintf(stderr, "%s%s: '%s'\n"TERM_RESET, fallback_color, level_str, s);
     }
+}
+
+//------------------------
+// error routine
+//------------------------
+void yyerror(const char *s)
+{
+    log_with_stdin_check(SK_LOG_ERROR, s, TERM_RED, "ERROR");
 }
 
 //------------------------
@@ -92,34 +104,7 @@ void yyerror(const char *s)
 //------------------------
 void yywarning(const char *s)
 {
-    if (g_current_sk) {
-        // Check if stdin to avoid file context
-        if (yyin == stdin) {
-            // Clear file context for stdin
-            char* saved_file = g_current_sk->file_stack_ptr >= 0 ? 
-                               g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename : NULL;
-            int saved_line = g_current_sk->file_stack_ptr >= 0 ?
-                             g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno : 0;
-            
-            // Temporarily clear for stdin
-            if (g_current_sk->file_stack_ptr >= 0) {
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = NULL;
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
-            }
-            
-            sk_log(g_current_sk, SK_LOG_WARNING, "%s", s);
-            
-            // Restore
-            if (g_current_sk->file_stack_ptr >= 0) {
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = saved_file;
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
-            }
-        } else {
-            sk_log(g_current_sk, SK_LOG_WARNING, "%s", s);
-        }
-    } else {
-        fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
-    }
+    log_with_stdin_check(SK_LOG_WARNING, s, TERM_YELLOW, "WARNING");
 }
 
 //------------------------
@@ -127,34 +112,7 @@ void yywarning(const char *s)
 //------------------------
 void yyinfo(const char *s)
 {
-    if (g_current_sk) {
-        // Check if stdin to avoid file context
-        if (yyin == stdin) {
-            // Clear file context for stdin
-            char* saved_file = g_current_sk->file_stack_ptr >= 0 ? 
-                               g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename : NULL;
-            int saved_line = g_current_sk->file_stack_ptr >= 0 ?
-                             g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno : 0;
-            
-            // Temporarily clear for stdin
-            if (g_current_sk->file_stack_ptr >= 0) {
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = NULL;
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
-            }
-            
-            sk_log(g_current_sk, SK_LOG_INFO, "%s", s);
-            
-            // Restore
-            if (g_current_sk->file_stack_ptr >= 0) {
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = saved_file;
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
-            }
-        } else {
-            sk_log(g_current_sk, SK_LOG_INFO, "%s", s);
-        }
-    } else {
-        fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
-    }
+    log_with_stdin_check(SK_LOG_INFO, s, TERM_GREEN, "INFO");
 }
 
 //---------------------------------------------------
