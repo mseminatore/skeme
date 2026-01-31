@@ -1,2 +1,0 @@
-/usr/bin/ar qc libht.a CMakeFiles/ht.dir/hash.c.o
-/usr/bin/ranlib libht.a

@@ -1,1 +1,0 @@
-/home/runner/work/skeme/.codeql-scratch/dbs/cpp/working/autobuild/bin/cc -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/skeme.dir/link.d CMakeFiles/skeme.dir/main.c.o CMakeFiles/skeme.dir/parser.c.o CMakeFiles/skeme.dir/lexer.c.o CMakeFiles/skeme.dir/vm.c.o CMakeFiles/skeme.dir/builtins.c.o CMakeFiles/skeme.dir/io.c.o -o skeme  hash/libht.a

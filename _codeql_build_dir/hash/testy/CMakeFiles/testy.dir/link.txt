@@ -1,2 +1,0 @@
-/usr/bin/ar qc libtesty.a CMakeFiles/testy.dir/test_main.c.o
-/usr/bin/ranlib libtesty.a
