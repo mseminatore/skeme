@@ -938,7 +938,7 @@ int sk_init(SKState *pSK, int argc, char* argv[])
 
     // initialize sentinel entry at index 0
     pSK->file_stack[0].fptr = NULL;
-    pSK->file_stack[0].filename = strdup("<unknown>");
+    pSK->file_stack[0].filename = strdup(SK_UNKNOWN_FILE);
     pSK->file_stack[0].yylineno = 0;
     pSK->file_stack[0].column = 0;
 
@@ -1010,7 +1010,7 @@ int sk_shutdown(SKState *pSK)
         {
             if (pSK->symbols[i].name)
                 free((void*)pSK->symbols[i].name);
-            if (pSK->symbols[i].filename && strcmp(pSK->symbols[i].filename, "noname") != 0)
+            if (pSK->symbols[i].filename && strcmp(pSK->symbols[i].filename, SK_NONAME_FILE) != 0)
                 free((void*)pSK->symbols[i].filename);
         }
         free(pSK->symbols);

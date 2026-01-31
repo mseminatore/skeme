@@ -197,7 +197,7 @@ int add_symbol(SKState* pSK, const char *name, int lineno)
     pSK->symbols[pSK->symbol_count].name      = strdup(name);
     pSK->symbols[pSK->symbol_count].lineno    = (pSK->file_stack_ptr >= 0) ? CURRENT_LINENO : 0;
     const char* current_file = (pSK->file_stack_ptr >= 0) ? CURRENT_FILE : NULL;
-    pSK->symbols[pSK->symbol_count].filename  = current_file ? strdup(current_file) : strdup("noname");
+    pSK->symbols[pSK->symbol_count].filename  = current_file ? strdup(current_file) : strdup(SK_NONAME_FILE);
     pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
     pSK->symbols[pSK->symbol_count].value     = -1;
     pSK->symbols[pSK->symbol_count].refd      = 0;

@@ -33,6 +33,9 @@
 #define SK_ARITY_ONE_OR_MORE -3
 #define SK_ARITY_TWO_OR_MORE -4
 
+#define SK_UNKNOWN_FILE "<unknown>"
+#define SK_NONAME_FILE "noname"
+
 // function set structure
 typedef struct
 {
