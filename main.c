@@ -17,8 +17,6 @@ int g_bSymbols = FALSE;
 int g_bDone = FALSE;
 int g_bInteractive = FALSE;
 
-extern int g_bParseLog;
-
 CodeChunk repl_chunk;
 
 //--------------------------------
@@ -39,7 +37,7 @@ void usage()
 //-----------------------------------
 // get options from the command line
 //-----------------------------------
-int getopt(int n, char *args[])
+int getopt(SKState* pSK, int n, char *args[])
 {
 	int i;
     
@@ -51,7 +49,7 @@ int getopt(int n, char *args[])
 
         // flag for enabling parser logging
 		if (args[i][1] == 'p')
-			g_bParseLog = TRUE;
+			pSK->parse_log_enabled = TRUE;
 
         // flag for parser debugging
         if (args[i][1] == 'd')
@@ -87,9 +85,9 @@ int sk_define(SKState* pSK, const char *key, Object *value)
 {
     if (!pSK) return SK_FALSE;
 
-    vm_push(&vm, value);
-    vm_define_global(&vm, (Object*)vm_new_string(&vm, key), value);
-    vm_pop(&vm);
+    vm_push(&pSK->vm, value);
+    vm_define_global(&pSK->vm, (Object*)vm_new_string(&pSK->vm, key), value);
+    vm_pop(&pSK->vm);
 
     return SK_TRUE;
 }
@@ -105,7 +103,7 @@ int main(int argc, char *argv[])
 
     sk_init(&sk, argc, argv);
 
-	int iFirstArg = getopt(argc, argv);
+	int iFirstArg = getopt(&sk, argc, argv);
 
     // fout = fopen(g_szOutputFilename, "wb");
     // LOG("Output file: '%s'\n", g_szOutputFilename);
@@ -114,14 +112,14 @@ int main(int argc, char *argv[])
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&repl_chunk);
 
-	sk_define((SKState*)1, "__version__", vm_new_string(&vm, APP_VER));
-	sk_define((SKState*)1, "__author__", vm_new_string(&vm, "Mark Seminatore"));
-	sk_define((SKState*)1, "__app_name__", vm_new_string(&vm, APP_NAME));
-	sk_define((SKState*)1, "interactive", vm_newBoolean(&vm, g_bInteractive));
+	sk_define(&sk, "__version__", vm_new_string(&sk.vm, APP_VER));
+	sk_define(&sk, "__author__", vm_new_string(&sk.vm, "Mark Seminatore"));
+	sk_define(&sk, "__app_name__", vm_new_string(&sk.vm, APP_NAME));
+	sk_define(&sk, "interactive", vm_newBoolean(&sk.vm, g_bInteractive));
 
     if (argc != iFirstArg)
     {
-        if (!push_filename_stack(argv[iFirstArg]))
+        if (!push_filename_stack(&sk, argv[iFirstArg]))
             return -1;
 
         strcpy(infile, argv[iFirstArg]);
@@ -130,15 +128,15 @@ int main(int argc, char *argv[])
         sk_parse(&sk);
 
 		// execute the parsed code
-        vm_exec(&vm, repl_chunk.code);
+        vm_exec(&sk.vm, repl_chunk.code);
 
-        LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, err_count, warn_count);
+        LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, sk.err_count, sk.warn_count);
 
-        if (vm.sp)
+        if (sk.vm.sp)
         {
             sk_display(&sk);
             //puts("");
-            LOG("%d items left on stack.\n", vm.sp);
+            LOG("%d items left on stack.\n", sk.vm.sp);
         }
 
         if (!g_bInteractive)
@@ -151,40 +149,40 @@ int main(int argc, char *argv[])
     // default input is stdin
 	if (!g_bDone)
     {
-        push_fileptr_stack(stdin, "stdin");
+        push_fileptr_stack(&sk, stdin, "stdin");
     }
 
     // REPL loop
     while (!g_bDone)
     {
-        vm_reset(&vm);
+        vm_reset(&sk.vm);
 
         if (yyin == stdin)
             printf(PROMPT);
 
         sk_parse(&sk);
-        vm_exec(&vm, repl_chunk.code);
+        vm_exec(&sk.vm, repl_chunk.code);
 
-        if (vm.sp)
+        if (sk.vm.sp)
         {
             sk_display(&sk);
-            if (vm.sp)
+            if (sk.vm.sp)
             {
-                fprintf(stderr, "%d items left on stack.\n", vm.sp);
-                vm_print_stack(&vm);
+                fprintf(stderr, "%d items left on stack.\n", sk.vm.sp);
+                vm_print_stack(&sk.vm);
             }
         }
     }
 
-    vm_free_chunk(&vm, &repl_chunk);
+    vm_free_chunk(&sk.vm, &repl_chunk);
 
     if (g_bSymbols)
-        dump_symbols();
+        dump_symbols(&sk);
 
-    LOG("max stack size: %d, max call depth: %d\n", vm.max_stack_size, vm.max_call_depth);
+    LOG("max stack size: %d, max call depth: %d\n", sk.vm.max_stack_size, sk.vm.max_call_depth);
 
     LOG("Shutting down...");
-    //sk_shutdown(&sk);
+    sk_shutdown(&sk);
     LOG("Done.\n");
 	return 0;
 }

@@ -5,21 +5,12 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "lexer.h"
+#include "parser.h"
 
-// symbol table
-Symbol_t symbols[MAX_SYMBOLS];
-int symbol_count = 0;
+// current state
 int lineno = 1;
-
 int lookahead = 0;
-
 YYLVAL yylval;
-
-// file descriptor stack
-#define MAX_FILE_STACK 50
-
-int file_stack_ptr = 0;
-FileNode file_nodes[MAX_FILE_STACK];
 
 // define our keyword token table
 Tokens tokens[] =
@@ -72,29 +63,39 @@ void LOG(const char *fmt, ...)
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-int push_fileptr_stack(FILE *fptr, const char* filename)
+int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename)
 {
-    if (file_stack_ptr + 1 > MAX_FILE_STACK)
+    if (!pSK) return FALSE;
+
+    if (pSK->file_stack_ptr + 1 >= pSK->file_stack_capacity)
     {
-        yyerror("too many files!");
-        return FALSE;
+        // grow file stack
+        int new_capacity = pSK->file_stack_capacity * 2;
+        FileNode* new_stack = (FileNode*)realloc(pSK->file_stack, new_capacity * sizeof(FileNode));
+        if (!new_stack)
+        {
+            yyerror("failed to grow file stack!");
+            return FALSE;
+        }
+        pSK->file_stack = new_stack;
+        pSK->file_stack_capacity = new_capacity;
     }
 
-    file_stack_ptr++;
-    file_nodes[file_stack_ptr].fptr = fptr;
-    file_nodes[file_stack_ptr].filename = strdup(filename);
-    file_nodes[file_stack_ptr].yylineno = 1;
-    file_nodes[file_stack_ptr].column = 1;
+    pSK->file_stack_ptr++;
+    pSK->file_stack[pSK->file_stack_ptr].fptr = fptr;
+    pSK->file_stack[pSK->file_stack_ptr].filename = strdup(filename);
+    pSK->file_stack[pSK->file_stack_ptr].yylineno = 1;
+    pSK->file_stack[pSK->file_stack_ptr].column = 1;
 
     yyin = fptr;
-    LOG("Push '%s' onto parser input stack (depth = %d)\n", filename, file_stack_ptr);
+    LOG("Push '%s' onto parser input stack (depth = %d)\n", filename, pSK->file_stack_ptr);
     return TRUE;
 }
 
 //-----------------------------------
 // push new input file onto the stack
 //-----------------------------------
-int push_filename_stack(const char* filename)
+int push_filename_stack(SKState* pSK, const char* filename)
 {
     FILE* fptr = fopen(filename, "rt");
     if (!fptr)
@@ -103,7 +104,7 @@ int push_filename_stack(const char* filename)
         return FALSE;
     }
 
-    int result = push_fileptr_stack(fptr, filename);
+    int result = push_fileptr_stack(pSK, fptr, filename);
     if (!result && fptr != stdin)
     {
         fclose(fptr);
@@ -115,28 +116,34 @@ int push_filename_stack(const char* filename)
 //-----------------------------------
 // pop input file off the stack
 //-----------------------------------
-int pop_file_stack()
+int pop_file_stack(SKState* pSK)
 {
-    if (file_stack_ptr <= 0)
+    if (!pSK) return FALSE;
+
+    if (pSK->file_stack_ptr < 0)
     {
         yyerror("file stack underflow!");
         return FALSE;
     }
 
-    LOG("Popping '%s' from parser input stack (depth = %d)\n", file_nodes[file_stack_ptr].filename, file_stack_ptr-1);
+    LOG("Popping '%s' from parser input stack (depth = %d)\n", pSK->file_stack[pSK->file_stack_ptr].filename, pSK->file_stack_ptr-1);
 
-    free(file_nodes[file_stack_ptr].filename);
+    free(pSK->file_stack[pSK->file_stack_ptr].filename);
 
-    if (file_nodes[file_stack_ptr].fptr != stdin)
-        fclose(file_nodes[file_stack_ptr].fptr);
+    if (pSK->file_stack[pSK->file_stack_ptr].fptr != stdin)
+        fclose(pSK->file_stack[pSK->file_stack_ptr].fptr);
     else
     {
         yyerror("attempt to close stdin!");
         return FALSE;
     }
 
-    file_stack_ptr--;
-    yyin = file_nodes[file_stack_ptr].fptr;
+    pSK->file_stack_ptr--;
+    
+    if (pSK->file_stack_ptr >= 0)
+        yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
+    else
+        yyin = NULL;
 
     if (NULL == yyin || stdin == yyin)
         return FALSE;
@@ -147,11 +154,13 @@ int pop_file_stack()
 //------------------------
 // lookup a symbol
 //------------------------
-int lookup_symbol(const char *name)
+int lookup_symbol(SKState* pSK, const char *name)
 {
-    for (int i = 0; i < symbol_count; i++)
+    if (!pSK) return -1;
+
+    for (int i = 0; i < pSK->symbol_count; i++)
     {
-        if (!strcasecmp(name, symbols[i].name))
+        if (!strcasecmp(name, pSK->symbols[i].name))
             return i;
     }
 
@@ -162,23 +171,37 @@ int lookup_symbol(const char *name)
 //-----------------------------------------
 // add a new symbols, return symbol number
 //-----------------------------------------
-int add_symbol(const char *name, int lineno)
+int add_symbol(SKState* pSK, const char *name, int lineno)
 {
-    assert(symbol_count < MAX_SYMBOLS);
+    if (!pSK) return -1;
+
+    // grow symbol table if needed
+    if (pSK->symbol_count >= pSK->symbol_capacity)
+    {
+        int new_capacity = pSK->symbol_capacity * 2;
+        Symbol_t* new_symbols = (Symbol_t*)realloc(pSK->symbols, new_capacity * sizeof(Symbol_t));
+        if (!new_symbols)
+        {
+            yyerror("failed to grow symbol table!");
+            return -1;
+        }
+        pSK->symbols = new_symbols;
+        pSK->symbol_capacity = new_capacity;
+    }
 
     // error if symbol already exists
-    if (lookup_symbol(name) > 0)
+    if (lookup_symbol(pSK, name) > 0)
         return -1;
 
-    symbols[symbol_count].name      = strdup(name);
-    symbols[symbol_count].lineno    = CURRENT_LINENO;
-    symbols[symbol_count].filename  = CURRENT_FILE ? strdup(CURRENT_FILE) : "noname";
-    symbols[symbol_count].type      = ST_UNDEF;
-    symbols[symbol_count].value     = -1;
-    symbols[symbol_count].refd      = 0;
+    pSK->symbols[pSK->symbol_count].name      = strdup(name);
+    pSK->symbols[pSK->symbol_count].lineno    = CURRENT_LINENO;
+    pSK->symbols[pSK->symbol_count].filename  = CURRENT_FILE ? strdup(CURRENT_FILE) : "noname";
+    pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
+    pSK->symbols[pSK->symbol_count].value     = -1;
+    pSK->symbols[pSK->symbol_count].refd      = 0;
 
-    symbol_count++;
-    return symbol_count - 1;
+    pSK->symbol_count++;
+    return pSK->symbol_count - 1;
 }
 
 //-----------------------------------
@@ -310,7 +333,7 @@ int backslash(int c)
 //------------------------
 // match a string literal
 //------------------------
-int getString(int delim)
+int getString(SKState* pSK, int delim)
 {
     int c;
     char buf[BUF_SIZE], *cptr = buf;
@@ -329,7 +352,7 @@ int getString(int delim)
     *cptr = 0;
 
     // lookup symbol and return if exists
-    int sym_num = lookup_symbol(buf);
+    int sym_num = lookup_symbol(pSK, buf);
     if (sym_num != -1)
     {
         yylval.symbol = sym_num;
@@ -337,7 +360,7 @@ int getString(int delim)
         return STRING;
     }
 
-    sym_num = add_symbol(buf, lineno);
+    sym_num = add_symbol(pSK, buf, lineno);
 
     yylval.symbol = sym_num;
     //strcpy(yylval.word, buf);
@@ -349,7 +372,7 @@ int getString(int delim)
 //------------------------
 // lexical analyzer
 //------------------------
-int yylex()
+int yylex(SKState* pSK)
 {
     int c;
 
@@ -360,7 +383,7 @@ yylex01:
     // see if input stack is empty
     if (c == EOF)
     {
-        if (pop_file_stack())
+        if (pop_file_stack(pSK))
         {
             goto yylex01;
         }
@@ -390,7 +413,7 @@ yylex01:
         }
 
         ungetch(c);
-        return getString('\'');
+        return getString(pSK, '\'');
     }
 
     // look for empty lists
@@ -400,7 +423,7 @@ yylex01:
     // look for string literals
     if (c == '"')
     {
-        return getString('"');
+        return getString(pSK, '"');
     }
 
 	// look for a number value
@@ -444,10 +467,10 @@ yylex01:
         }
         
         // lookup symbol and return if exists
-        int sym_num = lookup_symbol(buf);
+        int sym_num = lookup_symbol(pSK, buf);
         if (sym_num == -1)
         {
-            sym_num = add_symbol(buf, lineno);
+            sym_num = add_symbol(pSK, buf, lineno);
             // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
         }
         else

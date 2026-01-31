@@ -8,19 +8,14 @@
 #include "vm.h"
 #include "term_colors.h"
 
-// TODO - move inside SKState
-VM vm;
-
 // parser tracking
-int err_count = 0;
-int warn_count = 0;
 static int indent_level = 0;
+static SKState* g_current_sk = NULL;  // current parser state
 
 // input and output files
 FILE *yyin = NULL;
 FILE *fout = NULL;
 extern int g_bDone;
-int g_bParseLog = FALSE;
 
 // forward declarations
 static int expr();
@@ -28,7 +23,7 @@ int sk_init_builtins(SKState* pSK);
 
 static int expr_level = 0;
 
-#define PARSE_LOG(...) (void)(g_bParseLog && indent() && fprintf(stderr, __VA_ARGS__))
+#define PARSE_LOG(...) (void)(g_current_sk && g_current_sk->parse_log_enabled && indent() && fprintf(stderr, __VA_ARGS__))
 
 //------------------------
 // pretty print parse tree
@@ -50,7 +45,7 @@ static int indent()
 //------------------------
 static void unindent() 
 { 
-    if (!g_bParseLog) return;
+    if (!g_current_sk || !g_current_sk->parse_log_enabled) return;
 
     indent_level--;
     if (indent_level < 0)
@@ -64,9 +59,15 @@ void yyerror(const char *s)
 {
     if (yyin == stdin)
         fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
+    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
+        fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
     else
-        fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
-    err_count++;
+        fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
+    
+    if (g_current_sk)
+        g_current_sk->err_count++;
 }
 
 //------------------------
@@ -76,9 +77,15 @@ void yywarning(const char *s)
 {
     if (yyin == stdin)
         fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
+    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
+        fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
     else
-        fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
-    warn_count++;
+        fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
+    
+    if (g_current_sk)
+        g_current_sk->warn_count++;
 }
 
 //------------------------
@@ -88,8 +95,12 @@ void yyinfo(const char *s)
 {
     if (yyin == stdin)
         fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
+    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
+        fprintf(stderr, TERM_GREEN"INFO: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
     else
-        fprintf(stderr, TERM_GREEN"INFO: '%s' in file '%s' near line %d\n"TERM_RESET, s, CURRENT_FILE, CURRENT_LINENO);
+        fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
 }
 
 //---------------------------------------------------
@@ -110,7 +121,7 @@ static int match(int token)
 {
 	if (lookahead == token)
 	{
-		lookahead = yylex();
+		lookahead = yylex(g_current_sk);
 	}
 	else
 	{
@@ -134,15 +145,17 @@ static int compare_fn(const void *a, const void *b)
 //------------------------
 // print out symbols
 //------------------------
-void dump_symbols()
+void dump_symbols(SKState* pSK)
 {
+    if (!pSK) return;
+
     // alpha sort symbols
-    qsort(symbols, symbol_count, sizeof(Symbol_t), compare_fn);
+    qsort(pSK->symbols, pSK->symbol_count, sizeof(Symbol_t), compare_fn);
 
     puts("\nSymbol table\n------------");
-    for (int i = 0; i < symbol_count; i++)
+    for (int i = 0; i < pSK->symbol_count; i++)
     {
-        printf("%10s\t%04X\n", symbols[i].name, symbols[i].value);
+        printf("%10s\t%04X\n", pSK->symbols[i].name, pSK->symbols[i].value);
     }
 }
 
@@ -163,7 +176,7 @@ static int atom()
     case TOKEN_TRUE:
         PARSE_LOG("TOKEN_TRUE\n");
 
-        vm_emit(&vm, OP_TRUE);
+        vm_emit(&g_current_sk->vm, OP_TRUE);
         match(TOKEN_TRUE);
         unindent();
         break;
@@ -171,7 +184,7 @@ static int atom()
     case TOKEN_FALSE:
         PARSE_LOG("TOKEN_FALSE\n");
 
-        vm_emit(&vm, OP_FALSE);
+        vm_emit(&g_current_sk->vm, OP_FALSE);
         match(TOKEN_FALSE);
         unindent();
         break;
@@ -180,16 +193,16 @@ static int atom()
         // handle number
         PARSE_LOG("NUMBER: %d\n", yylval.ival);
 
-		vm_emit_number(&vm, yylval.ival);
+		vm_emit_number(&g_current_sk->vm, yylval.ival);
         match(NUMBER);
         unindent();
         break;
 
     case STRING:
         // TODO - use yylval.word and handle interned strings
-        PARSE_LOG("STRING: '%s'\n", symbols[yylval.symbol].name);
+        PARSE_LOG("STRING: '%s'\n", g_current_sk->symbols[yylval.symbol].name);
 
-		vm_emit_string(&vm, symbols[yylval.symbol].name);
+		vm_emit_string(&g_current_sk->vm, g_current_sk->symbols[yylval.symbol].name);
         match(STRING);
         unindent();
         break;
@@ -197,7 +210,7 @@ static int atom()
     case NIL:
         PARSE_LOG("NIL\n");
 
-        vm_emit_push_object(&vm, NULL);
+        vm_emit_push_object(&g_current_sk->vm, NULL);
         match(NIL);
         unindent();
         break;
@@ -207,10 +220,10 @@ static int atom()
             PARSE_LOG("ID: '%s'\n", yylval.word);
 
             // check if var is local, if so emit stack read
-			Object* obj = vm_get_local_var(&vm, yylval.word);
+			Object* obj = vm_get_local_var(&g_current_sk->vm, yylval.word);
 
             // handle variable and check for undefined symbol
-            Object* key = vm_get_string(&vm, yylval.word);
+            Object* key = vm_get_string(&g_current_sk->vm, yylval.word);
             match(ID);
 
             if (!key)
@@ -219,13 +232,13 @@ static int atom()
             }
             else if (IS_NUM(obj))
             {
-                vm_emit_number(&vm, AS_NUM(obj));
-                vm_emit(&vm, OP_GET_LOCAL);
+                vm_emit_number(&g_current_sk->vm, AS_NUM(obj));
+                vm_emit(&g_current_sk->vm, OP_GET_LOCAL);
             }
             else
             {
-                vm_emit_push_object(&vm, key);
-                vm_emit(&vm, OP_LOAD);
+                vm_emit_push_object(&g_current_sk->vm, key);
+                vm_emit(&g_current_sk->vm, OP_LOAD);
             }
 
             unindent();
@@ -254,13 +267,13 @@ static int formals(Procedure* proc)
     while (lookahead == ID)
     {
         arity++;
-		vm_set_var(&vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
+		vm_set_var(&g_current_sk->vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
         match(ID);
     }
 
-    if (vm.current_scope)
+    if (g_current_sk->vm.current_scope)
     {
-        Environment* env = vm.current_scope;
+        Environment* env = g_current_sk->vm.current_scope;
 
         // update all bindings in the current environment
         size_t env_index = 0;
@@ -314,20 +327,20 @@ static int definition()
 		// function definition
 		match('(');
         
-        vm_new_environment(&vm);   // create new environment for function scope
+        vm_new_environment(&g_current_sk->vm);   // create new environment for function scope
 
         // function name
-        Object* proc_name = vm_new_string(&vm, yylval.word);
-		vm_push(&vm, proc_name);                    // stash function name on stack in case of GC
-            Object* proc_obj = vm_new_proc(&vm);
-		vm_pop(&vm);                                // remove function name from stack
+        Object* proc_name = vm_new_string(&g_current_sk->vm, yylval.word);
+		vm_push(&g_current_sk->vm, proc_name);                    // stash function name on stack in case of GC
+            Object* proc_obj = vm_new_proc(&g_current_sk->vm);
+		vm_pop(&g_current_sk->vm);                                // remove function name from stack
 
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
         proc->name = (String*)proc_name;               // set function name
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
-		if (!vm_define_global(&vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
+		if (!vm_define_global(&g_current_sk->vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
             yyerror("failed to add global var");
 
         match(ID);
@@ -341,22 +354,22 @@ static int definition()
         local_body();
 
         // return from function
-        vm_emit_number(&vm, proc->arity);
-        vm_emit(&vm, OP_RET);
+        vm_emit_number(&g_current_sk->vm, proc->arity);
+        vm_emit(&g_current_sk->vm, OP_RET);
         vm_set_current_chunk(prev_chunk);
 
-        vm_free_environment(&vm); // pop function environment off chain
+        vm_free_environment(&g_current_sk->vm); // pop function environment off chain
 	}
     else
     {
 		// variable definition
-        Object* key = vm_new_string(&vm, yylval.word);
-		vm_define_global(&vm, key, NULL);   // needs to be in global table before expr() in case of GC
-        vm_emit_push_object(&vm, key);
+        Object* key = vm_new_string(&g_current_sk->vm, yylval.word);
+		vm_define_global(&g_current_sk->vm, key, NULL);   // needs to be in global table before expr() in case of GC
+        vm_emit_push_object(&g_current_sk->vm, key);
 
         match(ID);
         expr();
-        vm_emit(&vm, OP_STORE);
+        vm_emit(&g_current_sk->vm, OP_STORE);
     }
 
     unindent();
@@ -374,14 +387,14 @@ static int lambda()
 
     match(LAMBDA);
 
-    Object* proc_obj = vm_new_proc(&vm);
+    Object* proc_obj = vm_new_proc(&g_current_sk->vm);
 
     // put the procedure object on the stack for GC safety
-    vm_push(&vm, proc_obj);
+    vm_push(&g_current_sk->vm, proc_obj);
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
-	proc->name = (String*)vm_new_string(&vm, "<lambda>");
-    vm_define_global(&vm, (Object*)proc->name, NULL);   // ensure name is in global table
+	proc->name = (String*)vm_new_string(&g_current_sk->vm, "<lambda>");
+    vm_define_global(&g_current_sk->vm, (Object*)proc->name, NULL);   // ensure name is in global table
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
@@ -409,13 +422,13 @@ static int lambda()
     // function body
     local_body();
 
-    vm_emit_push_object(&vm, proc_obj);
+    vm_emit_push_object(&g_current_sk->vm, proc_obj);
 
     // return from function
-    vm_emit(&vm, OP_RET);
+    vm_emit(&g_current_sk->vm, OP_RET);
     vm_set_current_chunk(prev_chunk);
 
-    // vm_pop(&vm);    // remove proc_obj from stack
+    // vm_pop(&g_current_sk->vm);    // remove proc_obj from stack
 
     unindent();
     return 0;
@@ -438,8 +451,8 @@ static int parse_list()
         nargs++;
     }
 
-    vm_emit_number(&vm, nargs);
-    vm_emit(&vm, OP_LIST);
+    vm_emit_number(&g_current_sk->vm, nargs);
+    vm_emit(&g_current_sk->vm, OP_LIST);
 
     unindent();
     return 0;
@@ -462,11 +475,11 @@ static int load_expr()
     }
 
     // get filename
-    const char* filename = symbols[yylval.symbol].name;
+    const char* filename = g_current_sk->symbols[yylval.symbol].name;
     match(STRING);
 
     // load (parse) the file
-    push_filename_stack(filename);
+    push_filename_stack(g_current_sk, filename);
 
     unindent();
     return 0;
@@ -481,7 +494,7 @@ static int set()
 
     match(SET);
     // handle variable and check for undefined symbol
-    Object* key = vm_get_string(&vm, yylval.word);
+    Object* key = vm_get_string(&g_current_sk->vm, yylval.word);
     if (!key)
     {
         yyerror("entity undefined");
@@ -493,9 +506,9 @@ static int set()
 
     if (key)
     {
-        vm_emit_push_object(&vm, key);
+        vm_emit_push_object(&g_current_sk->vm, key);
         expr();
-        vm_emit(&vm, OP_STORE);
+        vm_emit(&g_current_sk->vm, OP_STORE);
     }
     else
         yyerror("entity undefined");
@@ -514,12 +527,12 @@ static int if_expr()
     match(IF);
 
     expr();                                 // condition
-	vm_emit(&vm, OP_BNT);                   // branch if not true
-	int else_addr = vm_emit(&vm, 0);        // reserve space for else clause address
+	vm_emit(&g_current_sk->vm, OP_BNT);                   // branch if not true
+	int else_addr = vm_emit(&g_current_sk->vm, 0);        // reserve space for else clause address
 
     expr();                                 // then branch expression
-	vm_emit(&vm, OP_BRA);                   // jump to endif
-    int endif_addr = vm_emit(&vm, 0);       // reserve space for endif address
+	vm_emit(&g_current_sk->vm, OP_BRA);                   // jump to endif
+    int endif_addr = vm_emit(&g_current_sk->vm, 0);       // reserve space for endif address
     vm_get_current_chunk()->code[else_addr] = vm_get_current_chunk()->count - else_addr;
 
 #ifdef IF_ELSE_REQUIRED
@@ -561,14 +574,14 @@ static int cond_expr()
         else
         {
             expr();                                // test/condition
-            vm_emit(&vm, OP_BNT);                  // branch if not true
-            int next_addr = vm_emit(&vm, 0);       // reserve space for next clause address
+            vm_emit(&g_current_sk->vm, OP_BNT);                  // branch if not true
+            int next_addr = vm_emit(&g_current_sk->vm, 0);       // reserve space for next clause address
 
             expr();                                // action/consequence
 
             // return last expr value
-            vm_emit(&vm, OP_BRA);                  // jump to end
-            addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for endif address
+            vm_emit(&g_current_sk->vm, OP_BRA);                  // jump to end
+            addr_list[terms++] = vm_emit(&g_current_sk->vm, 0);  // reserve space for endif address
             if (terms >= MAX_REL_CLAUSES)
             {
                 yyerror("too many terms in 'and' expression");
@@ -606,7 +619,7 @@ static int expr_tail()
     }
 
 	// push number of arguments onto stack
-    vm_emit_number(&vm, count);
+    vm_emit_number(&g_current_sk->vm, count);
 
     return count;
 }
@@ -622,18 +635,18 @@ static int and_expr()
 
     match(AND);
 
-    vm_emit_push_object(&vm, NULL);  // push a dummy nil value onto the stack
+    vm_emit_push_object(&g_current_sk->vm, NULL);  // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {
-        vm_emit(&vm, OP_POP);       // pop the duplicated value
+        vm_emit(&g_current_sk->vm, OP_POP);       // pop the duplicated value
         
         expr();
 
-        vm_emit(&vm, OP_DUP);       // duplicate the value for testing
-		vm_emit(&vm, OP_BNT);       // if any term is false, branch to end
+        vm_emit(&g_current_sk->vm, OP_DUP);       // duplicate the value for testing
+		vm_emit(&g_current_sk->vm, OP_BNT);       // if any term is false, branch to end
 
-        addr_list[terms++] = vm_emit(&vm, 0);      // reserve space for branch address
+        addr_list[terms++] = vm_emit(&g_current_sk->vm, 0);      // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'and' expression");
@@ -642,8 +655,8 @@ static int and_expr()
     }
 
 	// return last expr value
-	vm_emit(&vm, OP_BRA);
-    int end_addr = vm_emit(&vm, 0);     // reserve space for end address
+	vm_emit(&g_current_sk->vm, OP_BRA);
+    int end_addr = vm_emit(&g_current_sk->vm, 0);     // reserve space for end address
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
@@ -651,11 +664,11 @@ static int and_expr()
         vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
     }
 
-    vm_emit(&vm, OP_POP);  // pop the duplicated value
-    vm_emit(&vm, OP_FALSE);
+    vm_emit(&g_current_sk->vm, OP_POP);  // pop the duplicated value
+    vm_emit(&g_current_sk->vm, OP_FALSE);
 
     vm_get_current_chunk()->code[end_addr] = vm_get_current_chunk()->count - end_addr;
-    vm_emit(&vm, OP_NOP);
+    vm_emit(&g_current_sk->vm, OP_NOP);
 
     return 0;
 }
@@ -672,18 +685,18 @@ static int or_expr()
 
     match(OR);
 
-    vm_emit_push_object(&vm, NULL);      // push a dummy nil value onto the stack
+    vm_emit_push_object(&g_current_sk->vm, NULL);      // push a dummy nil value onto the stack
 
     while (lookahead != DONE && lookahead != ')')
     {
-        vm_emit(&vm, OP_POP);       // pop the duplicated value
+        vm_emit(&g_current_sk->vm, OP_POP);       // pop the duplicated value
         
         expr();
         
-        vm_emit(&vm, OP_DUP);       // duplicate the value for testing
-		vm_emit(&vm, OP_BNF);       // if any term is not false, branch to end
+        vm_emit(&g_current_sk->vm, OP_DUP);       // duplicate the value for testing
+		vm_emit(&g_current_sk->vm, OP_BNF);       // if any term is not false, branch to end
 
-        addr_list[terms++] = vm_emit(&vm, 0);  // reserve space for branch address
+        addr_list[terms++] = vm_emit(&g_current_sk->vm, 0);  // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror("too many terms in 'or' expression");
@@ -691,8 +704,8 @@ static int or_expr()
         }
     }
 
-    vm_emit(&vm, OP_POP);      // discard the duplicated value
-    vm_emit(&vm, OP_FALSE);
+    vm_emit(&g_current_sk->vm, OP_POP);      // discard the duplicated value
+    vm_emit(&g_current_sk->vm, OP_FALSE);
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)
@@ -700,7 +713,7 @@ static int or_expr()
         vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
     }
 
-    vm_emit(&vm, OP_NOP);
+    vm_emit(&g_current_sk->vm, OP_NOP);
 
     // return last expr value
     return 0;
@@ -768,7 +781,7 @@ static int expr()
             {
                 // handle native and regular function calls
                 // handle variable and check for undefined symbol
-                Object* key = vm_get_string(&vm, yylval.word);
+                Object* key = vm_get_string(&g_current_sk->vm, yylval.word);
                 
                 match(lookahead);
 
@@ -777,7 +790,7 @@ static int expr()
                     int local_fn = FALSE;
 
                     // look first for a local variable or param
-                    Object* proc = vm_get_local_var(&vm, ((String*)key)->value);
+                    Object* proc = vm_get_local_var(&g_current_sk->vm, ((String*)key)->value);
 
 					// if not found, look in globals
                     if (proc && IS_NUM(proc))
@@ -785,23 +798,23 @@ static int expr()
                         local_fn = TRUE;
                     }
                     else
-                        proc = vm_get_global(&vm, key);
+                        proc = vm_get_global(&g_current_sk->vm, key);
 
                     if (IS_FUNCTION(proc))
                     {
                         expr_tail(); // parse function arguments (if any)
 
-                        vm_emit_push_object(&vm, proc);
-                        vm_emit(&vm, OP_CALL);
-//                        vm_emit(&vm, (VMCode_t)proc);
+                        vm_emit_push_object(&g_current_sk->vm, proc);
+                        vm_emit(&g_current_sk->vm, OP_CALL);
+//                        vm_emit(&g_current_sk->vm, (VMCode_t)proc);
                     }
                     else if (local_fn)
                     {
                         expr_tail(); // parse function arguments (if any)
 
-                        vm_emit_number(&vm, AS_NUM(proc));
-                        vm_emit(&vm, OP_GET_LOCAL);
-                        vm_emit(&vm, OP_CALL);
+                        vm_emit_number(&g_current_sk->vm, AS_NUM(proc));
+                        vm_emit(&g_current_sk->vm, OP_GET_LOCAL);
+                        vm_emit(&g_current_sk->vm, OP_CALL);
                     }
                     else
                     {
@@ -825,7 +838,7 @@ static int expr()
 
     // print result of top-level exprs
     if (expr_level == 0)
-        vm_emit(&vm, OP_PRINT_TOS);   // print and discard top-level expr result
+        vm_emit(&g_current_sk->vm, OP_PRINT_TOS);   // print and discard top-level expr result
 
     return 0;
 }
@@ -840,8 +853,11 @@ int yyparse(SKState *pSK)
     if (yyin == NULL)
         return 0;
 
+    // set current parser state
+    g_current_sk = pSK;
+
     // prime the pump
-    lookahead = yylex();
+    lookahead = yylex(pSK);
 
     indent_level = 0;
 
@@ -862,15 +878,15 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
     // register with globals + string intern table
 	for (int i = 0; funcs[i].name && funcs[i].func; i++)
 	{
-        Object* key = vm_new_string(&vm, funcs[i].name);
-        vm_push(&vm, key);  // for GC safety
+        Object* key = vm_new_string(&g_current_sk->vm, funcs[i].name);
+        vm_push(&g_current_sk->vm, key);  // for GC safety
 
-        Object* native_fn = vm_newObject(&vm, sizeof(NativeFunction), OBJ_NATIVE_FN);
+        Object* native_fn = vm_newObject(&g_current_sk->vm, sizeof(NativeFunction), OBJ_NATIVE_FN);
         NativeFunction* nf = AS_OBJ(NativeFunction, native_fn);
         if (!nf)
         {
             yyerror("failed to alloc object");
-            vm_pop(&vm);    // remove key
+            vm_pop(&g_current_sk->vm);    // remove key
             return SK_FALSE;
         }
 
@@ -878,7 +894,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
         nf->arity = funcs[i].arity;
         nf->name = (String*) key;
         
-        vm_define_global(&vm, vm_pop(&vm), native_fn);
+        vm_define_global(&g_current_sk->vm, vm_pop(&g_current_sk->vm), native_fn);
 
         LOG("Registered built-in function '%s'\n", funcs[i].name);
     }
@@ -891,10 +907,44 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 //-----------------------------------------------
 int sk_init(SKState *pSK, int argc, char* argv[])
 {
+    if (!pSK) return FALSE;
+
+    // initialize SKState fields
+    memset(pSK, 0, sizeof(SKState));
+    
+    // allocate dynamic arrays
+    pSK->symbol_capacity = 256;
+    pSK->symbols = (Symbol_t*)calloc(pSK->symbol_capacity, sizeof(Symbol_t));
+    if (!pSK->symbols)
+    {
+        fprintf(stderr, "Failed to allocate symbol table!\n");
+        return FALSE;
+    }
+    
+    pSK->file_stack_capacity = 10;
+    pSK->file_stack = (FileNode*)calloc(pSK->file_stack_capacity, sizeof(FileNode));
+    if (!pSK->file_stack)
+    {
+        fprintf(stderr, "Failed to allocate file stack!\n");
+        free(pSK->symbols);
+        return FALSE;
+    }
+
+    pSK->symbol_count = 0;
+    pSK->file_stack_ptr = -1;  // start at -1, will be 0 after first push
+    pSK->err_count = 0;
+    pSK->warn_count = 0;
+    pSK->parse_log_enabled = 0;
+
+    // set current state for parser
+    g_current_sk = pSK;
+
     // initialize the VM
-    if (VM_OK != vm_init(&vm))
+    if (VM_OK != vm_init(&pSK->vm))
     {
         fprintf(stderr, "Failed to initialize VM!\n");
+        free(pSK->symbols);
+        free(pSK->file_stack);
         return FALSE;
     }
 
@@ -902,6 +952,8 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     if (SK_TRUE != sk_init_builtins(pSK))
     {
         fprintf(stderr, "Failed to register built-in functions!\n");
+        free(pSK->symbols);
+        free(pSK->file_stack);
         return FALSE;
     }
 
@@ -911,23 +963,59 @@ int sk_init(SKState *pSK, int argc, char* argv[])
 
     for (int i = argc - 1; i >= 0; i--)
     {
-        vm_push(&vm, (Object*)pair);    // stash pair on stack to prevent premature GC
-        alist = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
-		vm_push(&vm, (Object*)alist); // stash alist on stack to prevent premature GC
-        alist->car = vm_new_string(&vm, argv[i]);
-        vm_pop(&vm);                    // discard stashed list
-        vm_pop(&vm);                    // discard stashed pair
+        vm_push(&pSK->vm, (Object*)pair);    // stash pair on stack to prevent premature GC
+        alist = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+		vm_push(&pSK->vm, (Object*)alist); // stash alist on stack to prevent premature GC
+        alist->car = vm_new_string(&pSK->vm, argv[i]);
+        vm_pop(&pSK->vm);                    // discard stashed list
+        vm_pop(&pSK->vm);                    // discard stashed pair
 
         alist->cdr = (Object*)pair;
 
         pair = alist;
     }
     
-    vm_push(&vm, (Object*)alist);
-    Object* key = vm_new_string(&vm, "__env__");
-    vm_pop(&vm);
-    vm_define_global(&vm, key, (Object*)alist);
+    vm_push(&pSK->vm, (Object*)alist);
+    Object* key = vm_new_string(&pSK->vm, "__env__");
+    vm_pop(&pSK->vm);
+    vm_define_global(&pSK->vm, key, (Object*)alist);
 
+    return TRUE;
+}
+
+//-----------------------------------------------
+// shutdown skeme
+//-----------------------------------------------
+int sk_shutdown(SKState *pSK)
+{
+    if (!pSK) return FALSE;
+
+    // shutdown VM
+    vm_shutdown(&pSK->vm);
+
+    // free symbol table
+    if (pSK->symbols)
+    {
+        // free individual symbol names and filenames
+        for (int i = 0; i < pSK->symbol_count; i++)
+        {
+            if (pSK->symbols[i].name)
+                free((void*)pSK->symbols[i].name);
+            if (pSK->symbols[i].filename && strcmp(pSK->symbols[i].filename, "noname") != 0)
+                free((void*)pSK->symbols[i].filename);
+        }
+        free(pSK->symbols);
+        pSK->symbols = NULL;
+    }
+
+    // free file stack
+    if (pSK->file_stack)
+    {
+        free(pSK->file_stack);
+        pSK->file_stack = NULL;
+    }
+
+    g_current_sk = NULL;
     return TRUE;
 }
 
@@ -937,7 +1025,7 @@ int sk_init(SKState *pSK, int argc, char* argv[])
 int sk_parse(SKState *pSK)
 {
     int result = yyparse(pSK);
-    vm_emit(&vm, OP_HALT);
+    vm_emit(&g_current_sk->vm, OP_HALT);
     return result;
 }
 

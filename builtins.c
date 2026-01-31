@@ -44,7 +44,7 @@ int sk_display(SKState *pSK)
 	if (!pSK) return SK_FALSE;
 
     // pop the top of the stack and print it
-    Object *obj = vm_pop(&vm);
+    Object *obj = vm_pop(&pSK->vm);
 
     fprintf(stdout, TERM_BRIGHT_BLUE);
         vm_print_object(obj, VM_PRINT_PLAIN, stdout);
@@ -84,8 +84,8 @@ static int sk_parselog(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    g_bParseLog = !g_bParseLog;
-    yyinfo(g_bParseLog ? "Parser logging enabled" : "Parser logging disabled");
+    pSK->parse_log_enabled = !pSK->parse_log_enabled;
+    yyinfo(pSK->parse_log_enabled ? "Parser logging enabled" : "Parser logging disabled");
 
     return SK_TRUE;
 }
@@ -124,13 +124,13 @@ static int sk_nullp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (IS_NIL(obj))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -141,14 +141,14 @@ static int sk_eqp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
     if (obj1 == obj2)
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -159,15 +159,15 @@ static int sk_equalp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
 	// check for pointer equality first, covers nil, boolean, interned string and number too
     if (obj1 == obj2)
     {
         bool = MAKE_TRUE();
-        vm_push(&vm, bool);
+        vm_push(&pSK->vm, bool);
 		return SK_TRUE;
     }
 
@@ -179,7 +179,7 @@ static int sk_equalp(SKState* pSK)
         if (strcmp(str1->value, str2->value) == 0)
         {
             bool = MAKE_TRUE();
-            vm_push(&vm, bool);
+            vm_push(&pSK->vm, bool);
             return SK_TRUE;
         }
 	}
@@ -191,24 +191,24 @@ static int sk_equalp(SKState* pSK)
         Pair* pair2 = (Pair*)obj2;
 
         // check car and cdr for equality
-        vm_push(&vm, pair1->car);
-        vm_push(&vm, pair2->car);
+        vm_push(&pSK->vm, pair1->car);
+        vm_push(&pSK->vm, pair2->car);
         sk_equalp(pSK);
-        Object* car_equal = vm_pop(&vm);
+        Object* car_equal = vm_pop(&pSK->vm);
 
         if (IS_FALSE(car_equal))
         {
-            vm_push(&vm, bool);
+            vm_push(&pSK->vm, bool);
             return SK_TRUE;
         }
 
-        vm_push(&vm, pair1->cdr);
-        vm_push(&vm, pair2->cdr);
+        vm_push(&pSK->vm, pair1->cdr);
+        vm_push(&pSK->vm, pair2->cdr);
         sk_equalp(pSK);
-        Object* cdr_equal = vm_pop(&vm);
+        Object* cdr_equal = vm_pop(&pSK->vm);
         if (IS_FALSE(cdr_equal))
         {
-            vm_push(&vm, bool);
+            vm_push(&pSK->vm, bool);
             return SK_TRUE;
         }
 
@@ -216,7 +216,7 @@ static int sk_equalp(SKState* pSK)
         bool = MAKE_TRUE();
 	}
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -227,13 +227,13 @@ static int sk_numberp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (IS_NUM(obj))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -244,13 +244,13 @@ static int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_BOOL(obj))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -261,13 +261,13 @@ static int sk_pairp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -278,16 +278,16 @@ static int sk_cons(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_peek(&vm, 0);     // need objects to stay live for now in case of GC
-    Object* obj1 = vm_peek(&vm, 1);
+    Object* obj2 = vm_peek(&pSK->vm, 0);     // need objects to stay live for now in case of GC
+    Object* obj1 = vm_peek(&pSK->vm, 1);
 
-	Pair* pair = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);    // might GC here!
+	Pair* pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);    // might GC here!
     pair->car = obj1;
     pair->cdr = obj2;
 
-    vm_pop(&vm);        // done with obj2
-    vm_pop(&vm);        // done with obj1
-    vm_push(&vm, (Object*)pair);
+    vm_pop(&pSK->vm);        // done with obj2
+    vm_pop(&pSK->vm);        // done with obj1
+    vm_push(&pSK->vm, (Object*)pair);
     return SK_TRUE;
 }
 
@@ -298,13 +298,13 @@ static int sk_not(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (IS_BOOL(obj) && IS_FALSE(obj))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -315,7 +315,7 @@ static int sk_car(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     Object* result = NULL;
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
@@ -323,7 +323,7 @@ static int sk_car(SKState* pSK)
     else
         yyerror("argument to 'car' is not a pair");
 
-    vm_push(&vm, result);
+    vm_push(&pSK->vm, result);
     return SK_TRUE;
 }
 
@@ -334,7 +334,7 @@ static int sk_cdr(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     Object* result = NULL;
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
@@ -342,7 +342,7 @@ static int sk_cdr(SKState* pSK)
     else
         yyerror("argument to 'cdr' is not a pair");
 
-    vm_push(&vm, result);
+    vm_push(&pSK->vm, result);
     return SK_TRUE;
 }
 
@@ -354,13 +354,13 @@ static int sk_exit(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     // get arg count from stack
-    Object* raw_n = vm_pop(&vm);
+    Object* raw_n = vm_pop(&pSK->vm);
     int nargs = AS_NUM(raw_n);
     int exit_code = 0;
 
     if (nargs > 0)
     {
-        Object* obj = vm_pop(&vm);
+        Object* obj = vm_pop(&pSK->vm);
         if (obj && IS_NUM(obj))
         {
             exit_code = AS_NUM(obj);
@@ -382,17 +382,17 @@ static int sk_exit(SKState* pSK)
 //-----------------------------------------------
 // error message helper
 //-----------------------------------------------
-static void error_helper()
+static void error_helper(SKState* pSK)
 {
     const char* msg;
 
     // get message count from stack
-    Object* raw_n = vm_pop(&vm);
+    Object* raw_n = vm_pop(&pSK->vm);
     int n = AS_NUM(raw_n);
 
     for (int i = n - 1; i >= 0; i--)
     {
-        Object* obj = vm_peek(&vm, i);
+        Object* obj = vm_peek(&pSK->vm, i);
         if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
         {
             // Get the error message from the string object
@@ -401,7 +401,7 @@ static void error_helper()
         }
     }
 
-    vm_pop_n(&vm, n); // remove message strings from stack
+    vm_pop_n(&pSK->vm, n); // remove message strings from stack
 
     fputs("\n\n"TERM_RESET, stderr);
 }
@@ -413,8 +413,8 @@ static int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	fprintf(stderr, TERM_RED"Error: ");
-    error_helper();
+    fprintf(stderr, TERM_RED"Error: ");
+    error_helper(pSK);
     
     return SK_TRUE;
 }
@@ -427,7 +427,7 @@ static int sk_warn(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     fprintf(stderr, TERM_YELLOW"Warning: ");
-    error_helper();
+    error_helper(pSK);
     
     return SK_TRUE;
 }
@@ -440,7 +440,7 @@ static int sk_info(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     fprintf(stderr, TERM_GREEN"Info: ");
-    error_helper();
+    error_helper(pSK);
 
     return SK_TRUE;
 }
@@ -452,13 +452,13 @@ static int sk_stringp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -469,8 +469,8 @@ static int sk_listp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
 
     // check for proper list (nil or chain of pairs ending in nil)
     if (obj == NULL)
@@ -502,7 +502,7 @@ static int sk_listp(SKState* pSK)
             bool = MAKE_TRUE();
     }
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -513,7 +513,7 @@ static int sk_gc(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    vm_gc(&vm);
+    vm_gc(&pSK->vm);
 
     return SK_TRUE;
 }
@@ -526,13 +526,13 @@ static int sk_gc_stats(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     fprintf(stderr, "\t Live objects: %zu (%zu peak)\n\tObj Collected: %zu\n\tBytes alloc'd: %zu (%zu peak)\n\t    GC passes: %zu\n\t   Next GC at: %zu bytes\n",
-        vm.numObjects,
-        vm.peakObjects,
-        vm.objectsCollected,
-        vm.allocatedBytes,
-        vm.peakAllocatedBytes,
-        vm.gc_cycles,
-        vm.nextGC
+        pSK->vm.numObjects,
+        pSK->vm.peakObjects,
+        pSK->vm.objectsCollected,
+        pSK->vm.allocatedBytes,
+        pSK->vm.peakAllocatedBytes,
+        pSK->vm.gc_cycles,
+        pSK->vm.nextGC
     );
 
     return SK_TRUE;
@@ -545,13 +545,13 @@ static int sk_zerop(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* obj = vm_pop(&pSK->vm);
     
     if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
         bool = MAKE_TRUE();
     
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -562,13 +562,13 @@ int sk_atomp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&vm, TRUE);   // default to true
-    Object* obj = vm_pop(&vm);
+    Object* bool = vm_newBoolean(&pSK->vm, TRUE);   // default to true
+    Object* obj = vm_pop(&pSK->vm);
     
     if (IS_NIL(obj) || (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR))
         bool = MAKE_FALSE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -579,10 +579,10 @@ static int sk_mathop(SKState* pSK, char op)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* raw_n = vm_pop(&vm);
+    Object* raw_n = vm_pop(&pSK->vm);
     int n = AS_NUM(raw_n);
 
-    Object * obj1 = vm_peek(&vm, n - 1);   // get first term
+    Object * obj1 = vm_peek(&pSK->vm, n - 1);   // get first term
     if (!IS_NUM(obj1))
     {
         yyerror("arguments to mathop must be numbers");
@@ -594,7 +594,7 @@ static int sk_mathop(SKState* pSK, char op)
 
     for (int i = n - 2; i >= 0; i--)
     {
-        Object* obj2 = vm_peek(&vm, i);
+        Object* obj2 = vm_peek(&pSK->vm, i);
         if (!IS_NUM(obj2))
         {
             yyerror("arguments to mathop must be numbers");
@@ -635,12 +635,12 @@ static int sk_mathop(SKState* pSK, char op)
         }
 	}
 
-    vm_pop_n(&vm, n); // remove all args from stack
+    vm_pop_n(&pSK->vm, n); // remove all args from stack
     if (op != '=')
-		vm_push(&vm, MAKE_NUM(result));
+		vm_push(&pSK->vm, MAKE_NUM(result));
     else
     {
-        vm_push(&vm, logic_result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
+        vm_push(&pSK->vm, logic_result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
     }
 
     return SK_TRUE;
@@ -685,8 +685,8 @@ static int sk_less(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -694,11 +694,11 @@ static int sk_less(SKState* pSK)
         return SK_FALSE;
 	}
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
     if (AS_NUM(obj1) < AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
 
     return SK_TRUE;
 }
@@ -718,8 +718,8 @@ static int sk_less_equal(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -727,11 +727,11 @@ static int sk_less_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
     if (AS_NUM(obj1) <= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
 
     return SK_TRUE;
 }
@@ -743,8 +743,8 @@ static int sk_greater(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -752,11 +752,11 @@ static int sk_greater(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
     if (AS_NUM(obj1) > AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
 
     return SK_TRUE;
 }
@@ -768,8 +768,8 @@ static int sk_greater_equal(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj2 = vm_pop(&vm);
-    Object* obj1 = vm_pop(&vm);
+    Object* obj2 = vm_pop(&pSK->vm);
+    Object* obj1 = vm_pop(&pSK->vm);
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
@@ -777,11 +777,11 @@ static int sk_greater_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&vm, FALSE);   // default to false
+    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
     if (AS_NUM(obj1) >= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
-    vm_push(&vm, bool);
+    vm_push(&pSK->vm, bool);
 
     return SK_TRUE;
 }
@@ -800,7 +800,7 @@ static int sk_strings(SKState* pSK)
 
     // print interned strings
     printf("Interned strings:\n");
-    while(ht_next(vm.interned_strings, &index, &key, &value))
+    while(ht_next(pSK->vm.interned_strings, &index, &key, &value))
     {
         printf("  '%s'\n", (const char*)key);
         count++;
@@ -825,7 +825,7 @@ static int sk_globals(SKState* pSK)
 
     // print interned strings
     fprintf(stdout, "Global objects:\n");
-    while (ht_next(vm.global_table, &index, &key, &value))
+    while (ht_next(pSK->vm.global_table, &index, &key, &value))
     {
 		String* strKey = (String*)key;
         fprintf(stdout, "%10s\t", (const char*)strKey->value);
@@ -864,10 +864,10 @@ static int sk_length(SKState* pSK)
     // length function for lists and strings
     int count = 0;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!obj)
     {
-        vm_push(&vm, NULL); // length 0
+        vm_push(&pSK->vm, NULL); // length 0
         return SK_TRUE;
     }
 
@@ -898,7 +898,7 @@ static int sk_length(SKState* pSK)
         yyerror("argument to 'length' is not a list or string");
     }
 
-    vm_push(&vm, MAKE_NUM(count)); // push length as number object
+    vm_push(&pSK->vm, MAKE_NUM(count)); // push length as number object
     return SK_TRUE;
 }
 
@@ -910,17 +910,17 @@ static int sk_set_car(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     // implement set-car!
-    Object *obj = vm_peek(&vm, 1);
+    Object *obj = vm_peek(&pSK->vm, 1);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
-        vm_pop(&vm); // remove values
-        vm_pop(&vm);
+        vm_pop(&pSK->vm); // remove values
+        vm_pop(&pSK->vm);
         yyerror("argument to 'set-car!' is not a pair");
         return SK_FALSE;
     }
 
     Pair* pair = (Pair*)obj;
-    Object* new_car = vm_pop(&vm); // get new car value
+    Object* new_car = vm_pop(&pSK->vm); // get new car value
     pair->car = new_car;
 
     // leave pair on stack
@@ -936,17 +936,17 @@ static int sk_set_cdr(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     // implement set-car!
-    Object *obj = vm_peek(&vm, 1);
+    Object *obj = vm_peek(&pSK->vm, 1);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PAIR)
     {
-        vm_pop(&vm); // remove values
-        vm_pop(&vm);
+        vm_pop(&pSK->vm); // remove values
+        vm_pop(&pSK->vm);
         yyerror("argument to 'set-cdr!' is not a pair");
         return SK_FALSE;
     }
 
     Pair* pair = (Pair*)obj;
-    Object* new_cdr = vm_pop(&vm); // get new cdr value
+    Object* new_cdr = vm_pop(&pSK->vm); // get new cdr value
     pair->cdr = new_cdr;
 
     // leave pair on stack
@@ -961,7 +961,7 @@ static int sk_disasm(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PROCEDURE)
     {
         if (IS_FUNCTION(obj))
@@ -973,7 +973,7 @@ static int sk_disasm(SKState* pSK)
     }
 
     Procedure* proc = (Procedure*)obj;
-    vm_disassemble_chunk(&vm, &proc->chunk, proc->name ? proc->name->value : "<anonymous>");
+    vm_disassemble_chunk(&pSK->vm, &proc->chunk, proc->name ? proc->name->value : "<anonymous>");
 
     return SK_TRUE;
 }
@@ -985,7 +985,7 @@ static int sk_print_stack(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    vm_print_stack(&vm);
+    vm_print_stack(&pSK->vm);
 
     return SK_TRUE;
 }
@@ -1009,7 +1009,7 @@ static int sk_getenv(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object *key = vm_pop(&vm);
+    Object *key = vm_pop(&pSK->vm);
     if (!IS_OBJ(key) || OBJ_TYPE(key) != OBJ_STRING)
     {
         yyerror("argument to 'getenv' is not a string");
@@ -1020,11 +1020,11 @@ static int sk_getenv(SKState* pSK)
     const char *value = getenv(str);
     if (value)
     {
-        vm_push_string(&vm, value);
+        vm_push_string(&pSK->vm, value);
     }
     else
     {
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
     }
 
     return SK_TRUE;
@@ -1037,7 +1037,7 @@ static int sk_command_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-	vm_push_global(&vm, "__env__");
+	vm_push_global(&pSK->vm, "__env__");
 
     return SK_TRUE;
 }
@@ -1048,7 +1048,7 @@ static int sk_command_line(SKState* pSK)
 static int sk_typeof(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     const char* type_name = "unknown";
 
     if (!obj)
@@ -1116,7 +1116,7 @@ static int sk_typeof(SKState* pSK)
         }
     }
 
-    vm_push_string(&vm, type_name);
+    vm_push_string(&pSK->vm, type_name);
     return SK_TRUE;
 }
 
@@ -1127,7 +1127,7 @@ static int sk_mem_allocated(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    vm_push(&vm, MAKE_NUM((int)vm.allocatedBytes));
+    vm_push(&pSK->vm, MAKE_NUM((int)pSK->vm.allocatedBytes));
 
     return SK_TRUE;
 }
@@ -1161,18 +1161,18 @@ static int sk_number_to_string(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!IS_NUM(obj))
     {
         yyerror("number-to-string expects a number");
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
     int num = AS_NUM(obj);
     char buffer[SMALL_BUFFER];
     snprintf(buffer, sizeof(buffer), "%d", num);
-    vm_push_string(&vm, buffer);
+    vm_push_string(&pSK->vm, buffer);
 
     return SK_TRUE;
 }
@@ -1184,17 +1184,17 @@ static int sk_string_to_number(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
     {
         yyerror("string-to-number expects a string");
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
     String* str = (String*)obj;
     int num = atoi(str->value);
-    vm_push(&vm, MAKE_NUM(num));
+    vm_push(&pSK->vm, MAKE_NUM(num));
 
     return SK_TRUE;
 }
@@ -1206,11 +1206,11 @@ static int sk_delete_file(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
     {
         yyerror("delete-file expects a string filename");
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
@@ -1218,12 +1218,12 @@ static int sk_delete_file(SKState* pSK)
     int result = remove(filename->value);
     if (result == 0)
     {
-        vm_push(&vm, MAKE_TRUE());
+        vm_push(&pSK->vm, MAKE_TRUE());
     }
     else
     {
         yyerror("failed to delete file");
-        vm_push(&vm, MAKE_FALSE());
+        vm_push(&pSK->vm, MAKE_FALSE());
     }
 
     return SK_TRUE;
@@ -1236,11 +1236,11 @@ static int sk_read_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Port *port = (Port*) vm_pop(&vm);
+    Port *port = (Port*) vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
         yyerror("read-line expects a valid port object");
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
@@ -1248,7 +1248,7 @@ static int sk_read_line(SKState* pSK)
     if (fgets(buffer, sizeof(buffer), port->fptr) == NULL)
     {
         // EOF or error
-        vm_push(&vm, NULL); // push nil
+        vm_push(&pSK->vm, NULL); // push nil
     }
     else
     {
@@ -1258,7 +1258,7 @@ static int sk_read_line(SKState* pSK)
         {
             buffer[len - 1] = '\0';
         }
-        vm_push_string(&vm, buffer);
+        vm_push_string(&pSK->vm, buffer);
     }   
 
     return SK_TRUE;
@@ -1293,29 +1293,29 @@ static int sk_write_line(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Port *port = (Port*) vm_pop(&vm);
+    Port *port = (Port*) vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
         yyerror("write-line expects a valid port object");
 
         // replace output object with return value
-        vm_stack_replace_n(&vm, 0, NULL);
+        vm_stack_replace_n(&pSK->vm, 0, NULL);
 
         return SK_FALSE;
     }
 
-    String* str = (String*) vm_pop(&vm);
+    String* str = (String*) vm_pop(&pSK->vm);
     if (!IS_OBJ(str) || OBJ_TYPE(str) != OBJ_STRING)
     {
         yyerror("write-line expects a string");
-        vm_push(&vm, NULL);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
     // TODO - check return value
     fprintf(port->fptr, "%s\n", str->value);
 
-    vm_push(&vm, MAKE_TRUE());
+    vm_push(&pSK->vm, MAKE_TRUE());
     return SK_TRUE;
 }
 
@@ -1337,20 +1337,20 @@ static int sk_write(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Port* port = (Port*)vm_pop(&vm);
+    Port* port = (Port*)vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
         yyerror("write expects a valid port object");
         
         // replace output object with return value
-        vm_stack_replace_n(&vm, 0, NULL);
+        vm_stack_replace_n(&pSK->vm, 0, NULL);
 
         return SK_FALSE;
     }
 
-	vm_print_object(vm_pop(&vm), VM_PRINT_READABLE, port->fptr);
+	vm_print_object(vm_pop(&pSK->vm), VM_PRINT_READABLE, port->fptr);
 
-    vm_push(&vm, MAKE_TRUE());
+    vm_push(&pSK->vm, MAKE_TRUE());
     return SK_TRUE;
 }
 
@@ -1364,12 +1364,12 @@ static int sk_string_append(SKState* pSK)
 	char buffer[LARGE_BUFFER] = { 0 };
 
     // get message count from stack
-    Object* raw_n = vm_pop(&vm);
+    Object* raw_n = vm_pop(&pSK->vm);
     int n = AS_NUM(raw_n);
 
     for (int i = n - 1; i >= 0; i--)
     {
-        Object* obj = vm_peek(&vm, i);
+        Object* obj = vm_peek(&pSK->vm, i);
         if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
         {
             // Get the error message from the string object
@@ -1378,14 +1378,14 @@ static int sk_string_append(SKState* pSK)
         else
             {
             yyerror("arguments to 'string-append' must be strings");
-            vm_pop_n(&vm, n);            // remove message strings from stack
-			vm_push(&vm, NULL);          // push nil
+            vm_pop_n(&pSK->vm, n);            // remove message strings from stack
+			vm_push(&pSK->vm, NULL);          // push nil
             return SK_FALSE;
 		}
     }
 
-    vm_pop_n(&vm, n);               // remove message strings from stack
-	vm_push_string(&vm, buffer);    // push concatenated string
+    vm_pop_n(&pSK->vm, n);               // remove message strings from stack
+	vm_push_string(&pSK->vm, buffer);    // push concatenated string
 
     return SK_TRUE;
 }
@@ -1408,8 +1408,8 @@ static int sk_modulo(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* modulus_obj = vm_pop(&vm);
-    Object* dividend_obj = vm_pop(&vm);
+    Object* modulus_obj = vm_pop(&pSK->vm);
+    Object* dividend_obj = vm_pop(&pSK->vm);
 
     if (!dividend_obj || !IS_NUM(dividend_obj) || !modulus_obj || !IS_NUM(modulus_obj))
     {
@@ -1425,7 +1425,7 @@ static int sk_modulo(SKState* pSK)
 		return SK_FALSE;
 	}
 
-    vm_push(&vm, MAKE_NUM(dividend % modulus));
+    vm_push(&pSK->vm, MAKE_NUM(dividend % modulus));
 
     return SK_TRUE;
 }
@@ -1437,16 +1437,16 @@ static int sk_open_file(SKState* pSK, char *mode)
 {
     if (!pSK) return SK_FALSE;
 
-    String* name = (String*)vm_peek(&vm, 0);
+    String* name = (String*)vm_peek(&pSK->vm, 0);
     if (!IS_STRING(name))
     {
         yyerror("open-file expects a string filename");
-        vm_pop(&vm);
-        vm_push(&vm, NULL);
+        vm_pop(&pSK->vm);
+        vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
-    Port* port = (Port*)vm_newObject(&vm, sizeof(Port), OBJ_PORT);
+    Port* port = (Port*)vm_newObject(&pSK->vm, sizeof(Port), OBJ_PORT);
     port->fptr = NULL;
     port->name = NULL;
 
@@ -1454,15 +1454,15 @@ static int sk_open_file(SKState* pSK, char *mode)
 	if (!fptr)
 	{
 		yyerror("failed to open file");
-		vm_pop(&vm);           // remove filename
-		vm_push(&vm, NULL);     // push nil
+		vm_pop(&pSK->vm);           // remove filename
+		vm_push(&pSK->vm, NULL);     // push nil
 		return SK_FALSE;
 	}
 
 	port->fptr = fptr;          // store the file pointer
     port->name = name;          // store the filename
-    vm_pop(&vm);                // remove filename from stack
-    vm_push(&vm, (Object*)port);
+    vm_pop(&pSK->vm);                // remove filename from stack
+    vm_push(&pSK->vm, (Object*)port);
 
     return SK_TRUE;
 }
@@ -1490,11 +1490,11 @@ static int sk_close_file(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&vm);
+    Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || !IS_PORT(obj))
 	{
 		yyerror("close-file expects a file object");
-        vm_push(&vm, MAKE_FALSE());
+        vm_push(&pSK->vm, MAKE_FALSE());
 		return SK_FALSE;
 	}
 
@@ -1506,7 +1506,7 @@ static int sk_close_file(SKState* pSK)
         port->name = NULL;
 	}
 
-    vm_push(&vm, MAKE_TRUE());
+    vm_push(&pSK->vm, MAKE_TRUE());
     return SK_TRUE;
 }
 
@@ -1517,7 +1517,7 @@ static int sk_reverse(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object *obj = vm_peek(&vm, 0);
+    Object *obj = vm_peek(&pSK->vm, 0);
     if (IS_NIL(obj))
     {
         return SK_TRUE;
@@ -1526,27 +1526,27 @@ static int sk_reverse(SKState* pSK)
     if (!IS_PAIR(obj))
     {
 		yyerror("argument to 'reverse' is not a list");
-        vm_pop(&vm);
+        vm_pop(&pSK->vm);
 		return SK_FALSE;
     }
 
     Pair* current = (Pair*)obj;
     Pair* reversed = NULL;
-    vm_push(&vm, NULL); // push dummy on stack to keep new list alive in case of GC
+    vm_push(&pSK->vm, NULL); // push dummy on stack to keep new list alive in case of GC
 
     while (current && IS_PAIR(current))
 	{
-		Pair* new_pair = (Pair*)vm_newObject(&vm, sizeof(Pair), OBJ_PAIR);
-        vm_pop(&vm);            // remove dummy
+		Pair* new_pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+        vm_pop(&pSK->vm);            // remove dummy
 		new_pair->car = current->car;
 		new_pair->cdr = (Object*)reversed;
 		reversed = new_pair;
-        vm_push(&vm, (Object*)reversed);  // keep alive in case of GC
+        vm_push(&pSK->vm, (Object*)reversed);  // keep alive in case of GC
 		current = (Pair*)current->cdr;
 	}
     
-    vm_pop_n(&vm, 2);                   // remove original list and dummy
-    vm_push(&vm, (Object*)reversed);
+    vm_pop_n(&pSK->vm, 2);                   // remove original list and dummy
+    vm_push(&pSK->vm, (Object*)reversed);
 
     return SK_TRUE;
 }
@@ -1678,7 +1678,7 @@ int sk_init_builtins(SKState* pSK)
     sk_register_functions(pSK, built_in_funcs);
     
 	// create default ports
-	vm_create_default_ports(&vm);
+	vm_create_default_ports(&pSK->vm);
 
     return SK_TRUE;
 }
