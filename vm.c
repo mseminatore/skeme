@@ -126,7 +126,10 @@ CodeChunk* vm_get_current_chunk()
 }
 
 //--------------------------------------
-//
+// Set the current code chunk for bytecode generation
+// Returns the previous chunk, or NULL if the input chunk is NULL (error)
+// Note: This function is defensive - callers always pass valid chunk addresses
+// like &proc->chunk, so the null check should never trigger in normal operation
 //--------------------------------------
 CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
 {
