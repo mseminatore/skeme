@@ -130,18 +130,23 @@ int pop_file_stack(SKState* pSK)
 
     free(pSK->file_stack[pSK->file_stack_ptr].filename);
 
-    if (pSK->file_stack[pSK->file_stack_ptr].fptr != stdin)
-        fclose(pSK->file_stack[pSK->file_stack_ptr].fptr);
-    else
+    // Close the file handle, but not stdin
+    if (pSK->file_stack[pSK->file_stack_ptr].fptr != stdin &&
+        pSK->file_stack[pSK->file_stack_ptr].fptr != NULL)
     {
-        yyerror("attempt to close stdin!");
-        return FALSE;
+        fclose(pSK->file_stack[pSK->file_stack_ptr].fptr);
     }
 
     pSK->file_stack_ptr--;
-    yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
+    
+    // Set yyin to the previous file (or NULL if we're back to sentinel)
+    if (pSK->file_stack_ptr >= 0)
+        yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
+    else
+        yyin = NULL;
 
-    if (NULL == yyin || stdin == yyin)
+    // Return FALSE if we're back to an invalid state (no file or sentinel)
+    if (pSK->file_stack_ptr <= 0 || yyin == NULL)
         return FALSE;
 
     return TRUE;

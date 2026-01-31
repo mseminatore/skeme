@@ -161,6 +161,14 @@ int main(int argc, char *argv[])
             printf(PROMPT);
 
         sk_parse(&sk);
+        
+        // Exit if we've reached EOF on stdin
+        if (yyin == NULL || (yyin == stdin && feof(yyin)))
+        {
+            g_bDone = TRUE;
+            break;
+        }
+        
         vm_exec(&sk.vm, repl_chunk.code);
 
         if (sk.vm.sp)
