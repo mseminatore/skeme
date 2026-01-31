@@ -60,3 +60,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Coverage files
+*.gcda
+*.gcno
+*.gcov
