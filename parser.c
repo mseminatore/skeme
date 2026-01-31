@@ -57,17 +57,34 @@ static void unindent()
 //------------------------
 void yyerror(const char *s)
 {
-    if (yyin == stdin)
+    if (g_current_sk) {
+        // Check if stdin to avoid file context
+        if (yyin == stdin) {
+            // Clear file context for stdin
+            char* saved_file = g_current_sk->file_stack_ptr >= 0 ? 
+                               g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename : NULL;
+            int saved_line = g_current_sk->file_stack_ptr >= 0 ?
+                             g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno : 0;
+            
+            // Temporarily clear for stdin
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = NULL;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
+            }
+            
+            sk_log(g_current_sk, SK_LOG_ERROR, "%s", s);
+            
+            // Restore
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = saved_file;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
+            }
+        } else {
+            sk_log(g_current_sk, SK_LOG_ERROR, "%s", s);
+        }
+    } else {
         fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
-    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
-        fprintf(stderr, TERM_RED"ERROR: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
-    else
-        fprintf(stderr, TERM_RED"ERROR: '%s'\n"TERM_RESET, s);
-    
-    if (g_current_sk)
-        g_current_sk->err_count++;
+    }
 }
 
 //------------------------
@@ -75,17 +92,34 @@ void yyerror(const char *s)
 //------------------------
 void yywarning(const char *s)
 {
-    if (yyin == stdin)
+    if (g_current_sk) {
+        // Check if stdin to avoid file context
+        if (yyin == stdin) {
+            // Clear file context for stdin
+            char* saved_file = g_current_sk->file_stack_ptr >= 0 ? 
+                               g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename : NULL;
+            int saved_line = g_current_sk->file_stack_ptr >= 0 ?
+                             g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno : 0;
+            
+            // Temporarily clear for stdin
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = NULL;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
+            }
+            
+            sk_log(g_current_sk, SK_LOG_WARNING, "%s", s);
+            
+            // Restore
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = saved_file;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
+            }
+        } else {
+            sk_log(g_current_sk, SK_LOG_WARNING, "%s", s);
+        }
+    } else {
         fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
-    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
-        fprintf(stderr, TERM_YELLOW"WARNING: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
-    else
-        fprintf(stderr, TERM_YELLOW"WARNING: '%s'\n"TERM_RESET, s);
-    
-    if (g_current_sk)
-        g_current_sk->warn_count++;
+    }
 }
 
 //------------------------
@@ -93,14 +127,34 @@ void yywarning(const char *s)
 //------------------------
 void yyinfo(const char *s)
 {
-    if (yyin == stdin)
+    if (g_current_sk) {
+        // Check if stdin to avoid file context
+        if (yyin == stdin) {
+            // Clear file context for stdin
+            char* saved_file = g_current_sk->file_stack_ptr >= 0 ? 
+                               g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename : NULL;
+            int saved_line = g_current_sk->file_stack_ptr >= 0 ?
+                             g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno : 0;
+            
+            // Temporarily clear for stdin
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = NULL;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = 0;
+            }
+            
+            sk_log(g_current_sk, SK_LOG_INFO, "%s", s);
+            
+            // Restore
+            if (g_current_sk->file_stack_ptr >= 0) {
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename = saved_file;
+                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno = saved_line;
+            }
+        } else {
+            sk_log(g_current_sk, SK_LOG_INFO, "%s", s);
+        }
+    } else {
         fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
-    else if (g_current_sk && g_current_sk->file_stack_ptr >= 0)
-        fprintf(stderr, TERM_GREEN"INFO: '%s' in file '%s' near line %d\n"TERM_RESET, s, 
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].filename,
-                g_current_sk->file_stack[g_current_sk->file_stack_ptr].yylineno);
-    else
-        fprintf(stderr, TERM_GREEN"INFO: '%s'\n"TERM_RESET, s);
+    }
 }
 
 //---------------------------------------------------
@@ -935,6 +989,11 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     pSK->err_count = 0;
     pSK->warn_count = 0;
     pSK->parse_log_enabled = 0;
+
+    // initialize error handling
+    pSK->error_handler = sk_default_error_handler;
+    pSK->error_stream = stderr;
+    pSK->output_stream = stdout;
 
     // initialize sentinel entry at index 0
     pSK->file_stack[0].fptr = NULL;
