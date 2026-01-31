@@ -132,7 +132,11 @@ CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
 {
     VM_LOG("vm: set current chunk = %p", chunk);
 
-    assert(chunk);
+    if (!chunk)
+    {
+        yyerror("vm_set_current_chunk: null chunk pointer");
+        return NULL;
+    }
 
     CodeChunk* previous_chunk = g_current_chunk;
     g_current_chunk = chunk;
@@ -151,7 +155,7 @@ static int compare_fn(const void* a, const void* b)
 // Initialize the VM
 //--------------------------------------------------------------
 int vm_init(VM* pvm) {
-    CHECK_THAT(pvm != NULL);
+    CHECK_THAT_MSG(pvm != NULL, "vm_init: null VM pointer");
 
     pvm->sp = 0;
     pvm->fp = 0;
@@ -203,7 +207,7 @@ int vm_init(VM* pvm) {
 //--------------------------------------------------------------
 int vm_shutdown(VM* pvm)
 {
-    CHECK_THAT(pvm != NULL);
+    CHECK_THAT_MSG(pvm != NULL, "vm_shutdown: null VM pointer");
 
     vm_freeObjects(pvm);
 
@@ -224,7 +228,7 @@ int vm_shutdown(VM* pvm)
 //--------------------------------------------------------------
 int vm_clear_stack(VM* pvm)
 {
-    CHECK_THAT(pvm != NULL);
+    CHECK_THAT_MSG(pvm != NULL, "vm_clear_stack: null VM pointer");
 
     pvm->sp = 0;
 
@@ -312,7 +316,7 @@ void vm_clear_code(VM* pvm)
 //--------------------------------------------------------------
 int vm_reset(VM* pvm)
 {
-    CHECK_THAT(pvm != NULL);
+    CHECK_THAT_MSG(pvm != NULL, "vm_reset: null VM pointer");
 
     vm_clear_stack(pvm);
     vm_clear_code(pvm);
