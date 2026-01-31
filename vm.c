@@ -1005,7 +1005,7 @@ static void removeWhiteObjects(VM* pvm) {
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
-    int UNUSED removed = 0;
+    int SK_UNUSED removed = 0;
 
     // only remove unmarked strings
     while(ht_next(pvm->interned_strings, &index, &key, &value))
@@ -1032,7 +1032,7 @@ static void removeWhiteObjects(VM* pvm) {
 void vm_gc(VM* pvm) {
     GC_LOG("-- gc begin\n");
 
-    size_t before UNUSED = pvm->allocatedBytes;
+    size_t before SK_UNUSED = pvm->allocatedBytes;
 
     markObjects(pvm);
 
@@ -1043,7 +1043,7 @@ void vm_gc(VM* pvm) {
     // remove strings from the intern table that are not marked
     removeWhiteObjects(pvm);
 
-    int freed UNUSED = sweepObjects(pvm);
+    int freed SK_UNUSED = sweepObjects(pvm);
 
     pvm->gc_cycles++;
     

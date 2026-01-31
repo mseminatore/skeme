@@ -1,6 +1,6 @@
 TARGET = skeme
-DEPS	= parser.h lexer.h vm.h term_colors.h
-OBJS	= main.o parser.o lexer.o vm.o builtins.o io.o
+DEPS	= parser.h lexer.h vm.h term_colors.h platform.h
+OBJS	= main.o parser.o lexer.o vm.o builtins.o io.o platform.o
 CFLAGS	+= -I. -g -Wall
 LIBS	= -lm -lht
 LFLAGS  += -L./hash

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdint.h> // Add this include at the top of the file, before typedefs
 #include "hash/hash.h"
+#include "platform.h"
 
 #define VM_OK 1
 #define VM_ERR -1
@@ -32,12 +33,6 @@
 #define GROW_CAPACITY(capacity) ((capacity) < ARRAY_MIN_CAPACITY ? ARRAY_MIN_CAPACITY : (capacity) * ARRAY_GROWTH_FACTOR)
 #define GROW_ARRAY(type, array, oldCount, newCount) (type*)vm_realloc(&vm, array, sizeof(type) * (oldCount), sizeof(type) * (newCount))
 //#define SHRINK_CAPACITY(capacity) ((capacity) >> 1)
-
-#ifdef _WIN32
-#   define UNUSED //__declspec(unused)
-#else
-#   define UNUSED __attribute__((unused))
-#endif
 
 #ifndef TRUE
 #   define TRUE 1
