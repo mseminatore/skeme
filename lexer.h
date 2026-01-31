@@ -22,9 +22,9 @@
 #   define strdup _strdup
 #endif
 
-#define LAST_SYMBOL       symbols[symbol_count - 1]
-#define CURRENT_FILE      file_nodes[file_stack_ptr].filename
-#define CURRENT_LINENO    file_nodes[file_stack_ptr].yylineno
+#define LAST_SYMBOL       (pSK->symbols[pSK->symbol_count - 1])
+#define CURRENT_FILE      (pSK->file_stack[pSK->file_stack_ptr].filename)
+#define CURRENT_LINENO    (pSK->file_stack[pSK->file_stack_ptr].yylineno)
 
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
@@ -86,23 +86,19 @@ enum { ID = 256, DEFINE, LAMBDA, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FA
 
 // externals
 extern int lookahead;
-extern int symbol_count;
 extern YYLVAL yylval;
-extern Symbol_t symbols[];
 extern int lineno;
 extern int g_bDebug;
-extern int file_stack_ptr;
-extern FileNode file_nodes[];
 
 // function decls
-int push_fileptr_stack(FILE *fptr, const char* filename);
-int push_filename_stack(const char *filename);
-int pop_file_stack(void);
+int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename);
+int push_filename_stack(SKState* pSK, const char *filename);
+int pop_file_stack(SKState* pSK);
 
-int yylex();
+int yylex(SKState* pSK);
 void LOG(const char *fmt, ...);
 void yyerror(const char*);
-int add_symbol(const char* name, int lineno);
-int lookup_symbol(const char* name);
+int add_symbol(SKState* pSK, const char* name, int lineno);
+int lookup_symbol(SKState* pSK, const char* name);
 
 #endif // __LEXER_H

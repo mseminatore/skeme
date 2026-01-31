@@ -33,6 +33,9 @@
 #define SK_ARITY_ONE_OR_MORE -3
 #define SK_ARITY_TWO_OR_MORE -4
 
+#define SK_UNKNOWN_FILE "<unknown>"
+#define SK_NONAME_FILE "noname"
+
 // function set structure
 typedef struct
 {
@@ -44,29 +47,35 @@ typedef struct
 // skeme state structure
 struct SKState
 {
-	int unused;
-    // VM vm;
+    VM vm;
+    Symbol_t* symbols;
+    int symbol_count;
+    int symbol_capacity;
+    FileNode* file_stack;
+    int file_stack_ptr;
+    int file_stack_capacity;
+    int err_count;
+    int warn_count;
+    int parse_log_enabled;
 };
 
-extern VM vm;
 extern int g_bDone;
-extern int g_bParseLog;
 
 //-----------------
 // function decls
 //-----------------
 int yyparse(SKState *pSK);
-void dump_symbols();
+void dump_symbols(SKState* pSK);
 void yyerror(const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 
 int sk_init(SKState *pSK, int argc, char *argv[]);
+int sk_shutdown(SKState *pSK);
 int sk_parse(SKState *pSK);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_display(SKState *pSK);
 
-extern int err_count;
-extern int warn_count;
+
 
 #endif // __PARSER_H
