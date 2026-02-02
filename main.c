@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "parser.h"
+#include "sk.h"
 #include "term_colors.h"
 
 #define PROMPT TERM_BRIGHT_GREEN"skeme> "TERM_RESET
@@ -76,20 +76,6 @@ int getopt(SKState* pSK, int n, char *args[])
 	}
 
 	return i;
-}
-
-//-----------------------------------
-// define a variable
-//-----------------------------------
-int sk_define(SKState* pSK, const char *key, Object *value)
-{
-    if (!pSK) return SK_FALSE;
-
-    vm_push(&pSK->vm, value);
-    vm_define_global(&pSK->vm, (Object*)vm_new_string(&pSK->vm, key), value);
-    vm_pop(&pSK->vm);
-
-    return SK_TRUE;
 }
 
 //-----------------------------------
