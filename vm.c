@@ -353,6 +353,30 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("POP\n");
             break;
 
+        case OP_PUSH_IP:
+            printf("PUSH IP\n");
+            break;
+
+        case OP_POP_IP:
+            printf("POP IP\n");
+            break;
+
+        case OP_PUSH_FP:
+            printf("PUSH FP\n");
+            break;
+
+        case OP_POP_FP:
+            printf("POP FP\n");
+            break;
+
+        case OP_PUSH_SP:
+            printf("PUSH SP\n");
+            break;
+
+        case OP_POP_SP:
+            printf("POP SP\n");
+            break;
+
         case OP_NUM:
             printf("PUSH NUM %zd\n", *ip++);
             break;
@@ -503,6 +527,42 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         case OP_POP:    // pop object from stack
             VM_LOG("POP obj\n");
             vm_pop(pvm);
+            break;
+
+        case OP_PUSH_IP:     // push instruction pointer onto return stack
+            VM_LOG("PUSH IP\n");
+            vm_push_ip(pvm, pvm->ip);
+            break;
+
+        case OP_POP_IP:      // pop instruction pointer from return stack
+            VM_LOG("POP IP\n");
+            pvm->ip = vm_pop_ip(pvm);
+            break;
+
+        case OP_PUSH_FP:     // push frame pointer onto stack
+            VM_LOG("PUSH FP\n");
+            vm_push(pvm, MAKE_NUM(pvm->fp));
+            break;
+
+        case OP_POP_FP:      // pop frame pointer from stack
+            VM_LOG("POP FP\n");
+            {
+                Object* fp_obj = vm_pop(pvm);
+                pvm->fp = AS_NUM(fp_obj);
+            }
+            break;
+
+        case OP_PUSH_SP:     // push stack pointer onto stack
+            VM_LOG("PUSH SP\n");
+            vm_push(pvm, MAKE_NUM(pvm->sp));
+            break;
+            
+        case OP_POP_SP:      // pop stack pointer from stack    
+            VM_LOG("POP SP\n");
+            {
+                Object* sp_obj = vm_pop(pvm);
+                pvm->sp = AS_NUM(sp_obj);
+            }
             break;
 
         case OP_DUP:    // duplicate top of stack

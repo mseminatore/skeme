@@ -152,6 +152,12 @@ enum {
     OP_HALT,        // halt the VM
     OP_PUSH,        // push a value onto the stack
     OP_POP,         // pop a value from the stack
+    OP_PUSH_IP,     // push instruction pointer onto return stack
+    OP_POP_IP,      // pop instruction pointer from return stack
+    OP_PUSH_FP,     // push frame pointer onto stack
+    OP_POP_FP,      // pop frame pointer from stack
+    OP_PUSH_SP,     // push stack pointer onto stack
+    OP_POP_SP,      // pop stack pointer from stack    
     OP_NUM,         // push a numeric value onto the stack
     OP_STRING,      // push a string value onto the stack
     OP_TRUE,        // push the boolean value true onto the stack
@@ -174,7 +180,7 @@ enum {
     OP_PRINT_TOS,   // print the top of the stack
     OP_LAST         // last opcode
 };
-
+    
 // opcode type
 typedef intptr_t VMCode_t;
 
