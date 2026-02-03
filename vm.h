@@ -44,10 +44,10 @@
 
 #ifdef _DEBUG
 #   define CHECK_THAT(cond)            do { assert(cond); if (!(cond)) return VM_ERR; } while(0)
-#   define CHECK_THAT_MSG(cond, msg)   do { if (!(cond)) { yyerror(msg); return VM_ERR; } } while(0)
+#   define CHECK_THAT_MSG(pSK, cond, msg)   do { if (!(cond)) { yyerror(pSK, msg); return VM_ERR; } } while(0)
 #else
 #   define CHECK_THAT(cond)            do { if (!(cond)) return VM_ERR; } while(0)
-#   define CHECK_THAT_MSG(cond, msg)   do { if (!(cond)) { yyerror(msg); return VM_ERR; } } while(0)
+#   define CHECK_THAT_MSG(pSK, cond, msg)   do { if (!(cond)) { yyerror(pSK, msg); return VM_ERR; } } while(0)
 #endif
 
 //#ifdef VM_DEBUG_LOG
@@ -69,7 +69,6 @@ extern int g_bGCLog;
 extern int g_bVMLog;
 extern int g_bGCStress;
 
-void yyerror(const char *s);
 
 //-----------------------------
 // Define the Object structure
@@ -126,8 +125,10 @@ typedef struct Object {
 typedef struct SKState SKState;
 typedef int (*SKFunc)(SKState* pSK);
 
+void yyerror(SKState* pSK, const char *s);
+
 // object types
-enum 
+enum
 {
     OBJ_MARK_BIT,
     OBJ_NULL,
@@ -295,7 +296,7 @@ void vm_emit_string(VM* pvm, const char *str);
 void vm_emit_push_object(VM* pvm, Object* obj);
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
 CodeChunk* vm_get_current_chunk();
-CodeChunk* vm_set_current_chunk(CodeChunk* chunk);
+CodeChunk* vm_set_current_chunk(VM* pvm, CodeChunk* chunk);
 void vm_init_chunk(CodeChunk* chunk);
 void vm_free_chunk(VM* pvm, CodeChunk* chunk);
 VMCode_t* vm_get_chunk_ip();

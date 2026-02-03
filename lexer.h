@@ -92,7 +92,7 @@ int pop_file_stack(SKState* pSK);
 
 int yylex(SKState* pSK);
 void LOG(const char *fmt, ...);
-void yyerror(const char*);
+void yyerror(SKState* pSK, const char*);
 int add_symbol(SKState* pSK, const char* name, int lineno);
 int lookup_symbol(SKState* pSK, const char* name);
 

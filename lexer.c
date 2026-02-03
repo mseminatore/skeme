@@ -74,7 +74,7 @@ int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename)
         FileNode* new_stack = (FileNode*)realloc(pSK->file_stack, new_capacity * sizeof(FileNode));
         if (!new_stack)
         {
-            yyerror("failed to grow file stack!");
+            yyerror(pSK, "failed to grow file stack!");
             return FALSE;
         }
         pSK->file_stack = new_stack;
@@ -100,7 +100,7 @@ int push_filename_stack(SKState* pSK, const char* filename)
     FILE* fptr = fopen(filename, "rt");
     if (!fptr)
     {
-        yyerror("file not found!");
+        yyerror(pSK, "file not found!");
         return FALSE;
     }
 
@@ -183,7 +183,7 @@ int add_symbol(SKState* pSK, const char *name, int lineno)
         Symbol_t* new_symbols = (Symbol_t*)realloc(pSK->symbols, new_capacity * sizeof(Symbol_t));
         if (!new_symbols)
         {
-            yyerror("failed to grow symbol table!");
+            yyerror(pSK, "failed to grow symbol table!");
             return -1;
         }
         pSK->symbols = new_symbols;
@@ -345,7 +345,7 @@ int getString(SKState* pSK, int delim)
     while (c != delim && cptr < &buf[sizeof(buf)])
     {
         if (c == '\n' || c == EOF)
-            yyerror("missing end quote");
+            yyerror(pSK, "missing end quote");
 
         *cptr++ = backslash(pSK, c);
         c = getch(pSK);

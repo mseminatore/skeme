@@ -84,10 +84,9 @@ static void log_with_stdin_check(SKState* pSK, SKLogLevel level, const char *s,
 //------------------------
 // error routine
 //------------------------
-void yyerror(const char *s)
+void yyerror(SKState* pSK, const char *s)
 {
-    extern SKState* g_current_sk;
-    log_with_stdin_check(g_current_sk, SK_LOG_ERROR, s, TERM_RED, "ERROR");
+    log_with_stdin_check(pSK, SK_LOG_ERROR, s, TERM_RED, "ERROR");
 }
 
 //------------------------
@@ -111,12 +110,12 @@ void yyinfo(const char *s)
 //---------------------------------------------------
 // error message for unexpected tokens
 //---------------------------------------------------
-static void expected(int token)
+static void expected(SKState* pSK, int token)
 {
 	if (token < 256)
-		yyerror("unexpected character"); //'%c'", token);
+		yyerror(pSK, "unexpected character"); //'%c'", token);
 	else
-		yyerror("expected token"); //'%s'", getLexemeFromToken(token));
+		yyerror(pSK, "expected token"); //'%s'", getLexemeFromToken(token));
 }
 
 //---------------------------------------------------
@@ -130,7 +129,7 @@ static int match(SKState* pSK, int token)
 	}
 	else
 	{
-		expected(token);
+		expected(pSK, token);
 	}
 
 	return LOOKAHEAD;
@@ -233,7 +232,7 @@ static int atom(SKState* pSK)
 
             if (!key)
             {
-                yyerror("entity undefined");
+                yyerror(pSK, "entity undefined");
             }
             else if (IS_NUM(obj))
             {
@@ -251,7 +250,7 @@ static int atom(SKState* pSK)
         break;
     
     default:
-        yyerror("syntax error");
+        yyerror(pSK, "syntax error");
         match(pSK, LOOKAHEAD);
         unindent(pSK);
         return 0;
@@ -343,10 +342,10 @@ static int definition(SKState* pSK)
         Procedure* proc = AS_OBJ(Procedure, proc_obj);
         proc->name = (String*)proc_name;               // set function name
 
-        CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
+        CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
 		if (!vm_define_global(&pSK->vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
-            yyerror("failed to add global var");
+            yyerror(pSK, "failed to add global var");
 
         match(pSK, ID);
 		
@@ -361,7 +360,7 @@ static int definition(SKState* pSK)
         // return from function
         vm_emit_number(&pSK->vm, proc->arity);
         vm_emit(&pSK->vm, OP_RET);
-        vm_set_current_chunk(prev_chunk);
+        vm_set_current_chunk(&pSK->vm, prev_chunk);
 
         vm_free_environment(&pSK->vm); // pop function environment off chain
 	}
@@ -401,7 +400,7 @@ static int lambda(SKState* pSK)
 	proc->name = (String*)vm_new_string(&pSK->vm, "<lambda>");
     vm_define_global(&pSK->vm, (Object*)proc->name, NULL);   // ensure name is in global table
 
-    CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
+    CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
     if (LOOKAHEAD == '(')
     {
@@ -431,7 +430,7 @@ static int lambda(SKState* pSK)
 
     // return from function
     vm_emit(&pSK->vm, OP_RET);
-    vm_set_current_chunk(prev_chunk);
+    vm_set_current_chunk(&pSK->vm, prev_chunk);
 
     // vm_pop(&pSK->vm);    // remove proc_obj from stack
 
@@ -474,7 +473,7 @@ static int load_expr(SKState* pSK)
 
     if (LOOKAHEAD != STRING)
     {
-        yyerror("expected string filename in 'load' expression");
+        yyerror(pSK, "expected string filename in 'load' expression");
         unindent(pSK);
         return 0;
     }
@@ -502,7 +501,7 @@ static int set(SKState* pSK)
     Object* key = vm_get_string(&pSK->vm, yylval.word);
     if (!key)
     {
-        yyerror("entity undefined");
+        yyerror(pSK, "entity undefined");
         unindent(pSK);
         return 0;
     }
@@ -516,7 +515,7 @@ static int set(SKState* pSK)
         vm_emit(&pSK->vm, OP_STORE);
     }
     else
-        yyerror("entity undefined");
+        yyerror(pSK, "entity undefined");
     
     unindent(pSK);
     return 0;
@@ -589,7 +588,7 @@ static int cond_expr(SKState* pSK)
             addr_list[terms++] = vm_emit(&pSK->vm, 0);  // reserve space for endif address
             if (terms >= MAX_REL_CLAUSES)
             {
-                yyerror("too many terms in 'and' expression");
+                yyerror(pSK, "too many terms in 'and' expression");
                 break;
             }
 
@@ -654,7 +653,7 @@ static int and_expr(SKState* pSK)
         addr_list[terms++] = vm_emit(&pSK->vm, 0);      // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
-            yyerror("too many terms in 'and' expression");
+            yyerror(pSK, "too many terms in 'and' expression");
             break;
 		}
     }
@@ -704,7 +703,7 @@ static int or_expr(SKState* pSK)
         addr_list[terms++] = vm_emit(&pSK->vm, 0);  // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
-            yyerror("too many terms in 'or' expression");
+            yyerror(pSK, "too many terms in 'or' expression");
             break;
         }
     }
@@ -822,11 +821,11 @@ static int expr(SKState* pSK)
                     }
                     else
                     {
-                        yyerror("procedure expected!");
+                        yyerror(pSK, "procedure expected!");
                     }
                 }
                 else
-                    yyerror("entity undefined");
+                    yyerror(pSK, "entity undefined");
             }
             break;
         }
@@ -886,7 +885,7 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
         NativeFunction* nf = AS_OBJ(NativeFunction, native_fn);
         if (!nf)
         {
-            yyerror("failed to alloc object");
+            yyerror(pSK, "failed to alloc object");
             vm_pop(&pSK->vm);    // remove key
             return SK_FALSE;
         }

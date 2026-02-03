@@ -131,13 +131,13 @@ CodeChunk* vm_get_current_chunk()
 // Note: This function is defensive - callers always pass valid chunk addresses
 // like &proc->chunk, so the null check should never trigger in normal operation
 //--------------------------------------
-CodeChunk *vm_set_current_chunk(CodeChunk* chunk)
+CodeChunk *vm_set_current_chunk(VM* pvm, CodeChunk* chunk)
 {
     VM_LOG("vm: set current chunk = %p", chunk);
 
     if (!chunk)
     {
-        yyerror("vm_set_current_chunk: null chunk pointer");
+        yyerror(pvm->sk_state, "vm_set_current_chunk: null chunk pointer");
         return NULL;
     }
 
@@ -158,7 +158,7 @@ static int compare_fn(const void* a, const void* b)
 // Initialize the VM
 //--------------------------------------------------------------
 int vm_init(VM* pvm) {
-    CHECK_THAT_MSG(pvm != NULL, "vm_init: null VM pointer");
+    CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_init: null VM pointer");
 
     pvm->sp = 0;
     pvm->fp = 0;
@@ -210,7 +210,7 @@ int vm_init(VM* pvm) {
 //--------------------------------------------------------------
 int vm_shutdown(VM* pvm)
 {
-    CHECK_THAT_MSG(pvm != NULL, "vm_shutdown: null VM pointer");
+    CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_shutdown: null VM pointer");
 
     vm_freeObjects(pvm);
 
@@ -231,7 +231,7 @@ int vm_shutdown(VM* pvm)
 //--------------------------------------------------------------
 int vm_clear_stack(VM* pvm)
 {
-    CHECK_THAT_MSG(pvm != NULL, "vm_clear_stack: null VM pointer");
+    CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_clear_stack: null VM pointer");
 
     pvm->sp = 0;
 
@@ -319,7 +319,7 @@ void vm_clear_code(VM* pvm)
 //--------------------------------------------------------------
 int vm_reset(VM* pvm)
 {
-    CHECK_THAT_MSG(pvm != NULL, "vm_reset: null VM pointer");
+    CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_reset: null VM pointer");
 
     vm_clear_stack(pvm);
     vm_clear_code(pvm);
@@ -580,7 +580,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
                 if (proc->arity != nargs)
                 {
-                    yyerror("incorrect number of arguments to function");
+                    yyerror(pvm->sk_state, "incorrect number of arguments to function");
 
                     vm_pop_n(pvm, nargs);   // clear args from stack
                     pvm->ip++;              // skip to the start of next instruction
@@ -610,7 +610,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                         int nargs = AS_NUM(n);
                         if (nargs != arity)
                         {
-                            yyerror("incorrect number of arguments to native function");
+                            yyerror(pvm->sk_state, "incorrect number of arguments to native function");
 
                             // clear args from stack
                             vm_pop_n(pvm, nargs);
@@ -625,7 +625,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
                 }
             }
             else
-                yyerror("procedure expected!");
+                yyerror(pvm->sk_state, "procedure expected!");
         }
             break;
 
@@ -678,7 +678,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             Object *key = vm_pop(pvm);
             if (!IS_STRING(key))
             {
-                yyerror("invalid variable name");
+                yyerror(pvm->sk_state, "invalid variable name");
                 printf("STORE: key is not a string! Obj type = %d\n", OBJ_TYPE(key));
                 break;
             }

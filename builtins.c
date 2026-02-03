@@ -305,7 +305,7 @@ static int sk_car(SKState* pSK)
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         result = ((Pair*)obj)->car;
     else
-        yyerror("argument to 'car' is not a pair");
+        yyerror(pSK, "argument to 'car' is not a pair");
 
     vm_push(&pSK->vm, result);
     return SK_TRUE;
@@ -324,7 +324,7 @@ static int sk_cdr(SKState* pSK)
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
         result = ((Pair*)obj)->cdr;
     else
-        yyerror("argument to 'cdr' is not a pair");
+        yyerror(pSK, "argument to 'cdr' is not a pair");
 
     vm_push(&pSK->vm, result);
     return SK_TRUE;
@@ -351,7 +351,7 @@ static int sk_exit(SKState* pSK)
         }
         else
         {
-            yyerror("invalid parameter to 'exit'");
+            yyerror(pSK, "invalid parameter to 'exit'");
         }
 	}
 
@@ -569,7 +569,7 @@ static int sk_mathop(SKState* pSK, char op)
     Object * obj1 = vm_peek(&pSK->vm, n - 1);   // get first term
     if (!IS_NUM(obj1))
     {
-        yyerror("arguments to mathop must be numbers");
+        yyerror(pSK, "arguments to mathop must be numbers");
         return SK_FALSE;
 	}
 
@@ -581,7 +581,7 @@ static int sk_mathop(SKState* pSK, char op)
         Object* obj2 = vm_peek(&pSK->vm, i);
         if (!IS_NUM(obj2))
         {
-            yyerror("arguments to mathop must be numbers");
+            yyerror(pSK, "arguments to mathop must be numbers");
             return SK_FALSE;
         }
 
@@ -602,7 +602,7 @@ static int sk_mathop(SKState* pSK, char op)
         case '/':
             if (AS_NUM(obj2) == 0)
             {
-                yyerror("division by zero");
+                yyerror(pSK, "division by zero");
                 return SK_FALSE;
             }
             result = result / AS_NUM(obj2);
@@ -674,7 +674,7 @@ static int sk_less(SKState* pSK)
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
-        yyerror("arguments to '<' must be numbers");
+        yyerror(pSK, "arguments to '<' must be numbers");
         return SK_FALSE;
 	}
 
@@ -707,7 +707,7 @@ static int sk_less_equal(SKState* pSK)
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
-        yyerror("arguments to '<=' must be numbers");
+        yyerror(pSK, "arguments to '<=' must be numbers");
         return SK_FALSE;
     }
 
@@ -732,7 +732,7 @@ static int sk_greater(SKState* pSK)
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
-        yyerror("arguments to '>' must be numbers");
+        yyerror(pSK, "arguments to '>' must be numbers");
         return SK_FALSE;
     }
 
@@ -757,7 +757,7 @@ static int sk_greater_equal(SKState* pSK)
 
     if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
     {
-        yyerror("arguments to '>=' must be numbers");
+        yyerror(pSK, "arguments to '>=' must be numbers");
         return SK_FALSE;
     }
 
@@ -831,7 +831,7 @@ static int sk_pwd(SKState* pSK)
 
 	char cwd[SK_PATH_MAX];
 	if (NULL == sk_getcwd(cwd, sizeof(cwd)))
-		yyerror("failed to get current working directory");
+		yyerror(pSK, "failed to get current working directory");
     else
         fprintf(stdout, "Current working directory: '%s'\n", cwd);
 
@@ -874,12 +874,12 @@ static int sk_length(SKState* pSK)
         }
         else
         {
-            yyerror("argument to 'length' is not a list or string");
+            yyerror(pSK, "argument to 'length' is not a list or string");
         }
     }
     else
     {
-        yyerror("argument to 'length' is not a list or string");
+        yyerror(pSK, "argument to 'length' is not a list or string");
     }
 
     vm_push(&pSK->vm, MAKE_NUM(count)); // push length as number object
@@ -899,7 +899,7 @@ static int sk_set_car(SKState* pSK)
     {
         vm_pop(&pSK->vm); // remove values
         vm_pop(&pSK->vm);
-        yyerror("argument to 'set-car!' is not a pair");
+        yyerror(pSK, "argument to 'set-car!' is not a pair");
         return SK_FALSE;
     }
 
@@ -925,7 +925,7 @@ static int sk_set_cdr(SKState* pSK)
     {
         vm_pop(&pSK->vm); // remove values
         vm_pop(&pSK->vm);
-        yyerror("argument to 'set-cdr!' is not a pair");
+        yyerror(pSK, "argument to 'set-cdr!' is not a pair");
         return SK_FALSE;
     }
 
@@ -949,9 +949,9 @@ static int sk_disasm(SKState* pSK)
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_PROCEDURE)
     {
         if (IS_FUNCTION(obj))
-            yyerror("argument to 'disasm' is a native function");
+            yyerror(pSK, "argument to 'disasm' is a native function");
         else
-            yyerror("argument to 'disasm' is not a function");
+            yyerror(pSK, "argument to 'disasm' is not a function");
 
         return SK_FALSE;
     }
@@ -996,7 +996,7 @@ static int sk_getenv(SKState* pSK)
     Object *key = vm_pop(&pSK->vm);
     if (!IS_OBJ(key) || OBJ_TYPE(key) != OBJ_STRING)
     {
-        yyerror("argument to 'getenv' is not a string");
+        yyerror(pSK, "argument to 'getenv' is not a string");
         return SK_FALSE;
     }
 
@@ -1123,7 +1123,7 @@ static int sk_map(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'map' not implemented yet");
+    yyerror(pSK, "built-in function 'map' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1134,7 +1134,7 @@ static int sk_eval(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'eval' not implemented yet");
+    yyerror(pSK, "built-in function 'eval' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1148,7 +1148,7 @@ static int sk_number_to_string(SKState* pSK)
     Object* obj = vm_pop(&pSK->vm);
     if (!IS_NUM(obj))
     {
-        yyerror("number-to-string expects a number");
+        yyerror(pSK, "number-to-string expects a number");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
@@ -1171,7 +1171,7 @@ static int sk_string_to_number(SKState* pSK)
     Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
     {
-        yyerror("string-to-number expects a string");
+        yyerror(pSK, "string-to-number expects a string");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
@@ -1193,7 +1193,7 @@ static int sk_delete_file(SKState* pSK)
     Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
     {
-        yyerror("delete-file expects a string filename");
+        yyerror(pSK, "delete-file expects a string filename");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
@@ -1206,7 +1206,7 @@ static int sk_delete_file(SKState* pSK)
     }
     else
     {
-        yyerror("failed to delete file");
+        yyerror(pSK, "failed to delete file");
         vm_push(&pSK->vm, MAKE_FALSE());
     }
 
@@ -1223,7 +1223,7 @@ static int sk_read_line(SKState* pSK)
     Port *port = (Port*) vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
-        yyerror("read-line expects a valid port object");
+        yyerror(pSK, "read-line expects a valid port object");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
@@ -1255,7 +1255,7 @@ static int sk_read_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'read-char' not implemented yet");
+    yyerror(pSK, "built-in function 'read-char' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1266,7 +1266,7 @@ static int sk_write_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'write-char' not implemented yet");
+    yyerror(pSK, "built-in function 'write-char' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1280,7 +1280,7 @@ static int sk_write_line(SKState* pSK)
     Port *port = (Port*) vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
-        yyerror("write-line expects a valid port object");
+        yyerror(pSK, "write-line expects a valid port object");
 
         // replace output object with return value
         vm_stack_replace_n(&pSK->vm, 0, NULL);
@@ -1291,7 +1291,7 @@ static int sk_write_line(SKState* pSK)
     String* str = (String*) vm_pop(&pSK->vm);
     if (!IS_OBJ(str) || OBJ_TYPE(str) != OBJ_STRING)
     {
-        yyerror("write-line expects a string");
+        yyerror(pSK, "write-line expects a string");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
@@ -1310,7 +1310,7 @@ static int sk_read(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'read' not implemented yet");
+    yyerror(pSK, "built-in function 'read' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1324,7 +1324,7 @@ static int sk_write(SKState* pSK)
     Port* port = (Port*)vm_pop(&pSK->vm);
     if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
     {
-        yyerror("write expects a valid port object");
+        yyerror(pSK, "write expects a valid port object");
         
         // replace output object with return value
         vm_stack_replace_n(&pSK->vm, 0, NULL);
@@ -1361,7 +1361,7 @@ static int sk_string_append(SKState* pSK)
         }
         else
             {
-            yyerror("arguments to 'string-append' must be strings");
+            yyerror(pSK, "arguments to 'string-append' must be strings");
             vm_pop_n(&pSK->vm, n);            // remove message strings from stack
 			vm_push(&pSK->vm, NULL);          // push nil
             return SK_FALSE;
@@ -1381,7 +1381,7 @@ static int sk_printf(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror("built-in function 'printf' not implemented yet");
+    yyerror(pSK, "built-in function 'printf' not implemented yet");
     return SK_FALSE;
 }
 
@@ -1397,7 +1397,7 @@ static int sk_modulo(SKState* pSK)
 
     if (!dividend_obj || !IS_NUM(dividend_obj) || !modulus_obj || !IS_NUM(modulus_obj))
     {
-        yyerror("arguments to modulo must be numbers");
+        yyerror(pSK, "arguments to modulo must be numbers");
         return SK_FALSE;
     }
 
@@ -1405,7 +1405,7 @@ static int sk_modulo(SKState* pSK)
     int modulus = AS_NUM(modulus_obj);
     if (modulus == 0)
 	{
-		yyerror("modulo by zero");
+		yyerror(pSK, "modulo by zero");
 		return SK_FALSE;
 	}
 
@@ -1424,7 +1424,7 @@ static int sk_open_file(SKState* pSK, char *mode)
     String* name = (String*)vm_peek(&pSK->vm, 0);
     if (!IS_STRING(name))
     {
-        yyerror("open-file expects a string filename");
+        yyerror(pSK, "open-file expects a string filename");
         vm_pop(&pSK->vm);
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
@@ -1437,7 +1437,7 @@ static int sk_open_file(SKState* pSK, char *mode)
     FILE* fptr = fopen(name->value, mode);
 	if (!fptr)
 	{
-		yyerror("failed to open file");
+		yyerror(pSK, "failed to open file");
 		vm_pop(&pSK->vm);           // remove filename
 		vm_push(&pSK->vm, NULL);     // push nil
 		return SK_FALSE;
@@ -1477,7 +1477,7 @@ static int sk_close_file(SKState* pSK)
     Object* obj = vm_pop(&pSK->vm);
     if (!IS_OBJ(obj) || !IS_PORT(obj))
 	{
-		yyerror("close-file expects a file object");
+		yyerror(pSK, "close-file expects a file object");
         vm_push(&pSK->vm, MAKE_FALSE());
 		return SK_FALSE;
 	}
@@ -1509,7 +1509,7 @@ static int sk_reverse(SKState* pSK)
 
     if (!IS_PAIR(obj))
     {
-		yyerror("argument to 'reverse' is not a list");
+		yyerror(pSK, "argument to 'reverse' is not a list");
         vm_pop(&pSK->vm);
 		return SK_FALSE;
     }

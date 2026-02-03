@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
 
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
-    vm_set_current_chunk(&repl_chunk);
+    vm_set_current_chunk(&sk.vm, &repl_chunk);
 
 	sk_define(&sk, "__version__", vm_new_string(&sk.vm, APP_VER));
 	sk_define(&sk, "__author__", vm_new_string(&sk.vm, "Mark Seminatore"));

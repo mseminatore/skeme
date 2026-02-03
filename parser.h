@@ -89,7 +89,7 @@ struct SKState
 //-----------------
 int yyparse(SKState *pSK);
 void dump_symbols(SKState* pSK);
-void yyerror(const char *s);
+void yyerror(SKState* pSK, const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 

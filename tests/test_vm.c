@@ -215,7 +215,7 @@ void test_vm(int argc, char *argv[]) {
         vm_init_chunk(&chunk);
         
         // Set as current chunk
-        CodeChunk* old_chunk = vm_set_current_chunk(&chunk);
+        CodeChunk* old_chunk = vm_set_current_chunk(&sk.vm, &chunk);
         
         COMMENT("Test emit opcode...");
         int idx = vm_emit(&sk.vm, OP_HALT);
@@ -228,7 +228,7 @@ void test_vm(int argc, char *argv[]) {
         TEST(chunk.count > 1);
         
         // Restore old chunk
-        vm_set_current_chunk(old_chunk);
+        vm_set_current_chunk(&sk.vm, old_chunk);
         vm_free_chunk(&sk.vm, &chunk);
         
         sk_shutdown(&sk);
