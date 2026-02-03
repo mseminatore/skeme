@@ -410,12 +410,12 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_ICALL:
-            printf("ICALL [SP]\n");
+            printf("CALL [SP]\n");
             break;
 
         case OP_CALL:
         {
-#if 0
+#if 1
             Object* fn_obj = (Object*)*ip++;
 
             if (IS_PROCEDURE(fn_obj))
@@ -490,6 +490,112 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
     }
 }
 
+static void vm_call(VM* pvm, VMCode_t* addr)
+{
+    // push return address onto return stack
+    vm_push_ip(pvm, pvm->ip);
+
+    // set IP to function address
+    pvm->ip = addr;
+}
+
+static void vm_return(VM* pvm)
+{
+    // set IP to return address
+    pvm->ip = vm_pop_ip(pvm);
+}
+
+static void vm_push_frame(VM* pvm)
+{
+    // push current frame pointer onto stack
+    vm_push(pvm, MAKE_NUM(pvm->fp));
+
+    // set new frame pointer to current stack pointer
+    pvm->fp = pvm->sp;
+}
+
+static void vm_pop_frame(VM* pvm)
+{
+    // pop old frame pointer from stack
+    Object* fp_obj = vm_pop(pvm);
+    pvm->fp = AS_NUM(fp_obj);
+}
+
+// static void vm_call_function(VM* pvm, VMCode_t* addr, int nargs)
+// {
+//     // push return address onto return stack
+//     vm_push_ip(pvm, pvm->ip);
+
+//     // push current frame pointer onto stack
+//     vm_push(pvm, MAKE_NUM(pvm->fp));
+
+//     // set new frame pointer to current stack pointer minus number of args
+//     pvm->fp = pvm->sp - nargs;
+
+//     // set IP to function address
+//     pvm->ip = addr;
+// }
+
+static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
+{
+    if (IS_PROCEDURE(fn_obj))
+    {
+        Procedure* proc = (Procedure*)fn_obj;
+        VM_LOG("%s '%s' %p\n", call_type, proc->name->value, proc->chunk.code);
+
+        Object* n = vm_pop(pvm);
+        int nargs = AS_NUM(n);
+
+        if (proc->arity != nargs)
+        {
+            yyerror(pvm->sk_state, "incorrect number of arguments to function");
+
+            vm_pop_n(pvm, nargs);   // clear args from stack
+            pvm->ip++;              // skip to the start of next instruction
+            return;
+        }
+
+        vm_push_ip(pvm, pvm->ip);   // push return address onto stack
+
+        // call function by setting IP to function address
+        pvm->ip = proc->chunk.code;
+
+        vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
+        pvm->fp = pvm->sp;                  // set-up new frame pointer
+    }
+    else if (IS_NATIVE_FN(fn_obj))
+    {
+        NativeFunction* proc = (NativeFunction*)fn_obj;
+        VM_LOG("CALL NATIVE FN '%s'\n", proc->name->value);
+        SKFunc func = (SKFunc)proc->func;
+
+        if (func)
+        {
+            int arity = proc->arity;
+            if (arity >= 0)
+            {
+                Object* n = vm_pop(pvm);
+                int nargs = AS_NUM(n);
+                if (nargs != arity)
+                {
+                    yyerror(pvm->sk_state, "incorrect number of arguments to native function");
+
+                    // clear args from stack
+                    vm_pop_n(pvm, nargs);
+                    return;
+                }
+            }
+
+            func(pvm->sk_state); // Pass the SKState via back-pointer
+        }
+        else {
+            fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+        }
+    }
+    else
+        yyerror(pvm->sk_state, "procedure expected!");
+}
+
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address
 //---------------------------------------------------------------
@@ -556,7 +662,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             VM_LOG("PUSH SP\n");
             vm_push(pvm, MAKE_NUM(pvm->sp));
             break;
-            
+
         case OP_POP_SP:      // pop stack pointer from stack    
             VM_LOG("POP SP\n");
             {
@@ -614,78 +720,16 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         case OP_ICALL:    // indirect call to function
         {
             Object* fn_obj = vm_pop(pvm);   // get function object
-                
-            // indirect call to address on stack
-            VM_LOG("ICALL %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-
-            VMCode_t* addr = (VMCode_t*)*pvm->ip++;
-            vm_push_ip(pvm, pvm->ip);   // push return address onto stack
-
-            // call function by setting IP to function address
-            pvm->ip = addr;
+            
+            vm_call_procedure(pvm, fn_obj, "ICALL");
         }
             break;
 
         case OP_CALL:    // call function
         {
-            Object* fn_obj = vm_pop(pvm);   // get function object
+            Object* fn_obj = (Object*)*pvm->ip++;    //vm_pop(pvm);   // get function object
 
-            if (IS_PROCEDURE(fn_obj))
-            {
-                Procedure* proc = (Procedure*)fn_obj;
-                VM_LOG("CALL '%s' %p\n", proc->name->value, proc->chunk.code);
-
-                Object* n = vm_pop(pvm);
-                int nargs = AS_NUM(n);
-
-                if (proc->arity != nargs)
-                {
-                    yyerror(pvm->sk_state, "incorrect number of arguments to function");
-
-                    vm_pop_n(pvm, nargs);   // clear args from stack
-                    pvm->ip++;              // skip to the start of next instruction
-                    break;
-                }
-
-                vm_push_ip(pvm, pvm->ip);   // push return address onto stack
-
-                // call function by setting IP to function address
-                pvm->ip = proc->chunk.code;
-
-                vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
-                pvm->fp = pvm->sp;                  // set-up new frame pointer
-            }
-            else if (IS_NATIVE_FN(fn_obj))
-            {
-                NativeFunction* proc = (NativeFunction*)fn_obj;
-                VM_LOG("CALL NATIVE FN '%s'\n", proc->name->value);
-                SKFunc func = (SKFunc)proc->func;
-
-                if (func)
-                {
-                    int arity = proc->arity;
-                    if (arity >= 0)
-                    {
-                        Object* n = vm_pop(pvm);
-                        int nargs = AS_NUM(n);
-                        if (nargs != arity)
-                        {
-                            yyerror(pvm->sk_state, "incorrect number of arguments to native function");
-
-                            // clear args from stack
-                            vm_pop_n(pvm, nargs);
-                            break;
-                        }
-                    }
-
-                    func(pvm->sk_state); // Pass the SKState via back-pointer
-                }
-                else {
-                    fprintf(stderr, "NULL function pointer in NATIVE call!\n");
-                }
-            }
-            else
-                yyerror(pvm->sk_state, "procedure expected!");
+            vm_call_procedure(pvm, fn_obj, "CALL");
         }
             break;
 

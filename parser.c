@@ -805,9 +805,9 @@ static int expr(SKState* pSK)
                     {
                         expr_tail(pSK); // parse function arguments (if any)
 
-                        vm_emit_push_object(&pSK->vm, proc);
+                        // vm_emit_push_object(&pSK->vm, proc);
                         vm_emit(&pSK->vm, OP_CALL);
-//                        vm_emit(&pSK->vm, (VMCode_t)proc);
+                        vm_emit(&pSK->vm, (VMCode_t)proc);
                     }
                     else if (local_fn)
                     {
@@ -815,7 +815,7 @@ static int expr(SKState* pSK)
 
                         vm_emit_number(&pSK->vm, AS_NUM(proc));
                         vm_emit(&pSK->vm, OP_GET_LOCAL);
-                        vm_emit(&pSK->vm, OP_CALL);
+                        vm_emit(&pSK->vm, OP_ICALL);
                     }
                     else
                     {
