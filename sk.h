@@ -1,6 +1,8 @@
-//
+//-------------------------------------
 // sk.h - public header for SK project
 //
+// Copyright (c) 2025 Mark Seminatore
+//-------------------------------------
 
 #ifndef __SK_H
 #define __SK_H

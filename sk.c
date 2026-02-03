@@ -1,7 +1,9 @@
+//-------------------------------------
+// sk.c - public API for SK project
 //
-//
-//
-
+// Copyright (c) 2025 Mark Seminatore
+//-------------------------------------
+#include "term_colors.h"
 #include "sk.h"
 
 // Global pointer to current SKState for legacy yyerror/yywarning/yyinfo functions
@@ -9,6 +11,24 @@
 SKState* g_current_sk = NULL;
 
 int sk_init_builtins(SKState* pSK);
+
+//-----------------------------------------------
+// built-in function: display
+//-----------------------------------------------
+int sk_display(SKState *pSK)
+{
+	if (!pSK) return SK_FALSE;
+
+    // pop the top of the stack and print it
+    Object *obj = vm_pop(&pSK->vm);
+
+    FILE* stream = pSK->output_stream ? pSK->output_stream : stdout;
+    fprintf(stream, TERM_BRIGHT_BLUE);
+        vm_print_object(obj, VM_PRINT_PLAIN, stream);
+    fprintf(stream, TERM_RESET);
+
+    return SK_TRUE;
+}
 
 //-----------------------------------
 // define a variable
