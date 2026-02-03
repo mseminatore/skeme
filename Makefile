@@ -4,9 +4,11 @@ DEPS	= parser.h lexer.h vm.h term_colors.h platform.h error.h sk.h
 OBJS	= main.o parser.o lexer.o vm.o builtins.o io.o platform.o error.o sk.o
 TEST_OBJS = tests/test_main.o tests/test_vm.o tests/test_gc.o tests/test_lexer.o \
             tests/test_parser.o tests/test_builtins.o tests/test_helpers.o tests/test_error.o \
-            parser.o lexer.o vm.o builtins.o io.o platform.o error.o sk.o
+            parser.o lexer.o vm.o builtins.o io.o platform.o error.o sk.o \
+            hash/testy/test_main.o
 CFLAGS	+= -I. -I./hash/testy -g -Wall
-LIBS	= -lm -lht -ltesty
+LIBS	= -lm -lht
+TEST_LIBS = -lm -lht
 LFLAGS  += -L./hash -L./hash/testy
 
 all: hash/libht.a $(TARGET) 
@@ -19,11 +21,11 @@ hash/libht.a: hash/hash.c hash/hash.h
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LFLAGS) $(LIBS)
 
-hash/testy/libtesty.a: hash/testy/test_main.c hash/testy/test.h
-	cd hash/testy && $(MAKE)
+hash/testy/test_main.o: hash/testy/test_main.c hash/testy/test.h
+	cd hash/testy && $(CC) $(CFLAGS) -c test_main.c -o test_main.o
 
-$(TEST_TARGET): hash/libht.a hash/testy/libtesty.a $(TEST_OBJS)
-	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS) $(LFLAGS) $(LIBS)
+$(TEST_TARGET): hash/libht.a hash/testy/test_main.o $(TEST_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS) $(LFLAGS) $(TEST_LIBS)
 
 .phony: test unit-test all-tests
 
