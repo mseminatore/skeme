@@ -88,7 +88,7 @@ int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename)
     pSK->file_stack[pSK->file_stack_ptr].yylineno = 1;
     pSK->file_stack[pSK->file_stack_ptr].column = 1;
 
-    yyin = fptr;
+    pSK->yyin = fptr;
     LOG("Push '%s' onto parser input stack (depth = %d)\n", filename, pSK->file_stack_ptr);
     return TRUE;
 }
@@ -142,12 +142,12 @@ int pop_file_stack(SKState* pSK)
     
     // Set yyin to the previous file (or NULL if we're back to sentinel)
     if (pSK->file_stack_ptr >= 0)
-        yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
+        pSK->yyin = pSK->file_stack[pSK->file_stack_ptr].fptr;
     else
-        yyin = NULL;
+        pSK->yyin = NULL;
 
     // Return FALSE if we're back to an invalid state (no file or sentinel)
-    if (pSK->file_stack_ptr <= 0 || yyin == NULL)
+    if (pSK->file_stack_ptr <= 0 || pSK->yyin == NULL)
         return FALSE;
 
     return TRUE;
@@ -210,32 +210,32 @@ int add_symbol(SKState* pSK, const char *name, int lineno)
 //-----------------------------------
 // next next char from input stream
 //-----------------------------------
-int getch()
+int getch(SKState* pSK)
 {
-    return fgetc(yyin);
+    return fgetc(pSK->yyin);
 }
 
 //-----------------------------------
 // put char back to input stream
 //-----------------------------------
-int ungetch(int c)
+int ungetch(SKState* pSK, int c)
 {
-    return ungetc(c, yyin);
+    return ungetc(c, pSK->yyin);
 }
 
 //---------------------------------------------------
 // conditionally return values, based on whether token 
 // matches an expected value
 //---------------------------------------------------
-int follow(int expect, int ifyes, int ifno)
+int follow(SKState* pSK, int expect, int ifyes, int ifno)
 {
 	int chr;
 
-	chr = getch();
+	chr = getch(pSK);
 	if (chr == expect)
 		return ifyes;
 
-	ungetch(chr);
+	ungetch(pSK, chr);
 	return ifno;
 }
 
@@ -258,23 +258,23 @@ int isToken(const char *s)
 //------------------------
 // discard input to EOL
 //------------------------
-void skipToEOL(void)
+void skipToEOL(SKState* pSK)
 {
 	int c;
 
 	// skip to EOL
 	do {
-		c = getch();
+		c = getch(pSK);
 	} while (c != '\n' && c != EOF);
 
 	// put last character back
-	ungetch(c);
+	ungetch(pSK, c);
 }
 
 //------------------------
 // match a number token
 //------------------------
-int getNumber()
+int getNumber(SKState* pSK)
 {
 	int c;
 	char buf[BUF_SIZE];
@@ -282,32 +282,32 @@ int getNumber()
 	int base = 10;
 
 	// look for hex numbers
- 	c = getch();
+ 	c = getch(pSK);
 
     if (c == '-' || c == '+')
     {
 		*bufptr++ = c;
-        c = getch();
+        c = getch(pSK);
     }
 
-	if (c == '$' || (c == '0' && (follow('X', TRUE, FALSE) || follow('x', TRUE, FALSE))))
+	if (c == '$' || (c == '0' && (follow(pSK, 'X', TRUE, FALSE) || follow(pSK, 'x', TRUE, FALSE))))
 		base = 16;
 	else
-		ungetch(c);
+		ungetch(pSK, c);
 
 	if (base == 16)
 	{
-		while (isxdigit(c = getch()))
+		while (isxdigit(c = getch(pSK)))
 			*bufptr++ = c;
 	}
 	else
 	{
-		while (isdigit((c = getch())) || c == '.')
+		while (isdigit((c = getch(pSK))) || c == '.')
 			*bufptr++ = c;
 	}
 	
 	// need to put back the last character
-	ungetch(c);
+	ungetch(pSK, c);
 
 	// make sure string is asciiz
 	*bufptr = '\0';
@@ -319,14 +319,14 @@ int getNumber()
 //-------------------------------
 // translate backslash characters
 //-------------------------------
-int backslash(int c)
+int backslash(SKState* pSK, int c)
 {
 	static char translation_tab[] = "a\ab\bf\fn\nr\rt\te\x1b";
 
 	if (c != '\\')
 		return c;
 
-	c = getch();
+	c = getch(pSK);
 	if (islower(c) && strchr(translation_tab, c))
 		return strchr(translation_tab, c)[1];
 
@@ -341,15 +341,15 @@ int getString(SKState* pSK, int delim)
     int c;
     char buf[BUF_SIZE], *cptr = buf;
 
-    c = getch();
+    c = getch(pSK);
 
     while (c != delim && cptr < &buf[sizeof(buf)])
     {
         if (c == '\n' || c == EOF)
             yyerror("missing end quote");
 
-        *cptr++ = backslash(c);
-        c = getch();
+        *cptr++ = backslash(pSK, c);
+        c = getch(pSK);
     }
     
     *cptr = 0;
@@ -381,7 +381,7 @@ int yylex(SKState* pSK)
 
 yylex01:
     // skip leading whitespace
-    while ((c = getch()) == ' ' || c == '\t');
+    while ((c = getch(pSK)) == ' ' || c == '\t');
 
     // see if input stack is empty
     if (c == EOF)
@@ -397,30 +397,30 @@ yylex01:
     // look for comments
     if (c == ';')
     {
-        skipToEOL();
+        skipToEOL(pSK);
         goto yylex01;
     }
 
     // look for char literals
     if (c == '\'')
     {
-        c = getch();
-        if (c == '(' && follow(')', TRUE, FALSE))
+        c = getch(pSK);
+        if (c == '(' && follow(pSK, ')', TRUE, FALSE))
         {
             return NIL;
         }
-        else if (follow('\'', TRUE, FALSE))
+        else if (follow(pSK, '\'', TRUE, FALSE))
         {
-            yylval.ival = backslash(c);
+            yylval.ival = backslash(pSK, c);
             return CHAR;
         }
 
-        ungetch(c);
+        ungetch(pSK, c);
         return getString(pSK, '\'');
     }
 
     // look for empty lists
-    if (c == '(' && follow(')', TRUE, FALSE))
+    if (c == '(' && follow(pSK, ')', TRUE, FALSE))
         return NIL;
 
     // look for string literals
@@ -434,8 +434,8 @@ yylex01:
 	{
         if (c == '-' || c == '+')
         {
-            int n = getch();
-            ungetch(n);
+            int n = getch(pSK);
+            ungetch(pSK, n);
 
             if (n != '$' && !isdigit(n))
             {
@@ -444,8 +444,8 @@ yylex01:
             }
         }
 
-		ungetch(c);
-		return getNumber();
+		ungetch(pSK, c);
+		return getNumber(pSK);
 	}
 
     // look for start of a token
@@ -455,10 +455,10 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch()) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || isalnum(c)));
+        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || isalnum(c)));
         
         // put back the last character!
-        ungetch(c);
+        ungetch(pSK, c);
 
         // be sure to null terminate the string
         *p = 0;
@@ -493,7 +493,7 @@ yylex01:
         if (pSK && pSK->file_stack_ptr >= 0)
             CURRENT_LINENO++;   // update file local line number
         
-        if (yyin == stdin)
+        if (pSK->yyin == stdin)
             return DONE;
 
         goto yylex01;
@@ -503,7 +503,7 @@ yylex01:
     switch (c)
     {
     case '<':
-        if (follow('=', TRUE, FALSE))
+        if (follow(pSK, '=', TRUE, FALSE))
         {
 			strcpy(yylval.word, "<=");
             return ID;
@@ -511,7 +511,7 @@ yylex01:
         break;
 
     case '>':
-        if (follow('=', TRUE, FALSE))
+        if (follow(pSK, '=', TRUE, FALSE))
         {
             strcpy(yylval.word, ">=");
             return ID;

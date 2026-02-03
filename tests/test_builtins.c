@@ -6,8 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../hash/testy/test.h"
-#include "../parser.h"
-#include "../vm.h"
+#include "../sk.h"
 
 void test_builtins(int argc, char *argv[]) {
     MODULE("Builtins");

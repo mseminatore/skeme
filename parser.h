@@ -1,6 +1,8 @@
 #ifndef __PARSER_H
 #define __PARSER_H
 
+#include <string.h>
+#include <stdio.h>
 #include "lexer.h"
 #include "vm.h"
 #include "error.h"
@@ -60,19 +62,24 @@ typedef struct
 // skeme state structure
 struct SKState
 {
-    VM vm;
-    Symbol_t* symbols;
-    int symbol_count;
-    int symbol_capacity;
-    FileNode* file_stack;
-    int file_stack_ptr;
-    int file_stack_capacity;
-    int err_count;
-    int warn_count;
-    int parse_log_enabled;
-    SKErrorHandler error_handler;
-    FILE* error_stream;
-    FILE* output_stream;
+    VM vm;                          // the virtual machine
+    Symbol_t* symbols;              // the symbol table. Note: dynamic array that should go away later
+    int symbol_count;               // number of symbols in table
+    int symbol_capacity;            // capacity of symbol table
+    FileNode* file_stack;           // stack of input files
+    int file_stack_ptr;             // current file stack pointer
+    int file_stack_capacity;        // capacity of file stack
+    int err_count;                  // number of errors encountered
+    int warn_count;                 // number of warnings encountered
+    int parse_log_enabled;          // enable parse logging
+    SKErrorHandler error_handler;   // error handler function pointer
+    FILE* error_stream;             // error output stream
+    FILE* output_stream;            // general output stream
+    FILE *yyin;                     // current input file pointer
+
+    int indent_level;              // current parse indent level
+    int expr_level;                // current expression nesting level
+
 };
 
 extern int g_bDone;
@@ -86,9 +93,6 @@ void yyerror(const char *s);
 void yywarning(const char *s);
 void yyinfo(const char *s);
 
-int sk_init(SKState *pSK, int argc, char *argv[]);
-int sk_shutdown(SKState *pSK);
-int sk_parse(SKState *pSK);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_display(SKState *pSK);
 

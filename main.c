@@ -91,9 +91,6 @@ int main(int argc, char *argv[])
 
 	int iFirstArg = getopt(&sk, argc, argv);
 
-    // fout = fopen(g_szOutputFilename, "wb");
-    // LOG("Output file: '%s'\n", g_szOutputFilename);
-
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&repl_chunk);
@@ -143,13 +140,13 @@ int main(int argc, char *argv[])
     {
         vm_reset(&sk.vm);
 
-        if (yyin == stdin)
+        if (sk.yyin == stdin)
             printf(PROMPT);
 
         sk_parse(&sk);
         
         // Exit if we've reached EOF on stdin
-        if (yyin == NULL || (yyin == stdin && feof(yyin)))
+        if (sk.yyin == NULL || (sk.yyin == stdin && feof(sk.yyin)))
         {
             g_bDone = TRUE;
             break;

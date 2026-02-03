@@ -7,7 +7,7 @@
 #include <string.h>
 #include "../hash/testy/test.h"
 #include "../lexer.h"
-#include "../parser.h"
+#include "../sk.h"
 
 void test_lexer(int argc, char *argv[]) {
     MODULE("Lexer");

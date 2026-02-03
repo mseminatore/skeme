@@ -6,8 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../hash/testy/test.h"
-#include "../vm.h"
-#include "../parser.h"
+#include "../sk.h"
 
 void test_vm(int argc, char *argv[]) {
     MODULE("VM");

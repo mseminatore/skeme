@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "../hash/testy/test.h"
-#include "../parser.h"
 #include "../error.h"
+#include "../sk.h"
 
 // Test context for custom handler
 typedef struct {
