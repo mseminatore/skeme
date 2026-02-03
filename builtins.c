@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
-#include "parser.h"
+#include "sk.h"
 #include "term_colors.h"
 #include "platform.h"
 

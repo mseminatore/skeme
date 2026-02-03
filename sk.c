@@ -175,3 +175,35 @@ int sk_parse(SKState *pSK)
     vm_emit(&pSK->vm, OP_HALT);
     return result;
 }
+
+//-----------------------------------------------
+// register native functions
+//-----------------------------------------------
+int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
+{
+    // register with globals + string intern table
+	for (int i = 0; funcs[i].name && funcs[i].func; i++)
+	{
+        Object* key = vm_new_string(&pSK->vm, funcs[i].name);
+        vm_push(&pSK->vm, key);  // for GC safety
+
+        Object* native_fn = vm_newObject(&pSK->vm, sizeof(NativeFunction), OBJ_NATIVE_FN);
+        NativeFunction* nf = AS_OBJ(NativeFunction, native_fn);
+        if (!nf)
+        {
+            yyerror(pSK, "failed to alloc object");
+            vm_pop(&pSK->vm);    // remove key
+            return SK_FALSE;
+        }
+
+        nf->func = funcs[i].func;
+        nf->arity = funcs[i].arity;
+        nf->name = (String*) key;
+        
+        vm_define_global(&pSK->vm, vm_pop(&pSK->vm), native_fn);
+
+        LOG("Registered built-in function '%s'\n", funcs[i].name);
+    }
+
+    return 0;
+}

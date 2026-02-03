@@ -95,9 +95,4 @@ void yyerror(SKState* pSK, const char *s);
 void yywarning(SKState* pSK, const char *s);
 void yyinfo(SKState* pSK, const char *s);
 
-int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
-int sk_display(SKState *pSK);
-
-
-
 #endif // __PARSER_H
