@@ -92,19 +92,17 @@ void yyerror(SKState* pSK, const char *s)
 //------------------------
 // warning routine
 //------------------------
-void yywarning(const char *s)
+void yywarning(SKState* pSK, const char *s)
 {
-    extern SKState* g_current_sk;
-    log_with_stdin_check(g_current_sk, SK_LOG_WARNING, s, TERM_YELLOW, "WARNING");
+    log_with_stdin_check(pSK, SK_LOG_WARNING, s, TERM_YELLOW, "WARNING");
 }
 
 //------------------------
 // info routine
 //------------------------
-void yyinfo(const char *s)
+void yyinfo(SKState* pSK, const char *s)
 {
-    extern SKState* g_current_sk;
-    log_with_stdin_check(g_current_sk, SK_LOG_INFO, s, TERM_GREEN, "INFO");
+    log_with_stdin_check(pSK, SK_LOG_INFO, s, TERM_GREEN, "INFO");
 }
 
 //---------------------------------------------------

@@ -56,7 +56,7 @@ static int sk_gclog(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     g_bGCLog = !g_bGCLog;
-    yyinfo(g_bGCLog ? "GC logging enabled" : "GC logging disabled");
+    yyinfo(pSK, g_bGCLog ? "GC logging enabled" : "GC logging disabled");
 
     return SK_TRUE;
 }
@@ -69,7 +69,7 @@ static int sk_parselog(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     pSK->parse_log_enabled = !pSK->parse_log_enabled;
-    yyinfo(pSK->parse_log_enabled ? "Parser logging enabled" : "Parser logging disabled");
+    yyinfo(pSK, pSK->parse_log_enabled ? "Parser logging enabled" : "Parser logging disabled");
 
     return SK_TRUE;
 }
@@ -82,7 +82,7 @@ static int sk_vmlog(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     g_bVMLog = !g_bVMLog;
-    yyinfo(g_bVMLog ? "VM logging enabled" : "VM logging disabled");
+    yyinfo(pSK, g_bVMLog ? "VM logging enabled" : "VM logging disabled");
 
     return SK_TRUE;
 }
@@ -95,7 +95,7 @@ static int sk_gc_stress(SKState* pSK)
     if (!pSK) return SK_FALSE;
     
     g_bGCStress = !g_bGCStress;
-    yyinfo(g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
+    yyinfo(pSK, g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
 //    printf("GC stress mode %s\n", vm.gc_stress ? "enabled" : "disabled");
 
     return SK_TRUE;
