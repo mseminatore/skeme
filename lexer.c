@@ -9,7 +9,6 @@
 
 // current state
 int lineno = 1;
-int lookahead = 0;
 YYLVAL yylval;
 
 // define our keyword token table

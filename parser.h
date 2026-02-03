@@ -80,6 +80,7 @@ struct SKState
     int indent_level;              // current parse indent level
     int expr_level;                // current expression nesting level
     int bDone;                     // flag to signal interpreter shutdown
+    int lookahead;                 // current lookahead token
 
 };
 

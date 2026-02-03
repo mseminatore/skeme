@@ -8,9 +8,7 @@
 #include "vm.h"
 #include "term_colors.h"
 
-// parser tracking
-// input and output files
-extern int g_bDone;
+#define LOOKAHEAD   (pSK->lookahead)
 
 // forward declarations
 static int expr(SKState* pSK);
@@ -126,16 +124,16 @@ static void expected(int token)
 //---------------------------------------------------
 static int match(SKState* pSK, int token)
 {
-	if (lookahead == token)
+	if (LOOKAHEAD == token)
 	{
-		lookahead = yylex(pSK);
+		LOOKAHEAD = yylex(pSK);
 	}
 	else
 	{
 		expected(token);
 	}
 
-	return lookahead;
+	return LOOKAHEAD;
 }
 
 //------------------------
@@ -172,9 +170,9 @@ void dump_symbols(SKState* pSK)
 //-----------------------------------------------
 static int atom(SKState* pSK)
 {
-    PARSE_LOG("atom(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("atom(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
-    switch (lookahead)
+    switch (LOOKAHEAD)
     {
     case '(':
         expr(pSK);
@@ -254,7 +252,7 @@ static int atom(SKState* pSK)
     
     default:
         yyerror("syntax error");
-        match(pSK, lookahead);
+        match(pSK, LOOKAHEAD);
         unindent(pSK);
         return 0;
     }
@@ -268,10 +266,10 @@ static int atom(SKState* pSK)
 //-----------------------------------------------
 static int formals(SKState* pSK, Procedure* proc)
 {
-	PARSE_LOG("formals(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+	PARSE_LOG("formals(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     int arity = 0;
-    while (lookahead == ID)
+    while (LOOKAHEAD == ID)
     {
         arity++;
 		vm_set_var(&pSK->vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
@@ -306,11 +304,11 @@ static int formals(SKState* pSK, Procedure* proc)
 //-----------------------------------------------
 static int local_body(SKState* pSK)
 {
-	PARSE_LOG("local_body(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     
 	// TODO  - handle local definitions
 
-	while (lookahead == '(')
+	while (LOOKAHEAD == '(')
         expr(pSK);
 
 	unindent(pSK);
@@ -324,12 +322,12 @@ static int local_body(SKState* pSK)
 //-----------------------------------------------
 static int definition(SKState* pSK)
 {
-    PARSE_LOG("definition(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("definition(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, DEFINE);
 
     // look for a function definition or variable definition
-    if (lookahead == '(')
+    if (LOOKAHEAD == '(')
     {
 		// function definition
 		match(pSK, '(');
@@ -390,7 +388,7 @@ static int definition(SKState* pSK)
 //-----------------------------------------------
 static int lambda(SKState* pSK)
 {
-    PARSE_LOG("lambda(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("lambda(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, LAMBDA);
 
@@ -405,7 +403,7 @@ static int lambda(SKState* pSK)
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&proc->chunk);
 
-    if (lookahead == '(')
+    if (LOOKAHEAD == '(')
     {
         match(pSK, '(');
     
@@ -416,7 +414,7 @@ static int lambda(SKState* pSK)
     }
     else
     {
-        if (lookahead == ID)
+        if (LOOKAHEAD == ID)
         {
             // single parameter
             proc->arity = 1;
@@ -446,13 +444,13 @@ static int lambda(SKState* pSK)
 //-----------------------------------------------
 static int parse_list(SKState* pSK)
 {
-    PARSE_LOG("parse_list(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("parse_list(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     int nargs = 0;
 
     match(pSK, LIST);
 
-    while (lookahead != ')')
+    while (LOOKAHEAD != ')')
     {
         expr(pSK);
         nargs++;
@@ -470,11 +468,11 @@ static int parse_list(SKState* pSK)
 //-----------------------------------------------
 static int load_expr(SKState* pSK)
 {
-    PARSE_LOG("load_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("load_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, LOAD);
 
-    if (lookahead != STRING)
+    if (LOOKAHEAD != STRING)
     {
         yyerror("expected string filename in 'load' expression");
         unindent(pSK);
@@ -497,7 +495,7 @@ static int load_expr(SKState* pSK)
 //-----------------------------------------------
 static int set(SKState* pSK)
 {
-    PARSE_LOG("set(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("set(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, SET);
     // handle variable and check for undefined symbol
@@ -529,7 +527,7 @@ static int set(SKState* pSK)
 //-----------------------------------------------
 static int if_expr(SKState* pSK)
 {
-    PARSE_LOG("if_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("if_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, IF);
 
@@ -545,7 +543,7 @@ static int if_expr(SKState* pSK)
 #ifdef IF_ELSE_REQUIRED
     expr(pSK);                                 // else branch expression
 #else
-    if (lookahead != ')')
+    if (LOOKAHEAD != ')')
     {
         expr(pSK);                             // else branch expression
     }
@@ -563,17 +561,17 @@ static int if_expr(SKState* pSK)
 //-----------------------------------------------
 static int cond_expr(SKState* pSK)
 {
-    PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     int addr_list[MAX_REL_CLAUSES];
     int terms = 0;
 
     match(pSK, COND);
 
-    while (lookahead != ')')
+    while (LOOKAHEAD != ')')
     {
         match(pSK, '(');
 
-        if (lookahead == ELSE)
+        if (LOOKAHEAD == ELSE)
         {
             match(pSK, ELSE);
             expr(pSK);                                // action/consequence
@@ -619,7 +617,7 @@ static int expr_tail(SKState* pSK)
 {
     int count = 0;
 
-    while (lookahead != DONE && lookahead != ')')
+    while (LOOKAHEAD != DONE && LOOKAHEAD != ')')
     {
         expr(pSK);
         count++;
@@ -636,7 +634,7 @@ static int expr_tail(SKState* pSK)
 //-----------------------------------------------
 static int and_expr(SKState* pSK)
 {
-    PARSE_LOG("and_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("and_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     int addr_list[MAX_REL_CLAUSES];
     int terms = 0;
 
@@ -644,7 +642,7 @@ static int and_expr(SKState* pSK)
 
     vm_emit_push_object(&pSK->vm, NULL);  // push a dummy nil value onto the stack
 
-    while (lookahead != DONE && lookahead != ')')
+    while (LOOKAHEAD != DONE && LOOKAHEAD != ')')
     {
         vm_emit(&pSK->vm, OP_POP);       // pop the duplicated value
         
@@ -685,7 +683,7 @@ static int and_expr(SKState* pSK)
 //-----------------------------------------------
 static int or_expr(SKState* pSK)
 {
-    PARSE_LOG("or_expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("or_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     int addr_list[MAX_REL_CLAUSES];
 
     int terms = 0;
@@ -694,7 +692,7 @@ static int or_expr(SKState* pSK)
 
     vm_emit_push_object(&pSK->vm, NULL);      // push a dummy nil value onto the stack
 
-    while (lookahead != DONE && lookahead != ')')
+    while (LOOKAHEAD != DONE && LOOKAHEAD != ')')
     {
         vm_emit(&pSK->vm, OP_POP);       // pop the duplicated value
         
@@ -731,15 +729,15 @@ static int or_expr(SKState* pSK)
 //-----------------------------------------------
 static int expr(SKState* pSK)
 {
-    PARSE_LOG("expr(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
+    PARSE_LOG("expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     pSK->expr_level++;
 
-    if (lookahead == '(')
+    if (LOOKAHEAD == '(')
     {
         match(pSK, '(');
 
-        switch (lookahead)
+        switch (LOOKAHEAD)
         {
         case DEFINE:
             definition(pSK);
@@ -789,7 +787,7 @@ static int expr(SKState* pSK)
                 // handle variable and check for undefined symbol
                 Object* key = vm_get_string(&pSK->vm, yylval.word);
                 
-                match(pSK, lookahead);
+                match(pSK, LOOKAHEAD);
 
                 if (key)
                 {
@@ -860,12 +858,12 @@ int yyparse(SKState *pSK)
         return 0;
 
     // prime the pump
-    lookahead = yylex(pSK);
+    LOOKAHEAD = yylex(pSK);
 
     pSK->indent_level = 0;
 
     // the top-level is zero or more s-expressions
-	while (!pSK->bDone && lookahead != DONE)
+	while (!pSK->bDone && LOOKAHEAD != DONE)
     {
         expr(pSK);
     }

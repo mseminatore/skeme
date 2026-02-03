@@ -81,7 +81,6 @@ enum { ID = 256, DEFINE, LAMBDA, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FA
 };
 
 // externals
-extern int lookahead;
 extern YYLVAL yylval;
 extern int lineno;
 extern int g_bDebug;
