@@ -437,9 +437,9 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("MAKE_LIST\n");
             break;
 
-        case OP_PROC:
-            printf("PROC\n");
-            break;
+        // case OP_PROC:
+        //     printf("PROC\n");
+        //     break;
 
         case OP_CLOSURE:
             printf("CLOSURE\n");

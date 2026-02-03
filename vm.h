@@ -148,9 +148,31 @@ enum
 };
 
 // opcode definitions
-enum { OP_HALT, OP_PUSH, OP_POP, OP_NUM, OP_STRING, OP_TRUE, OP_FALSE, OP_STORE, OP_DUP,
-    OP_LOAD, OP_RET, OP_CALL, OP_ICALL, OP_BRA, OP_BNT, OP_BNF, OP_NOP, OP_PROC, OP_CLOSURE,
-	OP_LIST, OP_GET_LOCAL, OP_SET_LOCAL, OP_PRINT_TOS, OP_LAST
+enum { 
+    OP_HALT,        // halt the VM
+    OP_PUSH,        // push a value onto the stack
+    OP_POP,         // pop a value from the stack
+    OP_NUM,         // push a numeric value onto the stack
+    OP_STRING,      // push a string value onto the stack
+    OP_TRUE,        // push the boolean value true onto the stack
+    OP_FALSE,       // push the boolean value false onto the stack
+    OP_STORE,       // store a value in a variable
+    OP_DUP,         // duplicate the top value on the stack
+    OP_LOAD,        // load a value from a variable
+    OP_RET,         // return from a function
+    OP_CALL,        // call a function
+    OP_ICALL,       // call an indirect function
+    OP_BRA,         // branch always
+    OP_BNT,         // branch if not true
+    OP_BNF,         // branch if not false
+    OP_NOP,         // no operation
+    // OP_PROC,        // procedure definition
+    OP_CLOSURE,     // closure definition
+	OP_LIST,        // list construction
+    OP_GET_LOCAL,   // get a local variable
+    OP_SET_LOCAL,   // set a local variable
+    OP_PRINT_TOS,   // print the top of the stack
+    OP_LAST         // last opcode
 };
 
 // opcode type
