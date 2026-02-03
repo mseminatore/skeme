@@ -79,10 +79,9 @@ struct SKState
 
     int indent_level;              // current parse indent level
     int expr_level;                // current expression nesting level
+    int bDone;                     // flag to signal interpreter shutdown
 
 };
-
-extern int g_bDone;
 
 //-----------------
 // function decls

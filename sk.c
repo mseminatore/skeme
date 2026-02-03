@@ -58,8 +58,9 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     pSK->warn_count = 0;
     pSK->parse_log_enabled = 0;
     pSK->indent_level = 0;
+    pSK->bDone = 0;
     pSK->expr_level = 0;
-    
+
     // initialize error handling
     pSK->error_handler = sk_default_error_handler;
     pSK->error_stream = stderr;

@@ -865,7 +865,7 @@ int yyparse(SKState *pSK)
     pSK->indent_level = 0;
 
     // the top-level is zero or more s-expressions
-	while (!g_bDone && lookahead != DONE)
+	while (!pSK->bDone && lookahead != DONE)
     {
         expr(pSK);
     }

@@ -355,7 +355,7 @@ static int sk_exit(SKState* pSK)
         }
 	}
 
-    g_bDone = TRUE;
+    pSK->bDone = TRUE;
 
     printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
 

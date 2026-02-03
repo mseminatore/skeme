@@ -14,7 +14,6 @@ int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
-int g_bDone = FALSE;
 int g_bInteractive = FALSE;
 
 CodeChunk repl_chunk;
@@ -125,18 +124,18 @@ int main(int argc, char *argv[])
         if (!g_bInteractive)
         {
             // clean up and exit
-            g_bDone = TRUE;
+            sk.bDone = TRUE;
 		}
     }
 
     // default input is stdin
-	if (!g_bDone)
+	if (!sk.bDone)
     {
         push_fileptr_stack(&sk, stdin, "stdin");
     }
 
     // REPL loop
-    while (!g_bDone)
+    while (!sk.bDone)
     {
         vm_reset(&sk.vm);
 
@@ -148,7 +147,7 @@ int main(int argc, char *argv[])
         // Exit if we've reached EOF on stdin
         if (sk.yyin == NULL || (sk.yyin == stdin && feof(sk.yyin)))
         {
-            g_bDone = TRUE;
+            sk.bDone = TRUE;
             break;
         }
         
