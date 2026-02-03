@@ -77,11 +77,13 @@ struct SKState
     FILE* output_stream;            // general output stream
     FILE *yyin;                     // current input file pointer
 
-    int indent_level;              // current parse indent level
-    int expr_level;                // current expression nesting level
-    int bDone;                     // flag to signal interpreter shutdown
-    int lookahead;                 // current lookahead token
-
+    int indent_level;               // current parse indent level
+    int expr_level;                 // current expression nesting level
+    int bDone;                      // flag to signal interpreter shutdown
+    int lookahead;                  // current lookahead token
+    YYLVAL yylval;                  // current token value
+    int lineno;                     // current line number
+    int column;                     // current column number
 };
 
 //-----------------

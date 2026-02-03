@@ -112,7 +112,7 @@ int main(int argc, char *argv[])
 		// execute the parsed code
         vm_exec(&sk.vm, repl_chunk.code);
 
-        LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", lineno, infile, sk.err_count, sk.warn_count);
+        LOG("Parsed %d lines in '%s' with %d errors and %d warnings\n", sk.lineno, infile, sk.err_count, sk.warn_count);
 
         if (sk.vm.sp)
         {

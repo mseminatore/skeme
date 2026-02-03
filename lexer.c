@@ -4,12 +4,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "lexer.h"
 #include "parser.h"
-
-// current state
-int lineno = 1;
-YYLVAL yylval;
 
 // define our keyword token table
 Tokens tokens[] =
@@ -311,7 +306,7 @@ int getNumber(SKState* pSK)
 	// make sure string is asciiz
 	*bufptr = '\0';
 
-    yylval.ival = strtol(buf, NULL, base);
+    pSK->yylval.ival = strtol(buf, NULL, base);
     return NUMBER;
 }
 
@@ -357,15 +352,15 @@ int getString(SKState* pSK, int delim)
     int sym_num = lookup_symbol(pSK, buf);
     if (sym_num != -1)
     {
-        yylval.symbol = sym_num;
+        pSK->yylval.symbol = sym_num;
         // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         return STRING;
     }
 
-    sym_num = add_symbol(pSK, buf, lineno);
+    sym_num = add_symbol(pSK, buf, pSK->lineno);
 
-    yylval.symbol = sym_num;
-    //strcpy(yylval.word, buf);
+    pSK->yylval.symbol = sym_num;
+    //strcpy(pSK->yylval.word, buf);
     // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
 
     return STRING;
@@ -410,7 +405,7 @@ yylex01:
         }
         else if (follow(pSK, '\'', TRUE, FALSE))
         {
-            yylval.ival = backslash(pSK, c);
+            pSK->yylval.ival = backslash(pSK, c);
             return CHAR;
         }
 
@@ -438,7 +433,7 @@ yylex01:
 
             if (n != '$' && !isdigit(n))
             {
-                yylval.word[0] = c; yylval.word[1] = 0;
+                pSK->yylval.word[0] = c; pSK->yylval.word[1] = 0;
                 return c;
             }
         }
@@ -472,7 +467,7 @@ yylex01:
         int sym_num = lookup_symbol(pSK, buf);
         if (sym_num == -1)
         {
-            sym_num = add_symbol(pSK, buf, lineno);
+            sym_num = add_symbol(pSK, buf, pSK->lineno);
             // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
         }
         else
@@ -480,15 +475,15 @@ yylex01:
             // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
         }
 
-        yylval.symbol = sym_num;
-        strcpy(yylval.word, buf);
+        pSK->yylval.symbol = sym_num;
+        strcpy(pSK->yylval.word, buf);
         return ID;
     }
 
     // track line numbers
     if (c == '\n')
     {
-        lineno++;           // update global line count
+        pSK->lineno++;           // update global line count
         if (pSK && pSK->file_stack_ptr >= 0)
             CURRENT_LINENO++;   // update file local line number
         
@@ -504,7 +499,7 @@ yylex01:
     case '<':
         if (follow(pSK, '=', TRUE, FALSE))
         {
-			strcpy(yylval.word, "<=");
+			strcpy(pSK->yylval.word, "<=");
             return ID;
         }
         break;
@@ -512,13 +507,13 @@ yylex01:
     case '>':
         if (follow(pSK, '=', TRUE, FALSE))
         {
-            strcpy(yylval.word, ">=");
+            strcpy(pSK->yylval.word, ">=");
             return ID;
         }
         break;
     }
 
     // return single character tokens
-    yylval.word[0] = c; yylval.word[1] = 0;
+    pSK->yylval.word[0] = c; pSK->yylval.word[1] = 0;
     return c;
 }

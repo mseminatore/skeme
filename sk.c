@@ -61,6 +61,9 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     pSK->bDone = 0;
     pSK->lookahead = 0;
     pSK->expr_level = 0;
+    pSK->lineno = 1;
+    pSK->column = 1;
+//    pSK->yyin = NULL;
 
     // initialize error handling
     pSK->error_handler = sk_default_error_handler;

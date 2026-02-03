@@ -193,18 +193,18 @@ static int atom(SKState* pSK)
 
     case NUMBER:
         // handle number
-        PARSE_LOG("NUMBER: %d\n", yylval.ival);
+        PARSE_LOG("NUMBER: %d\n", pSK->yylval.ival);
 
-		vm_emit_number(&pSK->vm, yylval.ival);
+		vm_emit_number(&pSK->vm, pSK->yylval.ival);
         match(pSK, NUMBER);
         unindent(pSK);
         break;
 
     case STRING:
         // TODO - use yylval.word and handle interned strings
-        PARSE_LOG("STRING: '%s'\n", pSK->symbols[yylval.symbol].name);
+        PARSE_LOG("STRING: '%s'\n", pSK->symbols[pSK->yylval.symbol].name);
 
-		vm_emit_string(&pSK->vm, pSK->symbols[yylval.symbol].name);
+		vm_emit_string(&pSK->vm, pSK->symbols[pSK->yylval.symbol].name);
         match(pSK, STRING);
         unindent(pSK);
         break;
@@ -219,13 +219,13 @@ static int atom(SKState* pSK)
 
     case ID:
         {
-            PARSE_LOG("ID: '%s'\n", yylval.word);
+            PARSE_LOG("ID: '%s'\n", pSK->yylval.word);
 
             // check if var is local, if so emit stack read
-			Object* obj = vm_get_local_var(&pSK->vm, yylval.word);
+			Object* obj = vm_get_local_var(&pSK->vm, pSK->yylval.word);
 
             // handle variable and check for undefined symbol
-            Object* key = vm_get_string(&pSK->vm, yylval.word);
+            Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
             match(pSK, ID);
 
             if (!key)
@@ -269,7 +269,7 @@ static int formals(SKState* pSK, Procedure* proc)
     while (LOOKAHEAD == ID)
     {
         arity++;
-		vm_set_var(&pSK->vm, yylval.word, MAKE_NUM(arity));   // add parameter to function scope
+		vm_set_var(&pSK->vm, pSK->yylval.word, MAKE_NUM(arity));   // add parameter to function scope
         match(pSK, ID);
     }
 
@@ -332,7 +332,7 @@ static int definition(SKState* pSK)
         vm_new_environment(&pSK->vm);   // create new environment for function scope
 
         // function name
-        Object* proc_name = vm_new_string(&pSK->vm, yylval.word);
+        Object* proc_name = vm_new_string(&pSK->vm, pSK->yylval.word);
 		vm_push(&pSK->vm, proc_name);                    // stash function name on stack in case of GC
             Object* proc_obj = vm_new_proc(&pSK->vm);
 		vm_pop(&pSK->vm);                                // remove function name from stack
@@ -365,7 +365,7 @@ static int definition(SKState* pSK)
     else
     {
 		// variable definition
-        Object* key = vm_new_string(&pSK->vm, yylval.word);
+        Object* key = vm_new_string(&pSK->vm, pSK->yylval.word);
 		vm_define_global(&pSK->vm, key, NULL);   // needs to be in global table before expr() in case of GC
         vm_emit_push_object(&pSK->vm, key);
 
@@ -477,7 +477,7 @@ static int load_expr(SKState* pSK)
     }
 
     // get filename
-    const char* filename = pSK->symbols[yylval.symbol].name;
+    const char* filename = pSK->symbols[pSK->yylval.symbol].name;
     match(pSK, STRING);
 
     // load (parse) the file
@@ -496,7 +496,7 @@ static int set(SKState* pSK)
 
     match(pSK, SET);
     // handle variable and check for undefined symbol
-    Object* key = vm_get_string(&pSK->vm, yylval.word);
+    Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
     if (!key)
     {
         yyerror(pSK, "entity undefined");
@@ -782,7 +782,7 @@ static int expr(SKState* pSK)
             {
                 // handle native and regular function calls
                 // handle variable and check for undefined symbol
-                Object* key = vm_get_string(&pSK->vm, yylval.word);
+                Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
                 
                 match(pSK, LOOKAHEAD);
 

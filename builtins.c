@@ -5,7 +5,6 @@
 #include <assert.h>
 #include <ctype.h>
 #include "parser.h"
-#include "vm.h"
 #include "term_colors.h"
 #include "platform.h"
 

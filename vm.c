@@ -495,34 +495,34 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
         switch(opcode)
         {
-        case OP_PUSH:
+        case OP_PUSH:   // push object onto stack
             VM_LOG("PUSH obj\n");
             vm_push(pvm, (Object*)*pvm->ip++);
             break;
 
-        case OP_POP:
+        case OP_POP:    // pop object from stack
             VM_LOG("POP obj\n");
             vm_pop(pvm);
             break;
 
-        case OP_DUP:
+        case OP_DUP:    // duplicate top of stack
             VM_LOG("DUP\n");
             obj = vm_peek(pvm, 0);
             vm_push(pvm, obj);
 			break;
 
-        case OP_NUM:
+        case OP_NUM:    // push number onto stack
             VM_LOG("PUSH NUM %zu\n", *pvm->ip);
             vm_push(pvm, MAKE_NUM(*pvm->ip++));
             break;
 
-        case OP_STRING:
+        case OP_STRING:    // push string onto stack
             VM_LOG("PUSH STRING '%s'\n", (const char*)*pvm->ip);
             obj = vm_new_string(pvm, (const char*)*pvm->ip++);
             vm_push(pvm, obj);
             break;
 
-        case OP_RET:
+        case OP_RET:    // return from function
             VM_LOG("RET\n");
             {
 				Object* nargs_obj = vm_pop(pvm);    // pop number of args
@@ -537,21 +537,21 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             }
             break;
 
-        case OP_HALT:
+        case OP_HALT:    // halt execution
             VM_LOG("HALT\n");
             return;
 
-        case OP_TRUE:
+        case OP_TRUE:    // push true onto stack
             VM_LOG("PUSH TRUE\n");
             vm_pushBoolean(pvm, TRUE);
             break;
 
-        case OP_FALSE:
+        case OP_FALSE:    // push false onto stack
             VM_LOG("PUSH FALSE\n");
             vm_pushBoolean(pvm, FALSE);
             break;
 
-        case OP_ICALL:
+        case OP_ICALL:    // indirect call to function
         {
             Object* fn_obj = vm_pop(pvm);   // get function object
                 
@@ -566,7 +566,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
             break;
 
-        case OP_CALL:
+        case OP_CALL:    // call function
         {
             Object* fn_obj = vm_pop(pvm);   // get function object
 
@@ -629,7 +629,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
             break;
 
-        case OP_BNT:
+        case OP_BNT:    // branch if not true
             VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (IS_FALSE(obj)) 
@@ -644,7 +644,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             }
             break;
 
-        case OP_BNF:
+        case OP_BNF:    // branch if not false
             VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             obj = vm_pop(pvm);
             if (!IS_FALSE(obj))
@@ -659,19 +659,19 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             }
             break;
 
-        case OP_NOP:
+        case OP_NOP:    // no operation
             VM_LOG("NOP\n");
             // do nothing!
             break;
 
-        case OP_BRA:
+        case OP_BRA:    // branch always
         {
             VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
             pvm->ip += *pvm->ip;
         }
 			break;
 
-        case OP_STORE:
+        case OP_STORE:    // store variable
         {
             // variable assignment
             Object *value = vm_pop(pvm);
@@ -688,7 +688,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
 			break;
 
-        case OP_LOAD:
+        case OP_LOAD:    // load variable
         {
             Object* key = vm_pop(pvm);
             VM_LOG("LOAD '%s'\n", ((String*)key)->value);
@@ -704,7 +704,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
             break;
 
-        case OP_GET_LOCAL:
+        case OP_GET_LOCAL:    // get local variable
             VM_LOG("GET_LOCAL\n");
             {
                 Object* index_obj = vm_pop(pvm);
@@ -714,7 +714,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 			}
             break;
 
-        case OP_LIST:
+        case OP_LIST:    // create a list
         {
             VM_LOG("MAKE_LIST\n");
             Pair* alist = NULL;
@@ -737,7 +737,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
             break;
 
-        case OP_PRINT_TOS:
+        case OP_PRINT_TOS:    // print top of stack
             VM_LOG("PRINT_TOS\n");
 
             if (pvm->sp)
@@ -749,8 +749,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
             break;
 
-        default:
-            printf("Unknown opcode: %zu\n", opcode);
+        default:    // unknown opcode
+            fprintf(stderr, "Unknown opcode: %zu\n", opcode);
             break;
         }
     }
