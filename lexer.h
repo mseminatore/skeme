@@ -68,6 +68,7 @@ typedef struct
     int ival;
     int symbol;
     char word[SMALL_BUF];   // storage for symbol name
+    // Object *str;
 //    char *lexeme;
 } YYLVAL;
 
