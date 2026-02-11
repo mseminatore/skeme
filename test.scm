@@ -267,7 +267,17 @@
 (define (sqr x) (* x x))
 (test-case "passed fn param" (= (bind1 sqr 5) 25))
 
-;(assert (= (bind (lambda (y) (+ y 10)) 5) 15) "passed param test failed")
+;----------------------
+; test lambda expressions
+;----------------------
+(define double (lambda (x) (* x 2)))
+(test-case "lambda with define" (= (double 5) 10))
+
+(define add-lambda (lambda (a b) (+ a b)))
+(test-case "lambda two args" (= (add-lambda 3 4) 7))
+
+; Note: passing lambdas directly as arguments requires closure support
+; (test-case "pass lambda to fn" (= (bind1 (lambda (n) (+ n 1)) 10) 11))
 
 ;----------------------
 ; test character literals and predicates

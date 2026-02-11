@@ -409,6 +409,8 @@ static int lambda(SKState* pSK)
 
     match(pSK, LAMBDA);
 
+    vm_new_environment(&pSK->vm);   // create new environment for lambda scope
+
     Object* proc_obj = vm_new_proc(&pSK->vm);
 
     // put the procedure object on the stack for GC safety
@@ -444,13 +446,18 @@ static int lambda(SKState* pSK)
     // function body
     local_body(pSK);
 
-    vm_emit_push_object(&pSK->vm, proc_obj);
-
-    // return from function
+    // return from function (body's result is on stack)
+    vm_emit_number(&pSK->vm, proc->arity);
     vm_emit(&pSK->vm, OP_RET);
     vm_set_current_chunk(&pSK->vm, prev_chunk);
 
-    // vm_pop(&pSK->vm);    // remove proc_obj from stack
+    vm_free_environment(&pSK->vm); // pop lambda environment off chain
+
+    // Emit code to push the lambda object in the OUTER context
+    // This handles (define f (lambda ...)) - we want f to hold the lambda
+    vm_emit_push_object(&pSK->vm, proc_obj);
+
+    vm_pop(&pSK->vm);    // remove proc_obj from stack (was pushed for GC safety)
 
     unindent(pSK);
     return 0;
