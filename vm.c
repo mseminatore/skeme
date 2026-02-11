@@ -50,11 +50,12 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         char c = AS_CHAR(obj);
         switch (c)
         {
-        case '\n': fprintf(stream, "#\\newline"); break;
-        case '\r': fprintf(stream, "#\\return"); break;
-        case '\t': fprintf(stream, "#\\tab"); break;
-        case ' ':  fprintf(stream, "#\\space"); break;
-        default:   fprintf(stream, "#\\%c", c); break;
+        case '\n':   fprintf(stream, "#\\newline"); break;
+        case '\r':   fprintf(stream, "#\\return"); break;
+        case '\t':   fprintf(stream, "#\\tab"); break;
+        case ' ':    fprintf(stream, "#\\space"); break;
+        case '\x1b': fprintf(stream, "#\\escape"); break;
+        default:     fprintf(stream, "#\\%c", c); break;
         }
         return;
     }

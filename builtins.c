@@ -1370,30 +1370,42 @@ static int sk_read_line(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: read-char
+// built-in function: read-char (port is optional, defaults to yyin)
 //-----------------------------------------------
 static int sk_read_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* port_obj = vm_pop(&pSK->vm);
+    // get arg count from stack
+    Object* raw_n = vm_pop(&pSK->vm);
+    int nargs = AS_NUM(raw_n);
     
-    if (!IS_PORT(port_obj))
+    FILE* fptr;
+    if (nargs == 0)
     {
-        yyerror(pSK, "read-char: expected port");
-        vm_push(&pSK->vm, NULL);
-        return SK_FALSE;
+        // No port provided, use default input
+        fptr = pSK->yyin ? pSK->yyin : stdin;
+    }
+    else
+    {
+        Object* port_obj = vm_pop(&pSK->vm);
+        if (!IS_PORT(port_obj))
+        {
+            yyerror(pSK, "read-char: expected port");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        Port* port = (Port*)port_obj;
+        if (!port->fptr)
+        {
+            yyerror(pSK, "read-char: port is closed");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        fptr = port->fptr;
     }
 
-    Port* port = (Port*)port_obj;
-    if (!port->fptr)
-    {
-        yyerror(pSK, "read-char: port is closed");
-        vm_push(&pSK->vm, NULL);
-        return SK_FALSE;
-    }
-
-    int c = fgetc(port->fptr);
+    int c = fgetc(fptr);
     if (c == EOF)
     {
         vm_push(&pSK->vm, NULL);  // return nil on EOF
@@ -1406,15 +1418,49 @@ static int sk_read_char(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: write-char
+// built-in function: write-char (port is optional, defaults to output_stream)
 //-----------------------------------------------
 static int sk_write_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* port_obj = vm_pop(&pSK->vm);
+    // get arg count from stack
+    Object* raw_n = vm_pop(&pSK->vm);
+    int nargs = AS_NUM(raw_n);
+
+    if (nargs < 1)
+    {
+        yyerror(pSK, "write-char: expected at least one argument");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    FILE* fptr;
+    if (nargs == 1)
+    {
+        // No port provided, use default output
+        fptr = pSK->output_stream ? pSK->output_stream : stdout;
+    }
+    else
+    {
+        Object* port_obj = vm_pop(&pSK->vm);
+        if (!IS_PORT(port_obj))
+        {
+            yyerror(pSK, "write-char: expected port");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        Port* port = (Port*)port_obj;
+        if (!port->fptr)
+        {
+            yyerror(pSK, "write-char: port is closed");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        fptr = port->fptr;
+    }
+
     Object* char_obj = vm_pop(&pSK->vm);
-    
     if (!IS_CHAR(char_obj))
     {
         yyerror(pSK, "write-char: expected character");
@@ -1422,22 +1468,7 @@ static int sk_write_char(SKState* pSK)
         return SK_FALSE;
     }
 
-    if (!IS_PORT(port_obj))
-    {
-        yyerror(pSK, "write-char: expected port");
-        vm_push(&pSK->vm, NULL);
-        return SK_FALSE;
-    }
-
-    Port* port = (Port*)port_obj;
-    if (!port->fptr)
-    {
-        yyerror(pSK, "write-char: port is closed");
-        vm_push(&pSK->vm, NULL);
-        return SK_FALSE;
-    }
-
-    fputc(AS_CHAR(char_obj), port->fptr);
+    fputc(AS_CHAR(char_obj), fptr);
     vm_push(&pSK->vm, NULL);  // return nil
     return SK_TRUE;
 }
@@ -1725,8 +1756,8 @@ static SKFuncSet built_in_funcs[] =
     { "delete-file", sk_delete_file, 1 },
     { "read", sk_read, 1 },
     { "read-line", sk_read_line, 1 },
-    { "read-char", sk_read_char, 1 },
-    { "write-char", sk_write_char, 2 },
+    { "read-char", sk_read_char, SK_ARITY_ZERO_OR_ONE },
+    { "write-char", sk_write_char, SK_ARITY_ONE_OR_MORE },
     { "write-line", sk_write_line, 2 },
     { "write", sk_write, 2 },
     // { "print", sk_print },

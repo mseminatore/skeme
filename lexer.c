@@ -519,6 +519,11 @@ yylex01:
                     pSK->yylval.ival = '\r';
                     return CHAR;
                 }
+                else if (!sk_strcasecmp(buf, "escape"))
+                {
+                    pSK->yylval.ival = '\x1b';
+                    return CHAR;
+                }
                 else
                 {
                     yyerror(pSK, "unknown character name");
