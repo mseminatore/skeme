@@ -80,13 +80,23 @@ typedef struct Object {
     struct Object* next;    // Pointer to the next object in the linked list
 } Object;
 
-// object tagging definitions
-#define TAG_BITS 2
+// 64-bit platform detection
+#if INTPTR_MAX == INT64_MAX
+#define SK_64BIT 1
+#else
+#define SK_64BIT 0
+#endif
+
+// object tagging definitions (3-bit scheme)
+// Tag values: 0=obj, 1=int, 2=bool, 3=char, 4=float (64-bit only), 5-7=reserved
+#define TAG_BITS 3
 #define TAG_BIT_SHIFT TAG_BITS
-#define TAG_MASK ((1 << TAG_BITS) - 1)
-#define TAG_NUM 0x1
-#define TAG_OBJ 0x0
-#define TAG_BOOL 0x2    // lowest bit set for booleans
+#define TAG_MASK ((1 << TAG_BITS) - 1)  // 0x7
+#define TAG_OBJ   0x0   // Heap objects (8-byte aligned pointers)
+#define TAG_NUM   0x1   // Integers: value << 3 | 0x1
+#define TAG_BOOL  0x2   // Booleans: false=0x02, true=0x0A
+#define TAG_CHAR  0x3   // Characters: char_value << 3 | 0x3
+#define TAG_FLOAT 0x4   // Floats (64-bit only): float_bits << 3 | 0x4
 
 // macros to check and convert to object pointers
 #define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & TAG_MASK))
@@ -101,24 +111,49 @@ typedef struct Object {
 #define UNMARK_OBJ(obj)     do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 0; } while(0)
 #define IS_MARKED(obj)      (IS_OBJ(obj) ? AS_OBJ(Object, obj)->marked : 0)
 
-// object classification
+// object classification - integers
 #define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_NUM))
 #define IS_NIL(obj)         (obj == NULL)
-#define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_BOOL)))
+
+// object classification - booleans (false=0x02, true=0x0A)
+#define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_BOOL))
+#define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x8))
+#define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
+
+// object classification - characters
+#define IS_CHAR(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_CHAR))
+#define AS_CHAR(obj)        ((char)((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_CHAR(c)        ((Object*)((uintptr_t)((unsigned char)(c) << TAG_BIT_SHIFT) | TAG_CHAR))
+
+// object classification - floats (tagged on 64-bit, heap on 32-bit)
+#if SK_64BIT
+static inline uint32_t sk_encode_float(float f) { 
+    union { float f; uint32_t u; } conv; conv.f = f; return conv.u; 
+}
+static inline float sk_decode_float(intptr_t bits) { 
+    union { float f; uint32_t u; } conv; conv.u = (uint32_t)bits; return conv.f; 
+}
+#define IS_TAGGED_FLOAT(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_FLOAT))
+#define AS_TAGGED_FLOAT(obj)    (sk_decode_float((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_TAGGED_FLOAT(f)    ((Object*)(((uintptr_t)sk_encode_float(f) << TAG_BIT_SHIFT) | TAG_FLOAT))
+#define IS_FLOAT(obj)           (IS_TAGGED_FLOAT(obj) || (OBJ_TYPE(obj) == OBJ_FLOAT))
+#else
+#define IS_TAGGED_FLOAT(obj)    (0)
+#define IS_FLOAT(obj)           (OBJ_TYPE(obj) == OBJ_FLOAT)
+#endif
+
+// object classification - heap types
 #define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
 #define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
 #define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
 #define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
 #define IS_FUNCTION(obj)    (IS_PROCEDURE(obj) || IS_NATIVE_FN(obj))
-#define IS_FLOAT(obj)       (OBJ_TYPE(obj) == OBJ_FLOAT)
 #define IS_ENVIRONMENT(obj) (OBJ_TYPE(obj) == OBJ_ENVIRONMENT)
 #define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
-#define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x1))
-#define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
 #define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
 
 // macros to create tagged objects
-#define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x1))
+#define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x8))
 #define MAKE_FALSE()        ((Object*)TAG_BOOL)
 #define MAKE_NUM(val)       ((Object*)((uintptr_t)((val) << TAG_BIT_SHIFT) | TAG_NUM))
 
@@ -313,6 +348,8 @@ void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
 Object* vm_new_string(VM* pvm, const char* str);
 Object* vm_new_proc(VM* pvm);
+Object* vm_new_float(VM* pvm, float value);
+float vm_get_float(Object* obj);
 Object* vm_get_string(VM* pvm, const char* str);
 Port* vm_new_port(VM* pvm, const char* name, FILE* fptr);
 int vm_create_default_ports(VM* pvm);

@@ -44,6 +44,30 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         return;
     }
 
+    // Handle tagged characters
+    if (IS_CHAR(obj))
+    {
+        char c = AS_CHAR(obj);
+        switch (c)
+        {
+        case '\n': fprintf(stream, "#\\newline"); break;
+        case '\r': fprintf(stream, "#\\return"); break;
+        case '\t': fprintf(stream, "#\\tab"); break;
+        case ' ':  fprintf(stream, "#\\space"); break;
+        default:   fprintf(stream, "#\\%c", c); break;
+        }
+        return;
+    }
+
+#if SK_64BIT
+    // Handle tagged floats (64-bit only)
+    if (IS_TAGGED_FLOAT(obj))
+    {
+        fprintf(stream, "%g", AS_TAGGED_FLOAT(obj));
+        return;
+    }
+#endif
+
     if (IS_OBJ(obj))
     {
         switch (OBJ_TYPE(obj))
@@ -105,6 +129,13 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         }
 			break;
 
+        case OBJ_FLOAT:
+        {
+            Float* flt = (Float*)obj;
+            fprintf(stream, "%g", flt->value);
+        }
+        break;
+
         default:
             fprintf(stream, "#<obj type=%d>", OBJ_TYPE(obj));
             break;
@@ -112,7 +143,7 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
     }
     else
     {
-        // print number
+        // print number (tagged integer)
         fprintf(stream, "%d", AS_NUM(obj));
     }
 }
@@ -1490,6 +1521,39 @@ Object* vm_new_proc(VM* pvm)
 	vm_init_chunk(&proc->chunk);
 
     return obj;
+}
+
+//--------------------------------------------------------------
+// Create a new float object (tagged on 64-bit, heap on 32-bit)
+//--------------------------------------------------------------
+Object* vm_new_float(VM* pvm, float value)
+{
+#if SK_64BIT
+    // 64-bit: return tagged float (no allocation needed)
+    (void)pvm;  // unused on 64-bit
+    return MAKE_TAGGED_FLOAT(value);
+#else
+    // 32-bit: heap allocate
+    if (!pvm) return NULL;
+    Object* obj = vm_newObject(pvm, sizeof(Float), OBJ_FLOAT);
+    Float* flt = (Float*)obj;
+    flt->value = value;
+    return obj;
+#endif
+}
+
+//--------------------------------------------------------------
+// Get float value from object (handles both tagged and heap floats)
+//--------------------------------------------------------------
+float vm_get_float(Object* obj)
+{
+#if SK_64BIT
+    if (IS_TAGGED_FLOAT(obj))
+        return AS_TAGGED_FLOAT(obj);
+#endif
+    if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_FLOAT)
+        return ((Float*)obj)->value;
+    return 0.0f;  // fallback
 }
 
 //--------------------------------------------------------------

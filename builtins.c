@@ -89,7 +89,7 @@ static int sk_nullp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (IS_NIL(obj))
@@ -106,7 +106,7 @@ static int sk_eqp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
@@ -124,7 +124,7 @@ static int sk_equalp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
@@ -192,7 +192,7 @@ static int sk_numberp(SKState *pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (IS_NUM(obj))
@@ -209,7 +209,7 @@ static int sk_booleanp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_BOOL(obj))
@@ -220,13 +220,96 @@ static int sk_booleanp(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: char?
+//-----------------------------------------------
+static int sk_charp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    Object* result = MAKE_FALSE();
+    Object* obj = vm_pop(&pSK->vm);
+
+    if (IS_CHAR(obj))
+        result = MAKE_TRUE();
+
+    vm_push(&pSK->vm, result);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: float?
+//-----------------------------------------------
+static int sk_floatp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    
+    Object* result = MAKE_FALSE();
+    Object* obj = vm_pop(&pSK->vm);
+
+    if (IS_FLOAT(obj))
+        result = MAKE_TRUE();
+
+    vm_push(&pSK->vm, result);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: char->integer
+//-----------------------------------------------
+static int sk_char_to_integer(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&pSK->vm);
+
+    if (!IS_CHAR(obj))
+    {
+        yyerror(pSK, "char->integer: expected character");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    int val = (unsigned char)AS_CHAR(obj);
+    vm_push(&pSK->vm, MAKE_NUM(val));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: integer->char
+//-----------------------------------------------
+static int sk_integer_to_char(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&pSK->vm);
+
+    if (!IS_NUM(obj))
+    {
+        yyerror(pSK, "integer->char: expected integer");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    int val = AS_NUM(obj);
+    if (val < 0 || val > 255)
+    {
+        yyerror(pSK, "integer->char: value out of range (0-255)");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    vm_push(&pSK->vm, MAKE_CHAR((char)val));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: pair?
 //-----------------------------------------------
 static int sk_pairp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_PAIR)
@@ -263,7 +346,7 @@ static int sk_not(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (IS_BOOL(obj) && IS_FALSE(obj))
@@ -417,7 +500,7 @@ static int sk_stringp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     if (obj && IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
@@ -434,7 +517,7 @@ static int sk_listp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
 
     // check for proper list (nil or chain of pairs ending in nil)
@@ -510,7 +593,7 @@ static int sk_zerop(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     Object* obj = vm_pop(&pSK->vm);
     
     if (obj && IS_NUM(obj) && AS_NUM(obj) == 0)
@@ -659,7 +742,7 @@ static int sk_less(SKState* pSK)
         return SK_FALSE;
 	}
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     if (AS_NUM(obj1) < AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -692,7 +775,7 @@ static int sk_less_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     if (AS_NUM(obj1) <= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -717,7 +800,7 @@ static int sk_greater(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     if (AS_NUM(obj1) > AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -742,7 +825,7 @@ static int sk_greater_equal(SKState* pSK)
         return SK_FALSE;
     }
 
-    Object* bool = vm_newBoolean(&pSK->vm, FALSE);   // default to false
+    Object* bool = MAKE_FALSE();   // default to false
     if (AS_NUM(obj1) >= AS_NUM(obj2))
         bool = MAKE_TRUE();
 
@@ -1165,6 +1248,63 @@ static int sk_string_to_number(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: string->float
+//-----------------------------------------------
+static int sk_string_to_float(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_OBJ(obj) || OBJ_TYPE(obj) != OBJ_STRING)
+    {
+        yyerror(pSK, "string->float expects a string");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    String* str = (String*)obj;
+    char* endptr;
+    float val = (float)strtod(str->value, &endptr);
+    
+    if (endptr == str->value)
+    {
+        // Parse failed - no conversion performed
+        vm_push(&pSK->vm, MAKE_FALSE());
+    }
+    else
+    {
+        vm_push(&pSK->vm, vm_new_float(&pSK->vm, val));
+    }
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: float->string
+//-----------------------------------------------
+static int sk_float_to_string(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_FLOAT(obj))
+    {
+        yyerror(pSK, "float->string expects a float");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    float val = vm_get_float(obj);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%g", val);
+    
+    Object* str = vm_new_string(&pSK->vm, buf);
+    vm_push(&pSK->vm, str);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: delete-file
 //-----------------------------------------------
 static int sk_delete_file(SKState* pSK)
@@ -1236,8 +1376,33 @@ static int sk_read_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'read-char' not implemented yet");
-    return SK_FALSE;
+    Object* port_obj = vm_pop(&pSK->vm);
+    
+    if (!IS_PORT(port_obj))
+    {
+        yyerror(pSK, "read-char: expected port");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    Port* port = (Port*)port_obj;
+    if (!port->fptr)
+    {
+        yyerror(pSK, "read-char: port is closed");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    int c = fgetc(port->fptr);
+    if (c == EOF)
+    {
+        vm_push(&pSK->vm, NULL);  // return nil on EOF
+    }
+    else
+    {
+        vm_push(&pSK->vm, MAKE_CHAR((char)c));
+    }
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1247,8 +1412,34 @@ static int sk_write_char(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'write-char' not implemented yet");
-    return SK_FALSE;
+    Object* port_obj = vm_pop(&pSK->vm);
+    Object* char_obj = vm_pop(&pSK->vm);
+    
+    if (!IS_CHAR(char_obj))
+    {
+        yyerror(pSK, "write-char: expected character");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    if (!IS_PORT(port_obj))
+    {
+        yyerror(pSK, "write-char: expected port");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    Port* port = (Port*)port_obj;
+    if (!port->fptr)
+    {
+        yyerror(pSK, "write-char: port is closed");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    fputc(AS_CHAR(char_obj), port->fptr);
+    vm_push(&pSK->vm, NULL);  // return nil
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1550,6 +1741,8 @@ static SKFuncSet built_in_funcs[] =
     { "equal?", sk_equalp, 2},
     { "number?", sk_numberp, 1 },
     { "boolean?", sk_booleanp, 1 },
+    { "char?", sk_charp, 1 },
+    { "float?", sk_floatp, 1 },
     { "pair?", sk_pairp, 1},
     { "string?", sk_stringp, 1 },
     { "list?", sk_listp, 1 },
@@ -1596,12 +1789,12 @@ static SKFuncSet built_in_funcs[] =
     // converstion functions
     { "number->string", sk_number_to_string, 1 },
     { "string->number", sk_string_to_number, 1 },
+    { "char->integer", sk_char_to_integer, 1 },
+    { "integer->char", sk_integer_to_char, 1 },
+    { "float->string", sk_float_to_string, 1 },
+    { "string->float", sk_string_to_float, 1 },
     // { "string->symbol", sk_string_to_symbol, 1 },
     // { "symbol->string", sk_symbol_to_string, 1 },
-    // { "char->integer", sk_char_to_integer, 1 },
-    // { "integer->char", sk_integer_to_char, 1 },
-    // { "float->string", sk_float_to_string, 1 },
-    // { "string->float", sk_string_to_float, 1 },
 
     // comparison operators
     { "<", sk_less, 2 },
@@ -1625,9 +1818,6 @@ static SKFuncSet built_in_funcs[] =
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
 
-    // { "real?", sk_realp },
-    // { "float?", sk_floatp },
-    // { "char?", sk_charp },
 	// { "symbol?", sk_symbolp },
 	// { "eval", sk_eval },
     { NULL, NULL }

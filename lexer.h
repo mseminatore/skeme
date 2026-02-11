@@ -66,6 +66,7 @@ typedef struct
 typedef struct 
 {
     int ival;
+    float fval;     // float value for FLOAT tokens
     int symbol;
     char word[SMALL_BUF];   // storage for symbol name
     // Object *str;
@@ -77,7 +78,7 @@ extern FILE *yyin;
 
 // token values
 enum { ID = 256, DEFINE, LAMBDA, NUMBER, STRING, CHAR, NIL, TOKEN_TRUE, TOKEN_FALSE, IF, ELSE, COND, LET, BEGIN, QUOTE, SET,
-       LIST, CASE_TOKEN, AND, OR , LOAD,
+       LIST, CASE_TOKEN, AND, OR , LOAD, FLOAT,
 //       PRINT, READ, EVAL,
 };
 

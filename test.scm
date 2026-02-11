@@ -270,6 +270,45 @@
 ;(assert (= (bind (lambda (y) (+ y 10)) 5) 15) "passed param test failed")
 
 ;----------------------
+; test character literals and predicates
+;----------------------
+(test-case "char? on char literal" (char? 'a'))
+(test-case "char? on integer" (not (char? 42)))
+(test-case "char? on string" (not (char? "hello")))
+(test-case "char->integer 'a'" (= (char->integer 'a') 97))
+(test-case "char->integer 'A'" (= (char->integer 'A') 65))
+(test-case "integer->char 65" (char? (integer->char 65)))
+(test-case "char roundtrip" (= (char->integer (integer->char 97)) 97))
+
+;----------------------
+; test Scheme-style character literals
+;----------------------
+(test-case "Scheme char #\\a" (char? #\a))
+(test-case "Scheme char #\\A" (char? #\A))
+(test-case "Scheme char #\\newline" (= (char->integer #\newline) 10))
+(test-case "Scheme char #\\space" (= (char->integer #\space) 32))
+(test-case "Scheme char #\\tab" (= (char->integer #\tab) 9))
+(test-case "Scheme char #\\return" (= (char->integer #\return) 13))
+
+;----------------------
+; test float literals and predicates
+;----------------------
+(test-case "float? on float literal" (float? 3.14))
+(test-case "float? on integer" (not (float? 42)))
+(test-case "float? on negative float" (float? -2.5))
+(test-case "float? on scientific notation" (float? 1e10))
+
+;----------------------
+; test float conversion functions
+;----------------------
+(test-case "string->float valid" (float? (string->float "3.14")))
+(test-case "string->float negative" (float? (string->float "-2.5")))
+(test-case "string->float scientific" (float? (string->float "1e10")))
+(test-case "string->float invalid" (not (string->float "invalid")))
+(test-case "float->string 3.14" (string? (float->string 3.14)))
+(test-case "float->string roundtrip" (float? (string->float (float->string 3.14))))
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)

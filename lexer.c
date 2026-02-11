@@ -266,7 +266,7 @@ void skipToEOL(SKState* pSK)
 }
 
 //------------------------
-// match a number token
+// match a number token (integer or float)
 //------------------------
 int getNumber(SKState* pSK)
 {
@@ -274,6 +274,7 @@ int getNumber(SKState* pSK)
 	char buf[BUF_SIZE];
 	char *bufptr = buf;
 	int base = 10;
+	int is_float = 0;
 
 	// look for hex numbers
  	c = getch(pSK);
@@ -297,7 +298,28 @@ int getNumber(SKState* pSK)
 	else
 	{
 		while (isdigit((c = getch(pSK))) || c == '.')
+		{
+			if (c == '.')
+				is_float = 1;
 			*bufptr++ = c;
+		}
+		// handle scientific notation (e.g., 1e10, 1.5e-3)
+		if (c == 'e' || c == 'E')
+		{
+			is_float = 1;
+			*bufptr++ = c;
+			c = getch(pSK);
+			if (c == '+' || c == '-')
+			{
+				*bufptr++ = c;
+				c = getch(pSK);
+			}
+			while (isdigit(c))
+			{
+				*bufptr++ = c;
+				c = getch(pSK);
+			}
+		}
 	}
 	
 	// need to put back the last character
@@ -306,8 +328,16 @@ int getNumber(SKState* pSK)
 	// make sure string is asciiz
 	*bufptr = '\0';
 
-    pSK->yylval.ival = strtol(buf, NULL, base);
-    return NUMBER;
+	if (is_float)
+	{
+		pSK->yylval.fval = (float)strtod(buf, NULL);
+		return FLOAT;
+	}
+	else
+	{
+		pSK->yylval.ival = strtol(buf, NULL, base);
+		return NUMBER;
+	}
 }
 
 //-------------------------------
@@ -442,7 +472,74 @@ yylex01:
 		return getNumber(pSK);
 	}
 
-    // look for start of a token
+    // look for Scheme-style character literals (#\a, #\newline, etc.)
+    if (c == '#')
+    {
+        int next = getch(pSK);
+        if (next == '\\')
+        {
+            // Parse character literal
+            c = getch(pSK);
+            
+            // Check for named characters (newline, space, tab, return)
+            if (isalpha(c))
+            {
+                char buf[16];
+                int i = 0;
+                buf[i++] = c;
+                while (i < 15 && isalpha(c = getch(pSK)))
+                    buf[i++] = c;
+                buf[i] = '\0';
+                ungetch(pSK, c);  // put back non-alpha char
+                
+                // Check for named characters
+                if (i == 1)
+                {
+                    // Single character like #\a
+                    pSK->yylval.ival = buf[0];
+                    return CHAR;
+                }
+                else if (!sk_strcasecmp(buf, "newline"))
+                {
+                    pSK->yylval.ival = '\n';
+                    return CHAR;
+                }
+                else if (!sk_strcasecmp(buf, "space"))
+                {
+                    pSK->yylval.ival = ' ';
+                    return CHAR;
+                }
+                else if (!sk_strcasecmp(buf, "tab"))
+                {
+                    pSK->yylval.ival = '\t';
+                    return CHAR;
+                }
+                else if (!sk_strcasecmp(buf, "return"))
+                {
+                    pSK->yylval.ival = '\r';
+                    return CHAR;
+                }
+                else
+                {
+                    yyerror(pSK, "unknown character name");
+                    return CHAR;
+                }
+            }
+            else
+            {
+                // Single character like #\( or #\)
+                pSK->yylval.ival = c;
+                return CHAR;
+            }
+        }
+        else
+        {
+            // Not a character literal, put back and continue with # token
+            ungetch(pSK, next);
+        }
+    }
+
+    // look for start of a token (identifiers starting with # like #t, #f)
     if (c == '#' || isalpha(c) || c == '_')
     {
         char buf[BUF_SIZE], *p = buf;

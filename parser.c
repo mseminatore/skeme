@@ -199,6 +199,27 @@ static int atom(SKState* pSK)
         unindent(pSK);
         break;
 
+    case FLOAT:
+        // handle float literal
+        PARSE_LOG("FLOAT: %g\n", pSK->yylval.fval);
+
+        {
+            Object* flt = vm_new_float(&pSK->vm, pSK->yylval.fval);
+            vm_emit_push_object(&pSK->vm, flt);
+        }
+        match(pSK, FLOAT);
+        unindent(pSK);
+        break;
+
+    case CHAR:
+        // handle character literal
+        PARSE_LOG("CHAR: '%c'\n", pSK->yylval.ival);
+
+        vm_emit_push_object(&pSK->vm, MAKE_CHAR(pSK->yylval.ival));
+        match(pSK, CHAR);
+        unindent(pSK);
+        break;
+
     case STRING:
         // TODO - use yylval.word and handle interned strings
         PARSE_LOG("STRING: '%s'\n", pSK->symbols[pSK->yylval.symbol].name);
