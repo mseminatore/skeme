@@ -84,6 +84,7 @@ struct SKState
     YYLVAL yylval;                  // current token value
     int lineno;                     // current line number
     int column;                     // current column number
+    int in_tail_position;           // flag: are we in tail position of a function?
 };
 
 //-----------------

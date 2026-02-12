@@ -216,12 +216,14 @@ enum {
     OP_RET,         // return from a function
     OP_CALL,        // call a function
     OP_ICALL,       // call an indirect function
+    OP_TAILCALL,    // tail call (reuses current frame)
     OP_BRA,         // branch always
     OP_BNT,         // branch if not true
     OP_BNF,         // branch if not false
     OP_NOP,         // no operation
-    // OP_PROC,        // procedure definition
-    OP_CLOSURE,     // closure definition
+    OP_MAKE_CLOSURE, // create closure from procedure + upvalues
+    OP_GET_UPVALUE, // get captured variable by index
+    OP_SET_UPVALUE, // set captured variable by index
 	OP_LIST,        // list construction
     OP_GET_LOCAL,   // get a local variable
     OP_SET_LOCAL,   // set a local variable
@@ -259,12 +261,20 @@ typedef struct Float {
     float value;    // float value
 } Float;
 
+// Upvalue descriptor - describes how to capture a variable
+typedef struct {
+    int is_local;       // 1 if capturing from immediate enclosing scope, 0 if from closure
+    int index;          // local slot index or upvalue index in enclosing closure
+} UpvalueDesc;
+
 // procedure object
 typedef struct Procedure {
     Object base;        // base object
 	int arity;          // number of arguments
 	CodeChunk chunk;    // code chunk
-    String *name;      // function name
+    String *name;       // function name
+    UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
+    int upvalue_count;      // number of upvalues
 } Procedure;
 
 // native function object
@@ -285,8 +295,9 @@ typedef struct Environment {
 // closure object
 typedef struct Closure {
     Object base;            // base object
-    Object* function;       // pointer to the function object
-    // upvalues?
+    struct Procedure* function;  // pointer to the procedure
+    Object** upvalues;      // array of captured values
+    int upvalue_count;      // number of captured values
 } Closure;
 
 // port object
@@ -317,6 +328,7 @@ typedef struct VM {
 	HashTable* interned_strings;    // Hash table for interned strings
 
     Environment *current_scope;     // Current environment/scope
+    Closure* current_closure;       // Currently executing closure (for upvalue access)
     
     int grayCount;
     int grayCapacity;
@@ -389,6 +401,10 @@ Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);
 void vm_set_var(VM* pvm, const char* name, Object* value);
 Object* vm_get_local_var(VM* pvm, const char* name);
+
+// Extended local var lookup that also returns scope depth (0=current, 1=parent, etc.)
+// scope_depth of -1 means not found in any local scope (global)
+Object* vm_get_local_var_ex(VM* pvm, const char* name, int* scope_depth);
 
 // Call a function from C code with given arguments
 // Works with both native functions and Scheme procedures

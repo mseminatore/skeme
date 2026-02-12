@@ -325,9 +325,63 @@ static int local_body(SKState* pSK)
 {
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     
-	// Parse the body expressions - last expression's value becomes return value
-	while (LOOKAHEAD != ')')
+    // Parse the body expressions - last expression's value becomes return value
+    // Only the last expression is in tail position.
+    //
+    // For proper TCO, we parse with tail=0 for all but the last expression.
+    // The challenge: we don't know which is last until we see ')'.
+    //
+    // Solution: Parse each expression, then check if next is ')'.
+    // If yes, the expression we just parsed was in tail position.
+    // To make this work, we emit a "patchable" call or handle it differently.
+    //
+    // Simpler approach for now: count expressions, then re-parse with
+    // tail position set correctly. But that's wasteful.
+    //
+    // Even simpler: for the common case of single-expression bodies,
+    // enable tail position. For multi-expression bodies, only the last
+    // gets tail position. We can achieve this with careful lookahead.
+    
+    int saved_tail = pSK->in_tail_position;
+    
+    // Simple implementation: parse expressions one at a time
+    // After parsing each, check if we're at ')'. If so, the just-parsed
+    // expression was in tail position. But bytecode is already emitted!
+    //
+    // Better: before parsing each expression, peek to see if it COULD be
+    // the last. If the current expression starts with '(' and after it
+    // LOOKAHEAD becomes ')', then it was last.
+    //
+    // For now, just enable tail calls for all expressions in the body.
+    // This is aggressive but works for single-call bodies and for the
+    // last expression of multi-call bodies. Intermediate calls will 
+    // incorrectly use TAILCALL but the result is still correct since
+    // the function just returns earlier (though with wrong return addr).
+    //
+    // Actually no - that's wrong. TAILCALL reuses the frame, so if an
+    // intermediate call uses TAILCALL, control returns to our caller
+    // instead of continuing to the next expression.
+    //
+    // CORRECT approach: we MUST only use TAILCALL for the actual last expr.
+    //
+    // Implementation: parse all expressions with tail=0. Then for the LAST
+    // parsed call instruction, patch it to TAILCALL. Requires bytecode
+    // modification which is messy.
+    //
+    // Alternative: introduce a "begin" form that marks the last expression.
+    // But that changes the language.
+    //
+    // For now, disable tail calls in function bodies until we have proper
+    // implementation. The VM infrastructure (OP_TAILCALL) is ready.
+    
+    pSK->in_tail_position = 0;  // Disabled for correctness
+    
+    while (LOOKAHEAD != ')')
+    {
         expr(pSK);
+    }
+    
+    pSK->in_tail_position = saved_tail;
 
 	unindent(pSK);
     return 0;
@@ -836,9 +890,17 @@ static int expr(SKState* pSK)
                     {
                         expr_tail(pSK); // parse function arguments (if any)
 
-                        // vm_emit_push_object(&pSK->vm, proc);
-                        vm_emit(&pSK->vm, OP_CALL);
-                        vm_emit(&pSK->vm, (VMCode_t)proc);
+                        // Use TAILCALL if in tail position, otherwise regular CALL
+                        if (pSK->in_tail_position)
+                        {
+                            vm_emit(&pSK->vm, OP_TAILCALL);
+                            vm_emit(&pSK->vm, (VMCode_t)proc);
+                        }
+                        else
+                        {
+                            vm_emit(&pSK->vm, OP_CALL);
+                            vm_emit(&pSK->vm, (VMCode_t)proc);
+                        }
                     }
                     else if (local_fn)
                     {
@@ -846,7 +908,9 @@ static int expr(SKState* pSK)
 
                         vm_emit_number(&pSK->vm, AS_NUM(proc));
                         vm_emit(&pSK->vm, OP_GET_LOCAL);
-                        vm_emit(&pSK->vm, OP_ICALL);
+                        // Use TAILCALL if in tail position (via ICALL variant handled by same opcode)
+                        // Note: OP_TAILCALL handles indirect calls too
+                        vm_emit(&pSK->vm, OP_ICALL);  // TODO: add OP_TAIL_ICALL if needed
                     }
                     else
                     {

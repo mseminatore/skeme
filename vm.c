@@ -218,6 +218,7 @@ int vm_init(VM* pvm) {
 
     // initialize current scope to NULL (ie. global scope)
     pvm->current_scope = NULL;
+    pvm->current_closure = NULL;
 
     //pvm->vm_code_ptr = 0;
     pvm->peakAllocatedBytes = 0;
@@ -491,8 +492,20 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         //     printf("PROC\n");
         //     break;
 
-        case OP_CLOSURE:
-            printf("CLOSURE\n");
+        case OP_MAKE_CLOSURE:
+            printf("MAKE_CLOSURE\n");
+            break;
+
+        case OP_GET_UPVALUE:
+            printf("GET_UPVALUE\n");
+            break;
+
+        case OP_SET_UPVALUE:
+            printf("SET_UPVALUE\n");
+            break;
+
+        case OP_TAILCALL:
+            printf("TAILCALL\n");
             break;
 
         case OP_GET_LOCAL:
@@ -549,7 +562,31 @@ static void vm_pop_frame(VM* pvm)
 
 static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
 {
-    if (IS_PROCEDURE(fn_obj))
+    if (IS_CLOSURE(fn_obj))
+    {
+        Closure* closure = (Closure*)fn_obj;
+        Procedure* proc = closure->function;
+        VM_LOG("%s CLOSURE '%s' %p\n", call_type, proc->name->value, proc->chunk.code);
+
+        Object* n = vm_pop(pvm);
+        int nargs = AS_NUM(n);
+
+        if (proc->arity != nargs)
+        {
+            yyerror(pvm->sk_state, "incorrect number of arguments to closure");
+            vm_pop_n(pvm, nargs);
+            pvm->ip++;
+            return;
+        }
+
+        vm_push_ip(pvm, pvm->ip);               // push return address
+        pvm->ip = proc->chunk.code;             // set IP to function code
+        vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
+        vm_push(pvm, MAKE_NUM(proc->arity));    // push arity
+        pvm->fp = pvm->sp;
+        pvm->current_closure = closure;         // set current closure for upvalue access
+    }
+    else if (IS_PROCEDURE(fn_obj))
     {
         Procedure* proc = (Procedure*)fn_obj;
         VM_LOG("%s '%s' %p\n", call_type, proc->name->value, proc->chunk.code);
@@ -571,6 +608,7 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
         vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
         vm_push(pvm, MAKE_NUM(proc->arity));    // push arity (for RET to use)
         pvm->fp = pvm->sp;                      // fp points past arity
+        pvm->current_closure = NULL;            // not in a closure
     }
     else if (IS_NATIVE_FN(fn_obj))
     {
@@ -820,6 +858,124 @@ static VMExecResult vm_exec_one(VM* pvm)
         }
         break;
 
+    case OP_MAKE_CLOSURE:
+        VM_LOG("MAKE_CLOSURE\n");
+        {
+            int upvalue_count = AS_NUM(vm_pop(pvm));
+            Object* proc_obj = vm_pop(pvm);
+            
+            if (!IS_PROCEDURE(proc_obj)) {
+                yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure");
+                return VM_ERROR;
+            }
+            
+            // Allocate closure
+            Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
+            closure->function = (Procedure*)proc_obj;
+            closure->upvalue_count = upvalue_count;
+            
+            if (upvalue_count > 0) {
+                closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
+                // Pop upvalues in reverse order (first upvalue is deepest on stack)
+                for (int i = upvalue_count - 1; i >= 0; i--) {
+                    closure->upvalues[i] = vm_pop(pvm);
+                }
+            } else {
+                closure->upvalues = NULL;
+            }
+            
+            vm_push(pvm, (Object*)closure);
+        }
+        break;
+
+    case OP_GET_UPVALUE:
+        VM_LOG("GET_UPVALUE\n");
+        {
+            int idx = AS_NUM(vm_pop(pvm));
+            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+                yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index");
+                vm_push(pvm, NULL);
+            } else {
+                vm_push(pvm, pvm->current_closure->upvalues[idx]);
+            }
+        }
+        break;
+
+    case OP_SET_UPVALUE:
+        VM_LOG("SET_UPVALUE\n");
+        {
+            int idx = AS_NUM(vm_pop(pvm));
+            Object* value = vm_pop(pvm);
+            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+                yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
+            } else {
+                pvm->current_closure->upvalues[idx] = value;
+            }
+        }
+        break;
+
+    case OP_TAILCALL:
+        VM_LOG("TAILCALL\n");
+        {
+            Object* n = vm_pop(pvm);
+            int nargs = AS_NUM(n);
+            Object* fn_obj = vm_pop(pvm);
+            
+            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+                Procedure* proc = IS_CLOSURE(fn_obj) 
+                    ? ((Closure*)fn_obj)->function 
+                    : (Procedure*)fn_obj;
+                
+                if (proc->arity != nargs) {
+                    yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments");
+                    return VM_ERROR;
+                }
+                
+                // Get current frame info
+                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+                
+                // Copy new args over old args
+                // Old args are at: fp - 3 - old_arity + 0, +1, ... +old_arity-1
+                // New args are at top of stack
+                int args_base = pvm->fp - 3 - old_arity;
+                for (int i = 0; i < nargs; i++) {
+                    pvm->stack[args_base + i] = pvm->stack[pvm->sp - nargs + i];
+                }
+                
+                // Update arity in frame
+                pvm->stack[pvm->fp - 1] = MAKE_NUM(nargs);
+                
+                // Reset sp to just after new args (frame stays in place)
+                pvm->sp = pvm->fp;
+                
+                // Set current_closure if calling a closure
+                if (IS_CLOSURE(fn_obj)) {
+                    pvm->current_closure = (Closure*)fn_obj;
+                } else {
+                    pvm->current_closure = NULL;
+                }
+                
+                // Jump to new function
+                pvm->ip = proc->chunk.code;
+            }
+            else if (IS_NATIVE_FN(fn_obj)) {
+                // Native functions can't be tail-called - just do regular call
+                NativeFunction* native = (NativeFunction*)fn_obj;
+                // Push args back for native call
+                for (int i = 0; i < nargs; i++) {
+                    vm_push(pvm, pvm->stack[pvm->sp - nargs + i]);
+                }
+                vm_push(pvm, MAKE_NUM(nargs));
+                native->func(pvm->sk_state);
+                // Native result replaces frame - need OP_RET to clean up
+            }
+            else {
+                yyerror(pvm->sk_state, "TAILCALL: not a procedure");
+                return VM_ERROR;
+            }
+        }
+        break;
+
     default:
         fprintf(stderr, "Unknown opcode: %zu\n", opcode);
         return VM_ERROR;
@@ -863,6 +1019,56 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         Object* result = vm_pop(pvm);
         return result;
     }
+    else if (IS_CLOSURE(fn))
+    {
+        // Closure - execute procedure with upvalue access
+        Closure* closure = (Closure*)fn;
+        Procedure* proc = closure->function;
+
+        // Check arity
+        if (proc->arity != nargs)
+        {
+            yyerror(pvm->sk_state, "vm_call_function: wrong number of arguments to closure");
+            return NULL;
+        }
+
+        // Save current VM state
+        VMCode_t* saved_ip = pvm->ip;
+        int saved_fp = pvm->fp;
+        int saved_sp = pvm->sp;
+        Closure* saved_closure = pvm->current_closure;
+
+        // Push arguments onto stack (in order - first arg pushed first)
+        for (int i = 0; i < nargs; i++)
+            vm_push(pvm, args[i]);
+
+        // Set up frame: [args..., ret_addr, saved_fp, arity]
+        vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
+        vm_push(pvm, MAKE_NUM(pvm->fp));     // saved fp
+        vm_push(pvm, MAKE_NUM(nargs));       // arity
+        pvm->fp = pvm->sp;
+        pvm->ip = proc->chunk.code;
+        pvm->current_closure = closure;      // set for upvalue access
+
+        // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
+        while (pvm->ip != NULL)
+        {
+            VMExecResult result = vm_exec_one(pvm);
+            if (result == VM_HALT || result == VM_ERROR)
+                break;
+        }
+
+        // Result is on stack
+        Object* result = vm_pop(pvm);
+
+        // Restore state
+        pvm->ip = saved_ip;
+        pvm->fp = saved_fp;
+        pvm->sp = saved_sp;
+        pvm->current_closure = saved_closure;
+
+        return result;
+    }
     else if (IS_PROCEDURE(fn))
     {
         // Scheme procedure - need to execute bytecode
@@ -879,6 +1085,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         VMCode_t* saved_ip = pvm->ip;
         int saved_fp = pvm->fp;
         int saved_sp = pvm->sp;
+        Closure* saved_closure = pvm->current_closure;
 
         // Push arguments onto stack (in order - first arg pushed first)
         for (int i = 0; i < nargs; i++)
@@ -890,6 +1097,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         vm_push(pvm, MAKE_NUM(nargs));       // arity
         pvm->fp = pvm->sp;
         pvm->ip = proc->chunk.code;
+        pvm->current_closure = NULL;         // not in a closure
 
         // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
         while (pvm->ip != NULL)
@@ -905,7 +1113,8 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Restore state
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
-        pvm->sp = saved_sp;  // Ensure stack is properly restored
+        pvm->sp = saved_sp;
+        pvm->current_closure = saved_closure;
 
         return result;
     }
@@ -1027,6 +1236,10 @@ static void freeObject(VM* pvm, Object* object)
             Procedure * proc = (Procedure*)object;
             GC_LOG("-- gc freeing proc: '%s'\n", ((String*)proc->name)->value);
             vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
+            if (proc->upvalues) {
+                vm_alloc(pvm, proc->upvalues, sizeof(UpvalueDesc) * proc->upvalue_count, 0);
+                proc->upvalues = NULL;
+            }
         }
 		break;
     
@@ -1048,6 +1261,16 @@ static void freeObject(VM* pvm, Object* object)
 
         port->fptr = NULL;
         port->name = NULL;
+    }
+        break;
+
+    case OBJ_CLOSURE:
+    {
+        Closure* closure = (Closure*)object;
+        if (closure->upvalues) {
+            vm_alloc(pvm, closure->upvalues, sizeof(Object*) * closure->upvalue_count, 0);
+            closure->upvalues = NULL;
+        }
     }
         break;
 
@@ -1145,10 +1368,12 @@ static void blackenObject(VM* pvm, Object* object)
     case OBJ_CLOSURE:
 		{
             Closure* closure = (Closure*)object;
-            markObject(pvm, closure->function);
+            markObject(pvm, (Object*)closure->function);
 			
-            // Closure-specific marking logic
-			// e.g., mark captured variables
+            // Mark all captured upvalues
+            for (int i = 0; i < closure->upvalue_count; i++) {
+                markObject(pvm, closure->upvalues[i]);
+            }
 		}
         break;
 
@@ -1562,6 +1787,8 @@ Object* vm_new_proc(VM* pvm)
         return NULL;
 
     proc->arity = 0;
+    proc->upvalues = NULL;
+    proc->upvalue_count = 0;
 
 	vm_init_chunk(&proc->chunk);
 
@@ -1671,6 +1898,37 @@ Object* vm_get_local_var(VM* pvm, const char* name)
 	}
 
     return NULL;    // vm_get_global(pvm, key);
+}
+
+//--------------------------------------------------------------
+// Extended local var lookup with scope depth
+// Returns the binding value and sets scope_depth (0=current, 1=parent, etc.)
+// Returns NULL and sets scope_depth to -1 if not found in any local scope
+//--------------------------------------------------------------
+Object* vm_get_local_var_ex(VM* pvm, const char* name, int* scope_depth)
+{
+    Object* key = vm_new_string(pvm, name);
+    int depth = 0;
+
+    if (pvm->current_scope)
+    {
+        Environment* env = pvm->current_scope;
+        ht_value_t val;
+        while (env)
+        {
+            val = ht_find(env->bindings, key);
+            if (val)
+            {
+                if (scope_depth) *scope_depth = depth;
+                return (Object*)val;
+            }
+            env = env->parent;
+            depth++;
+        }
+	}
+
+    if (scope_depth) *scope_depth = -1;  // Not found in local scopes
+    return NULL;
 }
 
 //--------------------------------------------------------------
