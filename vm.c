@@ -447,7 +447,6 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 
         case OP_CALL:
         {
-#if 1
             Object* fn_obj = (Object*)*ip++;
 
             if (IS_PROCEDURE(fn_obj))
@@ -460,9 +459,6 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
                 NativeFunction* proc = (NativeFunction*)fn_obj;
                 printf("CALL NATIVE FN '%s'\n", proc->name->value);
             }
-#else
-            printf("CALL [SP]\n");
-#endif
         }
             break;
 
@@ -553,21 +549,6 @@ static void vm_pop_frame(VM* pvm)
     pvm->fp = AS_NUM(fp_obj);
 }
 
-// static void vm_call_function(VM* pvm, VMCode_t* addr, int nargs)
-// {
-//     // push return address onto return stack
-//     vm_push_ip(pvm, pvm->ip);
-
-//     // push current frame pointer onto stack
-//     vm_push(pvm, MAKE_NUM(pvm->fp));
-
-//     // set new frame pointer to current stack pointer minus number of args
-//     pvm->fp = pvm->sp - nargs;
-
-//     // set IP to function address
-//     pvm->ip = addr;
-// }
-
 static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
 {
     if (IS_PROCEDURE(fn_obj))
@@ -629,12 +610,320 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
 }
 
 //---------------------------------------------------------------
+// Execute a single VM instruction
+// Returns: VM_CONTINUE to keep going, VM_HALT to stop, VM_ERROR on error
+//---------------------------------------------------------------
+static VMExecResult vm_exec_one(VM* pvm)
+{
+    VMCode_t opcode = *pvm->ip++;
+    Object* obj;
+
+    VM_LOG("IP=%p SP=%d RP=%d: ", pvm->ip - 1, pvm->sp, pvm->return_sp);
+
+    switch(opcode)
+    {
+    case OP_PUSH:
+        VM_LOG("PUSH obj\n");
+        vm_push(pvm, (Object*)*pvm->ip++);
+        break;
+
+    case OP_POP:
+        VM_LOG("POP obj\n");
+        vm_pop(pvm);
+        break;
+
+    case OP_PUSH_IP:
+        VM_LOG("PUSH IP\n");
+        vm_push_ip(pvm, pvm->ip);
+        break;
+
+    case OP_POP_IP:
+        VM_LOG("POP IP\n");
+        pvm->ip = vm_pop_ip(pvm);
+        break;
+
+    case OP_PUSH_FP:
+        VM_LOG("PUSH FP\n");
+        vm_push(pvm, MAKE_NUM(pvm->fp));
+        break;
+
+    case OP_POP_FP:
+        VM_LOG("POP FP\n");
+        {
+            Object* fp_obj = vm_pop(pvm);
+            pvm->fp = AS_NUM(fp_obj);
+        }
+        break;
+
+    case OP_PUSH_SP:
+        VM_LOG("PUSH SP\n");
+        vm_push(pvm, MAKE_NUM(pvm->sp));
+        break;
+
+    case OP_POP_SP:
+        VM_LOG("POP SP\n");
+        {
+            Object* sp_obj = vm_pop(pvm);
+            pvm->sp = AS_NUM(sp_obj);
+        }
+        break;
+
+    case OP_DUP:
+        VM_LOG("DUP\n");
+        obj = vm_peek(pvm, 0);
+        vm_push(pvm, obj);
+        break;
+
+    case OP_NUM:
+        VM_LOG("PUSH NUM %zu\n", *pvm->ip);
+        vm_push(pvm, MAKE_NUM(*pvm->ip++));
+        break;
+
+    case OP_STRING:
+        VM_LOG("PUSH STRING '%s'\n", (const char*)*pvm->ip);
+        obj = vm_new_string(pvm, (const char*)*pvm->ip++);
+        vm_push(pvm, obj);
+        break;
+
+    case OP_RET:
+        VM_LOG("RET\n");
+        {
+            Object* nargs_obj = vm_pop(pvm);
+            Object* ret_val = vm_pop(pvm);
+            Object* nframe_obj = vm_pop(pvm);
+            pvm->fp = AS_NUM(nframe_obj);
+            vm_pop_n(pvm, AS_NUM(nargs_obj));
+            vm_push(pvm, ret_val);
+            pvm->ip = vm_pop_ip(pvm);
+        }
+        break;
+
+    case OP_HALT:
+        VM_LOG("HALT\n");
+        return VM_HALT;
+
+    case OP_TRUE:
+        VM_LOG("PUSH TRUE\n");
+        vm_pushBoolean(pvm, TRUE);
+        break;
+
+    case OP_FALSE:
+        VM_LOG("PUSH FALSE\n");
+        vm_pushBoolean(pvm, FALSE);
+        break;
+
+    case OP_ICALL:
+    {
+        Object* fn_obj = vm_pop(pvm);
+        vm_call_procedure(pvm, fn_obj, "ICALL");
+    }
+        break;
+
+    case OP_CALL:
+    {
+        Object* fn_obj = (Object*)*pvm->ip++;
+        vm_call_procedure(pvm, fn_obj, "CALL");
+    }
+        break;
+
+    case OP_BNT:
+        VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+        obj = vm_pop(pvm);
+        if (IS_FALSE(obj))
+            pvm->ip += *pvm->ip;
+        else
+            pvm->ip++;
+        break;
+
+    case OP_BNF:
+        VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+        obj = vm_pop(pvm);
+        if (!IS_FALSE(obj))
+            pvm->ip += *pvm->ip;
+        else
+            pvm->ip++;
+        break;
+
+    case OP_NOP:
+        VM_LOG("NOP\n");
+        break;
+
+    case OP_BRA:
+        VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
+        pvm->ip += *pvm->ip;
+        break;
+
+    case OP_STORE:
+    {
+        Object *value = vm_pop(pvm);
+        Object *key = vm_pop(pvm);
+        if (!IS_STRING(key))
+        {
+            yyerror(pvm->sk_state, "invalid variable name");
+            printf("STORE: key is not a string! Obj type = %d\n", OBJ_TYPE(key));
+            return VM_ERROR;
+        }
+
+        VM_LOG("STORE '%s'\n", ((String*)key)->value);
+        vm_update_global(pvm, key, value);
+    }
+        break;
+
+    case OP_LOAD:
+    {
+        Object* key = vm_pop(pvm);
+        VM_LOG("LOAD '%s'\n", ((String*)key)->value);
+        Object* value = vm_get_global(pvm, key);
+        vm_push(pvm, value);
+    }
+        break;
+
+    case OP_GET_LOCAL:
+        VM_LOG("GET_LOCAL\n");
+        {
+            Object* index_obj = vm_pop(pvm);
+            int index = AS_NUM(index_obj);
+            Object* local_var = vm_fp_peek(pvm, index);
+            vm_push(pvm, local_var);
+        }
+        break;
+
+    case OP_LIST:
+    {
+        VM_LOG("MAKE_LIST\n");
+        Pair* alist = NULL;
+        Pair* pair = NULL;
+
+        obj = vm_pop(pvm);
+        int n = AS_NUM(obj);
+        for (int i = 0; i < n; i++)
+        {
+            vm_push(pvm, (Object*)pair);    // stash pair on stack to prevent premature GC
+            alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+            vm_pop(pvm);                    // discard stashed pair
+            alist->car = vm_pop(pvm);
+            alist->cdr = (Object*)pair;
+            pair = alist;
+        }
+
+        vm_push(pvm, (Object*)alist);
+    }
+        break;
+
+    case OP_PRINT_TOS:
+        VM_LOG("PRINT_TOS\n");
+        if (pvm->sp)
+        {
+            fprintf(stdout, TERM_BRIGHT_BLUE);
+            vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
+            fprintf(stdout, TERM_RESET"\n");
+        }
+        break;
+
+    default:
+        fprintf(stderr, "Unknown opcode: %zu\n", opcode);
+        return VM_ERROR;
+    }
+
+    return VM_CONTINUE;
+}
+
+//---------------------------------------------------------------
+// Call a function from C code with given arguments
+// This allows native builtins like 'map' to call Scheme functions
+//---------------------------------------------------------------
+Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
+{
+    if (!pvm || !fn) return NULL;
+
+    if (IS_NATIVE_FN(fn))
+    {
+        // Native function - call directly
+        NativeFunction* native = (NativeFunction*)fn;
+        
+        // Check arity for fixed-arity functions
+        if (native->arity >= 0 && native->arity != nargs)
+        {
+            yyerror(pvm->sk_state, "vm_call_function: wrong number of arguments to native function");
+            return NULL;
+        }
+
+        // Push arguments onto stack (in order - first arg pushed first)
+        for (int i = 0; i < nargs; i++)
+            vm_push(pvm, args[i]);
+
+        // For variable arity, push arg count; for fixed arity, it's handled by the native
+        if (native->arity < 0)
+            vm_push(pvm, MAKE_NUM(nargs));
+
+        // Call the native function
+        native->func(pvm->sk_state);
+
+        // Result is on stack
+        Object* result = vm_pop(pvm);
+        return result;
+    }
+    else if (IS_PROCEDURE(fn))
+    {
+        // Scheme procedure - need to execute bytecode
+        Procedure* proc = (Procedure*)fn;
+
+        // Check arity
+        if (proc->arity != nargs)
+        {
+            yyerror(pvm->sk_state, "vm_call_function: wrong number of arguments to procedure");
+            return NULL;
+        }
+
+        // Save current VM state
+        VMCode_t* saved_ip = pvm->ip;
+        int saved_fp = pvm->fp;
+        int saved_return_sp = pvm->return_sp;
+        int saved_sp = pvm->sp;
+
+        // Push arguments onto stack (in order - first arg pushed first)
+        for (int i = 0; i < nargs; i++)
+            vm_push(pvm, args[i]);
+
+        // Note: Don't push nargs here - the procedure's bytecode emits its arity before RET
+        
+        // Push NULL as return address sentinel (so OP_RET sets ip=NULL)
+        vm_push_ip(pvm, NULL);
+
+        // Set up call frame
+        pvm->ip = proc->chunk.code;
+        vm_push(pvm, MAKE_NUM(pvm->fp));
+        pvm->fp = pvm->sp;
+
+        // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
+        while (pvm->ip != NULL)
+        {
+            VMExecResult result = vm_exec_one(pvm);
+            if (result == VM_HALT || result == VM_ERROR)
+                break;
+        }
+
+        // Result is on stack
+        Object* result = vm_pop(pvm);
+
+        // Restore state
+        pvm->ip = saved_ip;
+        pvm->fp = saved_fp;
+        pvm->return_sp = saved_return_sp;
+        pvm->sp = saved_sp;  // Ensure stack is properly restored
+
+        return result;
+    }
+
+    yyerror(pvm->sk_state, "vm_call_function: not a function");
+    return NULL;
+}
+
+//---------------------------------------------------------------
 // Execute the VM code starting from the given address
 //---------------------------------------------------------------
 void vm_exec(VM* pvm, VMCode_t *addr)
 {
-    Object* obj;
-
     if (pvm == NULL) {
         fprintf(stderr, "VM is NULL!\n");
         return;
@@ -651,244 +940,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
     while(1)
     {
-        VM_LOG("IP=%p SP=%d RP=%d: ", pvm->ip, pvm->sp, pvm->return_sp);
-
-        VMCode_t opcode = *pvm->ip++;
-
-        switch(opcode)
-        {
-        case OP_PUSH:   // push object onto stack
-            VM_LOG("PUSH obj\n");
-            vm_push(pvm, (Object*)*pvm->ip++);
-            break;
-
-        case OP_POP:    // pop object from stack
-            VM_LOG("POP obj\n");
-            vm_pop(pvm);
-            break;
-
-        case OP_PUSH_IP:     // push instruction pointer onto return stack
-            VM_LOG("PUSH IP\n");
-            vm_push_ip(pvm, pvm->ip);
-            break;
-
-        case OP_POP_IP:      // pop instruction pointer from return stack
-            VM_LOG("POP IP\n");
-            pvm->ip = vm_pop_ip(pvm);
-            break;
-
-        case OP_PUSH_FP:     // push frame pointer onto stack
-            VM_LOG("PUSH FP\n");
-            vm_push(pvm, MAKE_NUM(pvm->fp));
-            break;
-
-        case OP_POP_FP:      // pop frame pointer from stack
-            VM_LOG("POP FP\n");
-            {
-                Object* fp_obj = vm_pop(pvm);
-                pvm->fp = AS_NUM(fp_obj);
-            }
-            break;
-
-        case OP_PUSH_SP:     // push stack pointer onto stack
-            VM_LOG("PUSH SP\n");
-            vm_push(pvm, MAKE_NUM(pvm->sp));
-            break;
-
-        case OP_POP_SP:      // pop stack pointer from stack    
-            VM_LOG("POP SP\n");
-            {
-                Object* sp_obj = vm_pop(pvm);
-                pvm->sp = AS_NUM(sp_obj);
-            }
-            break;
-
-        case OP_DUP:    // duplicate top of stack
-            VM_LOG("DUP\n");
-            obj = vm_peek(pvm, 0);
-            vm_push(pvm, obj);
-			break;
-
-        case OP_NUM:    // push number onto stack
-            VM_LOG("PUSH NUM %zu\n", *pvm->ip);
-            vm_push(pvm, MAKE_NUM(*pvm->ip++));
-            break;
-
-        case OP_STRING:    // push string onto stack
-            VM_LOG("PUSH STRING '%s'\n", (const char*)*pvm->ip);
-            obj = vm_new_string(pvm, (const char*)*pvm->ip++);
-            vm_push(pvm, obj);
-            break;
-
-        case OP_RET:    // return from function
-            VM_LOG("RET\n");
-            {
-				Object* nargs_obj = vm_pop(pvm);    // pop number of args
-				Object* ret_val = vm_pop(pvm);      // get return value TODO - will there always be a return value?!!
-				Object* nframe_obj = vm_pop(pvm);   // pop old frame pointer
-				pvm->fp = AS_NUM(nframe_obj);       // restore old frame pointer
-				vm_pop_n(pvm, AS_NUM(nargs_obj));   // pop args from stack
-                vm_push(pvm, ret_val);              // restore return value to stack
-
-                // set IP to return address
-                pvm->ip = vm_pop_ip(pvm);
-            }
-            break;
-
-        case OP_HALT:    // halt execution
-            VM_LOG("HALT\n");
+        VMExecResult result = vm_exec_one(pvm);
+        if (result == VM_HALT || result == VM_ERROR)
             return;
-
-        case OP_TRUE:    // push true onto stack
-            VM_LOG("PUSH TRUE\n");
-            vm_pushBoolean(pvm, TRUE);
-            break;
-
-        case OP_FALSE:    // push false onto stack
-            VM_LOG("PUSH FALSE\n");
-            vm_pushBoolean(pvm, FALSE);
-            break;
-
-        case OP_ICALL:    // indirect call to function
-        {
-            Object* fn_obj = vm_pop(pvm);   // get function object
-            
-            vm_call_procedure(pvm, fn_obj, "ICALL");
-        }
-            break;
-
-        case OP_CALL:    // call function
-        {
-            Object* fn_obj = (Object*)*pvm->ip++;    //vm_pop(pvm);   // get function object
-
-            vm_call_procedure(pvm, fn_obj, "CALL");
-        }
-            break;
-
-        case OP_BNT:    // branch if not true
-            VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-            obj = vm_pop(pvm);
-            if (IS_FALSE(obj)) 
-            {
-                // branch to new address
-                pvm->ip += *pvm->ip;
-            }
-            else 
-            {
-                // move to next instruction in sequence
-                pvm->ip++;
-            }
-            break;
-
-        case OP_BNF:    // branch if not false
-            VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-            obj = vm_pop(pvm);
-            if (!IS_FALSE(obj))
-            {
-                // branch to new address
-                pvm->ip += *pvm->ip;
-            }
-            else
-            {
-                // move to next instruction in sequence
-                pvm->ip++;
-            }
-            break;
-
-        case OP_NOP:    // no operation
-            VM_LOG("NOP\n");
-            // do nothing!
-            break;
-
-        case OP_BRA:    // branch always
-        {
-            VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-            pvm->ip += *pvm->ip;
-        }
-			break;
-
-        case OP_STORE:    // store variable
-        {
-            // variable assignment
-            Object *value = vm_pop(pvm);
-            Object *key = vm_pop(pvm);
-            if (!IS_STRING(key))
-            {
-                yyerror(pvm->sk_state, "invalid variable name");
-                printf("STORE: key is not a string! Obj type = %d\n", OBJ_TYPE(key));
-                break;
-            }
-
-            VM_LOG("STORE '%s'\n", ((String*)key)->value);
-            vm_update_global(pvm, key, value);
-        }
-			break;
-
-        case OP_LOAD:    // load variable
-        {
-            Object* key = vm_pop(pvm);
-            VM_LOG("LOAD '%s'\n", ((String*)key)->value);
-            // variable retrieval
-            Object* value = vm_get_global(pvm, key);
-            
-			// if variable not found, error
-			// TODO NB: the hash table doesn't differentiate between NULL value and missing key
-            //if (!value)
-            //    yyerror("entity undefined");
-
-            vm_push(pvm, value);
-        }
-            break;
-
-        case OP_GET_LOCAL:    // get local variable
-            VM_LOG("GET_LOCAL\n");
-            {
-                Object* index_obj = vm_pop(pvm);
-                int index = AS_NUM(index_obj);              // get stack offset of parameter
-                Object* local_var = vm_fp_peek(pvm, index); // get parameter
-                vm_push(pvm, local_var);                    // push it onto the stack
-			}
-            break;
-
-        case OP_LIST:    // create a list
-        {
-            VM_LOG("MAKE_LIST\n");
-            Pair* alist = NULL;
-            Pair* pair = NULL;
-
-            obj = vm_pop(pvm);
-			int nargs = AS_NUM(obj);
-            for (int i = 0; i < nargs; i++)
-            {
-                vm_push(pvm, (Object*)pair);    // stash pair on stack to prevent premature GC
-                alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
-                vm_pop(pvm);                    // discard stashed pair
-                alist->car = vm_pop(pvm);
-                alist->cdr = (Object*)pair;
-                pair = alist;
-            }
-
-			// push the constructed list onto the stack
-            vm_push(pvm, (Object*)alist);
-        }
-            break;
-
-        case OP_PRINT_TOS:    // print top of stack
-            VM_LOG("PRINT_TOS\n");
-
-            if (pvm->sp)
-            {
-                fprintf(stdout, TERM_BRIGHT_BLUE);
-                    vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
-                fprintf(stdout, TERM_RESET"\n");
-            }
-
-            break;
-
-        default:    // unknown opcode
-            fprintf(stderr, "Unknown opcode: %zu\n", opcode);
-            break;
-        }
     }
 }
 

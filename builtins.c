@@ -1187,8 +1187,86 @@ static int sk_map(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'map' not implemented yet");
-    return SK_FALSE;
+    Object* list = vm_pop(&pSK->vm);
+    Object* fn = vm_pop(&pSK->vm);
+
+    if (!IS_FUNCTION(fn))
+    {
+        yyerror(pSK, "map: first argument must be a function");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    if (!IS_PAIR(list) && !IS_NIL(list))
+    {
+        yyerror(pSK, "map: second argument must be a list");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    // Handle empty list
+    if (IS_NIL(list))
+    {
+        vm_push(&pSK->vm, NULL);
+        return SK_TRUE;
+    }
+
+    // Build result list - we'll build it in proper order using tail pointer
+    Object* result_head = NULL;
+    Pair* result_tail = NULL;
+
+    // Protect fn AND list from GC
+    vm_push(&pSK->vm, fn);
+    vm_push(&pSK->vm, list);
+
+    while (IS_PAIR(list))
+    {
+        Pair* p = (Pair*)list;
+        Object* elem = p->car;
+        
+        Object* args[1] = { elem };
+        
+        // Call the function with the current element
+        Object* mapped = vm_call_function(&pSK->vm, fn, 1, args);
+        
+        // Re-read list from stack in case GC moved it
+        list = vm_peek(&pSK->vm, 0);
+        p = (Pair*)list;
+        
+        // Protect mapped and result_head before allocation
+        vm_push(&pSK->vm, mapped);
+        vm_push(&pSK->vm, result_head);
+        
+        // Allocate new pair
+        Pair* new_pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+        
+        // Restore protected values
+        result_head = vm_pop(&pSK->vm);
+        mapped = vm_pop(&pSK->vm);
+        
+        new_pair->car = mapped;
+        new_pair->cdr = NULL;
+        
+        // Append to result list
+        if (result_head == NULL) {
+            result_head = (Object*)new_pair;
+            result_tail = new_pair;
+        } else {
+            result_tail->cdr = (Object*)new_pair;
+            result_tail = new_pair;
+        }
+
+        // Update list to next element and update stack protection
+        list = p->cdr;
+        vm_stack_replace_n(&pSK->vm, 0, list);
+    }
+
+    // Pop list and fn protection
+    vm_pop(&pSK->vm);  // list
+    vm_pop(&pSK->vm);  // fn
+
+    vm_push(&pSK->vm, result_head);
+    return SK_TRUE;
 }
 
 //-----------------------------------------------

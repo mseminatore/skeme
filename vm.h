@@ -9,6 +9,13 @@
 #define VM_OK 1
 #define VM_ERR -1
 
+// Result codes for vm_exec_one()
+typedef enum {
+    VM_CONTINUE,    // Keep executing next instruction
+    VM_HALT,        // OP_HALT encountered, stop execution
+    VM_ERROR        // Error occurred
+} VMExecResult;
+
 // configuration
 // #define VM_USE_FREE_LIST
 
@@ -379,5 +386,9 @@ Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);
 void vm_set_var(VM* pvm, const char* name, Object* value);
 Object* vm_get_local_var(VM* pvm, const char* name);
+
+// Call a function from C code with given arguments
+// Works with both native functions and Scheme procedures
+Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args);
 
 #endif // __VM_H

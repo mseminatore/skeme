@@ -25,6 +25,14 @@
 ;(gclog)
 
 ;----------------------
+; test map (native implementation)
+;----------------------
+(test-case "map with number?" (equal? (map number? (list 1 2 3)) (list true true true)))
+(test-case "map with car" (equal? (map car (list (list 1 2) (list 3 4))) (list 1 3)))
+(test-case "map with cdr" (equal? (map cdr (list (list 1 2) (list 3 4))) (list (list 2) (list 4))))
+(test-case "map empty list" (null? (map number? (list))))
+
+;----------------------
 ; test apply
 ;----------------------
 ;(test-suite "apply")

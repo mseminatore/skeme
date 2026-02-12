@@ -82,9 +82,9 @@
 ; define map
 ; map function over a list
 ;----------------------
-(define (map fn lst)
-  (if (null? lst)
-      '()
-      (cons (fn (car lst)) (map fn (cdr lst)))
-  )
-)
+;(define (map fn lst)
+;  (if (null? lst)
+;      '()
+;      (cons (fn (car lst)) (map fn (cdr lst)))
+;  )
+;)
