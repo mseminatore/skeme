@@ -165,6 +165,16 @@ static inline float sk_decode_float(intptr_t bits) {
 #define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
 #define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
 
+// Numeric classification (integer or float)
+#define IS_NUMERIC(obj)     (IS_NUM(obj) || IS_FLOAT(obj))
+
+// Convert any numeric to double (for mixed arithmetic)
+#if SK_64BIT
+#define AS_DOUBLE(obj)      (IS_FLOAT(obj) ? (double)AS_TAGGED_FLOAT(obj) : (double)AS_NUM(obj))
+#else
+#define AS_DOUBLE(obj)      (IS_FLOAT(obj) ? (double)((Float*)(obj))->value : (double)AS_NUM(obj))
+#endif
+
 // macros to create tagged objects
 #define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x8))
 #define MAKE_FALSE()        ((Object*)TAG_BOOL)

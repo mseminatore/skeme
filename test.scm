@@ -329,6 +329,28 @@
 (test-case "float->string roundtrip" (float? (string->float (float->string 3.14))))
 
 ;----------------------
+; test float arithmetic
+;----------------------
+(test-case "float + float" (= (+ 1.5 2.5) 4.0))
+(test-case "int + float" (= (+ 1 2.5) 3.5))
+(test-case "float - float" (= (- 5.0 2.0) 3.0))
+(test-case "float * float" (= (* 2.0 3.0) 6.0))
+(test-case "float / float" (= (/ 10.0 4.0) 2.5))
+(test-case "float < float" (< 1.5 2.5))
+(test-case "float > int" (> 3.14 3))
+(test-case "float <= int" (<= 3.0 3))
+(test-case "float >= float" (>= 3.14 3.14))
+
+;----------------------
+; test multi-list map
+;----------------------
+(define (add2 a b) (+ a b))
+(define (mul2 a b) (* a b))
+(test-case "map add two lists" (equal? (map add2 (list 1 2 3) (list 10 20 30)) (list 11 22 33)))
+(test-case "map mul two lists" (equal? (map mul2 (list 2 3 4) (list 5 6 7)) (list 10 18 28)))
+
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)

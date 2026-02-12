@@ -630,65 +630,107 @@ static int sk_mathop(SKState* pSK, char op)
     Object* raw_n = vm_pop(&pSK->vm);
     int n = AS_NUM(raw_n);
 
-    Object * obj1 = vm_peek(&pSK->vm, n - 1);   // get first term
-    if (!IS_NUM(obj1))
+    // First pass: check if any argument is a float
+    int has_float = FALSE;
+    for (int i = 0; i < n; i++)
     {
-        yyerror(pSK, "arguments to mathop must be numbers");
-        return SK_FALSE;
-	}
-
-    int result = AS_NUM(obj1);
-    int logic_result = TRUE;
-
-    for (int i = n - 2; i >= 0; i--)
-    {
-        Object* obj2 = vm_peek(&pSK->vm, i);
-        if (!IS_NUM(obj2))
+        Object* obj = vm_peek(&pSK->vm, i);
+        if (!IS_NUMERIC(obj))
         {
             yyerror(pSK, "arguments to mathop must be numbers");
             return SK_FALSE;
         }
+        if (IS_FLOAT(obj))
+            has_float = TRUE;
+    }
 
-        switch (op)
+    if (has_float)
+    {
+        // Float path: compute in double precision
+        Object* obj1 = vm_peek(&pSK->vm, n - 1);
+        double result = AS_DOUBLE(obj1);
+        int logic_result = TRUE;
+
+        for (int i = n - 2; i >= 0; i--)
         {
-        case '+':
-			result = result + AS_NUM(obj2);
-            break;
+            Object* obj2 = vm_peek(&pSK->vm, i);
+            double val2 = AS_DOUBLE(obj2);
 
-        case '-':
-            result = result - AS_NUM(obj2);
-            break;
-
-        case '*':
-            result = result * AS_NUM(obj2);
-            break;
-
-        case '/':
-            if (AS_NUM(obj2) == 0)
+            switch (op)
             {
-                yyerror(pSK, "division by zero");
-                return SK_FALSE;
-            }
-            result = result / AS_NUM(obj2);
-            break;
-
-        case '=':
-            {
-                if (result != AS_NUM(obj2))
+            case '+':
+                result = result + val2;
+                break;
+            case '-':
+                result = result - val2;
+                break;
+            case '*':
+                result = result * val2;
+                break;
+            case '/':
+                if (val2 == 0.0)
                 {
-                    logic_result = FALSE;
+                    yyerror(pSK, "division by zero");
+                    return SK_FALSE;
                 }
+                result = result / val2;
+                break;
+            case '=':
+                if (result != val2)
+                    logic_result = FALSE;
+                break;
             }
-            break;
         }
-	}
 
-    vm_pop_n(&pSK->vm, n); // remove all args from stack
-    if (op != '=')
-		vm_push(&pSK->vm, MAKE_NUM(result));
+        vm_pop_n(&pSK->vm, n);
+        if (op != '=')
+            vm_push(&pSK->vm, MAKE_TAGGED_FLOAT((float)result));
+        else
+            vm_push(&pSK->vm, logic_result ? MAKE_TRUE() : MAKE_FALSE());
+    }
     else
     {
-        vm_push(&pSK->vm, logic_result == FALSE ? MAKE_FALSE() : MAKE_TRUE());
+        // Integer path: compute in int
+        Object* obj1 = vm_peek(&pSK->vm, n - 1);
+        int result = AS_NUM(obj1);
+        int logic_result = TRUE;
+
+        for (int i = n - 2; i >= 0; i--)
+        {
+            Object* obj2 = vm_peek(&pSK->vm, i);
+            int val2 = AS_NUM(obj2);
+
+            switch (op)
+            {
+            case '+':
+                result = result + val2;
+                break;
+            case '-':
+                result = result - val2;
+                break;
+            case '*':
+                result = result * val2;
+                break;
+            case '/':
+                if (val2 == 0)
+                {
+                    yyerror(pSK, "division by zero");
+                    return SK_FALSE;
+                }
+                result = result / val2;
+                break;
+            case '=':
+                if (result != val2)
+                    logic_result = FALSE;
+                break;
+            }
+        }
+
+        vm_pop_n(&pSK->vm, n);
+        if (op != '=')
+            vm_push(&pSK->vm, MAKE_NUM(result));
+        else
+            vm_push(&pSK->vm, logic_result ? MAKE_TRUE() : MAKE_FALSE());
     }
 
     return SK_TRUE;
@@ -736,17 +778,15 @@ static int sk_less(SKState* pSK)
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
-    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    if (!IS_NUMERIC(obj1) || !IS_NUMERIC(obj2))
     {
         yyerror(pSK, "arguments to '<' must be numbers");
         return SK_FALSE;
 	}
 
-    Object* bool = MAKE_FALSE();   // default to false
-    if (AS_NUM(obj1) < AS_NUM(obj2))
-        bool = MAKE_TRUE();
-
-    vm_push(&pSK->vm, bool);
+    double val1 = AS_DOUBLE(obj1);
+    double val2 = AS_DOUBLE(obj2);
+    vm_push(&pSK->vm, val1 < val2 ? MAKE_TRUE() : MAKE_FALSE());
 
     return SK_TRUE;
 }
@@ -769,17 +809,15 @@ static int sk_less_equal(SKState* pSK)
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
-    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    if (!IS_NUMERIC(obj1) || !IS_NUMERIC(obj2))
     {
         yyerror(pSK, "arguments to '<=' must be numbers");
         return SK_FALSE;
     }
 
-    Object* bool = MAKE_FALSE();   // default to false
-    if (AS_NUM(obj1) <= AS_NUM(obj2))
-        bool = MAKE_TRUE();
-
-    vm_push(&pSK->vm, bool);
+    double val1 = AS_DOUBLE(obj1);
+    double val2 = AS_DOUBLE(obj2);
+    vm_push(&pSK->vm, val1 <= val2 ? MAKE_TRUE() : MAKE_FALSE());
 
     return SK_TRUE;
 }
@@ -794,17 +832,15 @@ static int sk_greater(SKState* pSK)
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
-    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    if (!IS_NUMERIC(obj1) || !IS_NUMERIC(obj2))
     {
         yyerror(pSK, "arguments to '>' must be numbers");
         return SK_FALSE;
     }
 
-    Object* bool = MAKE_FALSE();   // default to false
-    if (AS_NUM(obj1) > AS_NUM(obj2))
-        bool = MAKE_TRUE();
-
-    vm_push(&pSK->vm, bool);
+    double val1 = AS_DOUBLE(obj1);
+    double val2 = AS_DOUBLE(obj2);
+    vm_push(&pSK->vm, val1 > val2 ? MAKE_TRUE() : MAKE_FALSE());
 
     return SK_TRUE;
 }
@@ -819,17 +855,15 @@ static int sk_greater_equal(SKState* pSK)
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
-    if (!obj1 || !IS_NUM(obj1) || !obj2 || !IS_NUM(obj2))
+    if (!IS_NUMERIC(obj1) || !IS_NUMERIC(obj2))
     {
         yyerror(pSK, "arguments to '>=' must be numbers");
         return SK_FALSE;
     }
 
-    Object* bool = MAKE_FALSE();   // default to false
-    if (AS_NUM(obj1) >= AS_NUM(obj2))
-        bool = MAKE_TRUE();
-
-    vm_push(&pSK->vm, bool);
+    double val1 = AS_DOUBLE(obj1);
+    double val2 = AS_DOUBLE(obj2);
+    vm_push(&pSK->vm, val1 >= val2 ? MAKE_TRUE() : MAKE_FALSE());
 
     return SK_TRUE;
 }
@@ -1187,66 +1221,118 @@ static int sk_map(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* list = vm_pop(&pSK->vm);
-    Object* fn = vm_pop(&pSK->vm);
+    // Get nargs - format: (map fn list1 list2 ...) 
+    // Stack after nargs pop: [fn, list1, list2, ..., listN]
+    // Where listN is at top (index 0), fn is at bottom (index nargs-1)
+    Object* raw_n = vm_pop(&pSK->vm);
+    int nargs = AS_NUM(raw_n);
+    int num_lists = nargs - 1;  // first arg is fn, rest are lists
 
-    if (!IS_FUNCTION(fn))
+    if (num_lists < 1)
+    {
+        yyerror(pSK, "map: requires at least one list");
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    // Support up to 16 lists
+    Object* lists[16];
+    if (num_lists > 16)
+    {
+        yyerror(pSK, "map: too many lists (max 16)");
+        vm_pop_n(&pSK->vm, nargs);
+        vm_push(&pSK->vm, NULL);
+        return SK_FALSE;
+    }
+
+    // Peek at fn (at bottom of args)
+    Object* fn = vm_peek(&pSK->vm, nargs - 1);
+    if (!IS_FUNCTION(fn) && !IS_CLOSURE(fn))
     {
         yyerror(pSK, "map: first argument must be a function");
+        vm_pop_n(&pSK->vm, nargs);
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
-    if (!IS_PAIR(list) && !IS_NIL(list))
+    // Collect lists - list1 is at index num_lists-1, listN is at index 0
+    for (int i = 0; i < num_lists; i++)
     {
-        yyerror(pSK, "map: second argument must be a list");
-        vm_push(&pSK->vm, NULL);
-        return SK_FALSE;
+        lists[i] = vm_peek(&pSK->vm, num_lists - 1 - i);  // list1 at lists[0]
+        if (!IS_PAIR(lists[i]) && !IS_NIL(lists[i]))
+        {
+            yyerror(pSK, "map: arguments after function must be lists");
+            vm_pop_n(&pSK->vm, nargs);
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
     }
 
-    // Handle empty list
-    if (IS_NIL(list))
+    // Pop all args now that we've validated
+    vm_pop_n(&pSK->vm, nargs);
+
+    // Handle empty lists - if any list is empty, return empty
+    for (int i = 0; i < num_lists; i++)
     {
-        vm_push(&pSK->vm, NULL);
-        return SK_TRUE;
+        if (IS_NIL(lists[i]))
+        {
+            vm_push(&pSK->vm, NULL);
+            return SK_TRUE;
+        }
     }
 
-    // Build result list - we'll build it in proper order using tail pointer
+    // Build result list
     Object* result_head = NULL;
     Pair* result_tail = NULL;
 
-    // Protect fn AND list from GC
+    // Protect fn and all lists from GC
     vm_push(&pSK->vm, fn);
-    vm_push(&pSK->vm, list);
+    for (int i = 0; i < num_lists; i++)
+        vm_push(&pSK->vm, lists[i]);
 
-    while (IS_PAIR(list))
+    // Iterate while all lists have elements
+    int all_have_elements = TRUE;
+    while (all_have_elements)
     {
-        Pair* p = (Pair*)list;
-        Object* elem = p->car;
-        
-        Object* args[1] = { elem };
-        
-        // Call the function with the current element
-        Object* mapped = vm_call_function(&pSK->vm, fn, 1, args);
-        
-        // Re-read list from stack in case GC moved it
-        list = vm_peek(&pSK->vm, 0);
-        p = (Pair*)list;
-        
+        // Check all lists still have elements
+        for (int i = 0; i < num_lists; i++)
+        {
+            // Re-read from stack in case GC moved them
+            lists[i] = vm_peek(&pSK->vm, num_lists - 1 - i);
+            if (!IS_PAIR(lists[i]))
+            {
+                all_have_elements = FALSE;
+                break;
+            }
+        }
+        if (!all_have_elements) break;
+
+        // Gather car of each list as args
+        Object* args[16];
+        for (int i = 0; i < num_lists; i++)
+        {
+            Pair* p = (Pair*)lists[i];
+            args[i] = p->car;
+        }
+
+        // Call the function with gathered args
+        fn = vm_peek(&pSK->vm, num_lists);  // re-read fn from stack
+        Object* mapped = vm_call_function(&pSK->vm, fn, num_lists, args);
+
         // Protect mapped and result_head before allocation
         vm_push(&pSK->vm, mapped);
         vm_push(&pSK->vm, result_head);
-        
+
         // Allocate new pair
         Pair* new_pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
-        
+
         // Restore protected values
         result_head = vm_pop(&pSK->vm);
         mapped = vm_pop(&pSK->vm);
-        
+
         new_pair->car = mapped;
         new_pair->cdr = NULL;
-        
+
         // Append to result list
         if (result_head == NULL) {
             result_head = (Object*)new_pair;
@@ -1256,14 +1342,18 @@ static int sk_map(SKState* pSK)
             result_tail = new_pair;
         }
 
-        // Update list to next element and update stack protection
-        list = p->cdr;
-        vm_stack_replace_n(&pSK->vm, 0, list);
+        // Advance all lists to cdr and update stack protection
+        for (int i = 0; i < num_lists; i++)
+        {
+            lists[i] = vm_peek(&pSK->vm, num_lists - 1 - i);
+            Pair* p = (Pair*)lists[i];
+            lists[i] = p->cdr;
+            vm_stack_replace_n(&pSK->vm, num_lists - 1 - i, lists[i]);
+        }
     }
 
-    // Pop list and fn protection
-    vm_pop(&pSK->vm);  // list
-    vm_pop(&pSK->vm);  // fn
+    // Pop all protected values (lists + fn)
+    vm_pop_n(&pSK->vm, num_lists + 1);
 
     vm_push(&pSK->vm, result_head);
     return SK_TRUE;
@@ -1880,7 +1970,7 @@ static SKFuncSet built_in_funcs[] =
     { "exit", sk_exit, SK_ARITY_ZERO_OR_ONE },
 
     // higher-order functions
-    { "map", sk_map, 2 },
+    { "map", sk_map, SK_ARITY_TWO_OR_MORE },
     { "eval", sk_eval, 1 },
 
     // system/environment functions
