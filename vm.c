@@ -734,7 +734,7 @@ static VMExecResult vm_exec_one(VM* pvm)
     switch(opcode)
     {
     case OP_PUSH:
-        VM_LOG("PUSH obj\n");
+        VM_LOG("PUSH obj %p\n", (Object*)*pvm->ip);
         vm_push(pvm, (Object*)*pvm->ip++);
         break;
 
@@ -939,27 +939,40 @@ static VMExecResult vm_exec_one(VM* pvm)
     case OP_MAKE_CLOSURE:
         VM_LOG("MAKE_CLOSURE\n");
         {
-            int upvalue_count = AS_NUM(vm_pop(pvm));
+            Object* count_raw = vm_pop(pvm);
+            int upvalue_count = AS_NUM(count_raw);
             Object* proc_obj = vm_pop(pvm);
-            
+
             if (!IS_PROCEDURE(proc_obj)) {
                 yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure");
                 return VM_ERROR;
             }
             
-            // Allocate closure
+            // Push proc_obj back as GC root during closure allocation
+            vm_push(pvm, proc_obj);
+            
+            // Allocate closure (may trigger GC - proc_obj + upvalues safe on stack)
             Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
-            closure->function = (Procedure*)proc_obj;
+            closure->function = (Procedure*)vm_pop(pvm);  // pop proc_obj back
             closure->upvalue_count = upvalue_count;
             
+            // Push closure as GC root during upvalues array allocation
+            vm_push(pvm, (Object*)closure);
+            
             if (upvalue_count > 0) {
+                // Allocate upvalues array (may trigger GC - closure safe on stack)
                 closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
+                
+                // Pop closure from stack
+                vm_pop(pvm);
+                
                 // Pop upvalues in reverse order (first upvalue is deepest on stack)
                 for (int i = upvalue_count - 1; i >= 0; i--) {
                     closure->upvalues[i] = vm_pop(pvm);
                 }
             } else {
                 closure->upvalues = NULL;
+                vm_pop(pvm);  // pop closure
             }
             
             vm_push(pvm, (Object*)closure);
@@ -969,7 +982,8 @@ static VMExecResult vm_exec_one(VM* pvm)
     case OP_GET_UPVALUE:
         VM_LOG("GET_UPVALUE\n");
         {
-            int idx = AS_NUM(vm_pop(pvm));
+            Object* uv_raw = vm_pop(pvm);
+            int idx = AS_NUM(uv_raw);
             if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
                 yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index");
                 vm_push(pvm, NULL);
@@ -1523,9 +1537,11 @@ static void blackenObject(VM* pvm, Object* object)
             Closure* closure = (Closure*)object;
             markObject(pvm, (Object*)closure->function);
 			
-            // Mark all captured upvalues
-            for (int i = 0; i < closure->upvalue_count; i++) {
-                markObject(pvm, closure->upvalues[i]);
+            // Mark all captured upvalues (check for NULL - upvalues array may not be allocated yet)
+            if (closure->upvalues) {
+                for (int i = 0; i < closure->upvalue_count; i++) {
+                    markObject(pvm, closure->upvalues[i]);
+                }
             }
 		}
         break;

@@ -366,6 +366,22 @@
 
 
 ;----------------------
+; test closures
+;----------------------
+(define (make-adder n) (lambda (x) (+ x n)))
+(define add5 (make-adder 5))
+(define add10 (make-adder 10))
+(test-case "closure make-adder 5" (= (add5 10) 15))
+(test-case "closure make-adder 10" (= (add10 3) 13))
+(test-case "closure independent" (= (+ (add5 1) (add10 1)) 17))
+
+(define (make-pair a b) (lambda (sel) (if sel a b)))
+(define p (make-pair 3 7))
+(test-case "closure pair first" (= (p #t) 3))
+(test-case "closure pair second" (= (p #f) 7))
+
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)

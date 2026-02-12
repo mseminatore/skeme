@@ -8,6 +8,7 @@
 #include "error.h"
 
 #define MAX_REL_CLAUSES 16
+#define MAX_UPVALUES 64
 //#define IF_ELSE_REQUIRED
 
 //-----------------
@@ -59,6 +60,13 @@ typedef struct
 	int arity;
 } SKFuncSet;
 
+// Upvalue descriptor used during parsing to track captured variables
+typedef struct {
+    char name[64];       // variable name (for dedup)
+    int scope_depth;     // how many scopes out (1 = immediate parent)
+    int local_index;     // slot index in the enclosing scope
+} ParseUpvalue;
+
 // skeme state structure
 struct SKState
 {
@@ -89,6 +97,10 @@ struct SKState
     // TCO bytecode patching support
     int last_call_offset;           // offset of last CALL/ICALL in current function body (-1 if none)
     CodeChunk* last_call_chunk;     // chunk where last call was emitted
+
+    // Closure upvalue tracking (used during parsing)
+    ParseUpvalue upvalues[MAX_UPVALUES];  // upvalues captured by current lambda
+    int upvalue_count;                     // number of upvalues captured
 };
 
 //-----------------

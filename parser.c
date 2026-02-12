@@ -161,6 +161,32 @@ void dump_symbols(SKState* pSK)
 }
 
 //-----------------------------------------------
+// Register an upvalue for the current lambda being parsed.
+// Returns the upvalue index (deduplicating by name).
+//-----------------------------------------------
+static int register_upvalue(SKState* pSK, const char* name, int scope_depth, int local_index)
+{
+    // Check if already registered
+    for (int i = 0; i < pSK->upvalue_count; i++) {
+        if (strcmp(pSK->upvalues[i].name, name) == 0)
+            return i;
+    }
+
+    if (pSK->upvalue_count >= MAX_UPVALUES) {
+        yyerror(pSK, "too many upvalues in closure");
+        return -1;
+    }
+
+    int idx = pSK->upvalue_count++;
+    strncpy(pSK->upvalues[idx].name, name, sizeof(pSK->upvalues[idx].name) - 1);
+    pSK->upvalues[idx].name[sizeof(pSK->upvalues[idx].name) - 1] = '\0';
+    pSK->upvalues[idx].scope_depth = scope_depth;
+    pSK->upvalues[idx].local_index = local_index;
+
+    return idx;
+}
+
+//-----------------------------------------------
 // <atom> ==> <number> | <string> | <boolean> | 
 // <nil> | <identifier> | '(' <expr> ')'
 //-----------------------------------------------
@@ -241,21 +267,35 @@ static int atom(SKState* pSK)
         {
             PARSE_LOG("ID: '%s'\n", pSK->yylval.word);
 
-            // check if var is local, if so emit stack read
-			Object* obj = vm_get_local_var(&pSK->vm, pSK->yylval.word);
+            // check if var is local (with scope depth), if so emit stack read or upvalue
+            int scope_depth = -1;
+			Object* obj = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
 
             // handle variable and check for undefined symbol
             Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
+            char var_name[64];
+            strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
+            var_name[sizeof(var_name) - 1] = '\0';
             match(pSK, ID);
 
             if (!key)
             {
                 yyerror(pSK, "entity undefined");
             }
-            else if (IS_NUM(obj))
+            else if (scope_depth == 0 && IS_NUM(obj))
             {
+                // Local variable in current scope
                 vm_emit_number(&pSK->vm, AS_NUM(obj));
                 vm_emit(&pSK->vm, OP_GET_LOCAL);
+            }
+            else if (scope_depth > 0 && IS_NUM(obj))
+            {
+                // Variable from enclosing scope — capture as upvalue
+                int uv_idx = register_upvalue(pSK, var_name, scope_depth, AS_NUM(obj));
+                if (uv_idx >= 0) {
+                    vm_emit_number(&pSK->vm, uv_idx);
+                    vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                }
             }
             else
             {
@@ -428,18 +468,6 @@ static int definition(SKState* pSK)
         match(pSK, ID);
         expr(pSK);
         
-        // If the value is a lambda, it's now on the VM stack. Store it in globals
-        // immediately to protect from GC (bytecode references aren't scanned by GC).
-        // Note: vm_peek(pvm, 0) returns the top of stack without popping.
-        if (pSK->vm.sp > 0)
-        {
-            Object* value = vm_peek(&pSK->vm, 0);
-            if (IS_PROCEDURE(value))
-            {
-                vm_define_global(&pSK->vm, key, value);
-            }
-        }
-        
         vm_emit(&pSK->vm, OP_STORE);
     }
 
@@ -458,6 +486,13 @@ static int lambda(SKState* pSK)
 
     match(pSK, LAMBDA);
 
+    // Save outer lambda's upvalue state (for nested lambdas)
+    ParseUpvalue saved_upvalues[MAX_UPVALUES];
+    int saved_upvalue_count = pSK->upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+    pSK->upvalue_count = 0;
+
     vm_new_environment(&pSK->vm);   // create new environment for lambda scope
 
     Object* proc_obj = vm_new_proc(&pSK->vm);
@@ -466,8 +501,13 @@ static int lambda(SKState* pSK)
     vm_push(&pSK->vm, proc_obj);
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
-	proc->name = (String*)vm_new_string(&pSK->vm, "<lambda>");
-    vm_define_global(&pSK->vm, (Object*)proc->name, NULL);   // ensure name is in global table
+    
+    // Give each lambda a unique internal name for GC root storage
+    static int lambda_id = 0;
+    char lambda_name[32];
+    snprintf(lambda_name, sizeof(lambda_name), "<lambda-%d>", lambda_id++);
+	proc->name = (String*)vm_new_string(&pSK->vm, lambda_name);
+    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);   // store in globals as GC root
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
@@ -501,9 +541,41 @@ static int lambda(SKState* pSK)
 
     vm_free_environment(&pSK->vm); // pop lambda environment off chain
 
-    // Emit code to push the lambda object in the OUTER context
-    // This handles (define f (lambda ...)) - we want f to hold the lambda
-    vm_emit_push_object(&pSK->vm, proc_obj);
+    // Capture upvalue info before restoring outer state
+    int num_upvalues = pSK->upvalue_count;
+    ParseUpvalue captured[MAX_UPVALUES];
+    if (num_upvalues > 0)
+        memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+    // Restore outer lambda's upvalue state
+    pSK->upvalue_count = saved_upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+    if (num_upvalues > 0)
+    {
+        // Emit closure creation in the OUTER context.
+        // OP_MAKE_CLOSURE expects stack (bottom→top): [upval0, ..., upvalN-1, proc, count]
+
+        // First, push captured values from enclosing scope's locals
+        for (int i = 0; i < num_upvalues; i++)
+        {
+            vm_emit_number(&pSK->vm, captured[i].local_index);
+            vm_emit(&pSK->vm, OP_GET_LOCAL);
+        }
+
+        // Then push the procedure object
+        vm_emit_push_object(&pSK->vm, proc_obj);
+
+        // Then push the upvalue count and make the closure
+        vm_emit_number(&pSK->vm, num_upvalues);
+        vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+    }
+    else
+    {
+        // No upvalues — emit plain procedure push (original behavior)
+        vm_emit_push_object(&pSK->vm, proc_obj);
+    }
 
     // NOTE: We intentionally DO NOT pop proc_obj from the stack here!
     // It must stay on the stack as a GC root until parsing completes.

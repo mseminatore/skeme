@@ -20,7 +20,7 @@ typedef enum {
 // #define VM_USE_FREE_LIST
 
 // uncomment to enable GC stress testing (collect on every allocation)
-#define VM_STRESS_GC
+// #define VM_STRESS_GC
 
 // uncomment to disallow redefining globals
 // TODO - only redefines work at present! Must handle code gen into chunk that would get stored in var
