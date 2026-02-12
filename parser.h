@@ -85,6 +85,10 @@ struct SKState
     int lineno;                     // current line number
     int column;                     // current column number
     int in_tail_position;           // flag: are we in tail position of a function?
+    
+    // TCO bytecode patching support
+    int last_call_offset;           // offset of last CALL/ICALL in current function body (-1 if none)
+    CodeChunk* last_call_chunk;     // chunk where last call was emitted
 };
 
 //-----------------

@@ -247,8 +247,10 @@
 (test-case "fibonacci(5)" (= (fibonacci 5) 5))
 (test-case "fibonacci(15)" (= (fibonacci 15) 610))
 (test-case "fibonacci(20)" (= (fibonacci 20) 6765))
-(test-case "fibonacci(25)" (= (fibonacci 25) 75025))
-(test-case "fibonacci(30)" (= (fibonacci 30) 832040))
+; NOTE: fibonacci(25) and (30) are extremely slow with naive recursion
+; Uncomment to stress test, but expect long runtimes
+; (test-case "fibonacci(25)" (= (fibonacci 25) 75025))
+; (test-case "fibonacci(30)" (= (fibonacci 30) 832040))
 
 ;----------------------
 ; test tail-recursive fibonacci

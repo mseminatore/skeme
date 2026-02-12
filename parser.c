@@ -326,62 +326,44 @@ static int local_body(SKState* pSK)
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     
     // Parse the body expressions - last expression's value becomes return value
-    // Only the last expression is in tail position.
-    //
-    // For proper TCO, we parse with tail=0 for all but the last expression.
-    // The challenge: we don't know which is last until we see ')'.
-    //
-    // Solution: Parse each expression, then check if next is ')'.
-    // If yes, the expression we just parsed was in tail position.
-    // To make this work, we emit a "patchable" call or handle it differently.
-    //
-    // Simpler approach for now: count expressions, then re-parse with
-    // tail position set correctly. But that's wasteful.
-    //
-    // Even simpler: for the common case of single-expression bodies,
-    // enable tail position. For multi-expression bodies, only the last
-    // gets tail position. We can achieve this with careful lookahead.
+    // 
+    // TCO Strategy: We record the offset of each CALL/ICALL as we emit it.
+    // After parsing all expressions, we patch the LAST call to TAILCALL.
+    // This correctly handles both single and multi-expression bodies.
     
-    int saved_tail = pSK->in_tail_position;
+    // Save state for nested functions
+    int saved_last_call_offset = pSK->last_call_offset;
+    CodeChunk* saved_last_call_chunk = pSK->last_call_chunk;
     
-    // Simple implementation: parse expressions one at a time
-    // After parsing each, check if we're at ')'. If so, the just-parsed
-    // expression was in tail position. But bytecode is already emitted!
-    //
-    // Better: before parsing each expression, peek to see if it COULD be
-    // the last. If the current expression starts with '(' and after it
-    // LOOKAHEAD becomes ')', then it was last.
-    //
-    // For now, just enable tail calls for all expressions in the body.
-    // This is aggressive but works for single-call bodies and for the
-    // last expression of multi-call bodies. Intermediate calls will 
-    // incorrectly use TAILCALL but the result is still correct since
-    // the function just returns earlier (though with wrong return addr).
-    //
-    // Actually no - that's wrong. TAILCALL reuses the frame, so if an
-    // intermediate call uses TAILCALL, control returns to our caller
-    // instead of continuing to the next expression.
-    //
-    // CORRECT approach: we MUST only use TAILCALL for the actual last expr.
-    //
-    // Implementation: parse all expressions with tail=0. Then for the LAST
-    // parsed call instruction, patch it to TAILCALL. Requires bytecode
-    // modification which is messy.
-    //
-    // Alternative: introduce a "begin" form that marks the last expression.
-    // But that changes the language.
-    //
-    // For now, disable tail calls in function bodies until we have proper
-    // implementation. The VM infrastructure (OP_TAILCALL) is ready.
+    // Reset for this function body
+    pSK->last_call_offset = -1;
+    pSK->last_call_chunk = NULL;
     
-    pSK->in_tail_position = 0;  // Disabled for correctness
-    
+    // Parse all body expressions
     while (LOOKAHEAD != ')')
     {
         expr(pSK);
     }
     
-    pSK->in_tail_position = saved_tail;
+    // TCO: Patch the last CALL to TAILCALL if there was one
+    if (pSK->last_call_offset >= 0 && pSK->last_call_chunk != NULL)
+    {
+        VMCode_t opcode = pSK->last_call_chunk->code[pSK->last_call_offset];
+        if (opcode == OP_CALL)
+        {
+            PARSE_LOG("TCO: patching CALL at offset %d to TAILCALL\n", pSK->last_call_offset);
+            pSK->last_call_chunk->code[pSK->last_call_offset] = OP_TAILCALL;
+        }
+        else if (opcode == OP_ICALL)
+        {
+            PARSE_LOG("TCO: patching ICALL at offset %d to TAILCALL_I\n", pSK->last_call_offset);
+            pSK->last_call_chunk->code[pSK->last_call_offset] = OP_TAILCALL_I;
+        }
+    }
+    
+    // Restore state for outer function
+    pSK->last_call_offset = saved_last_call_offset;
+    pSK->last_call_chunk = saved_last_call_chunk;
 
 	unindent(pSK);
     return 0;
@@ -445,6 +427,19 @@ static int definition(SKState* pSK)
 
         match(pSK, ID);
         expr(pSK);
+        
+        // If the value is a lambda, it's now on the VM stack. Store it in globals
+        // immediately to protect from GC (bytecode references aren't scanned by GC).
+        // Note: vm_peek(pvm, 0) returns the top of stack without popping.
+        if (pSK->vm.sp > 0)
+        {
+            Object* value = vm_peek(&pSK->vm, 0);
+            if (IS_PROCEDURE(value))
+            {
+                vm_define_global(&pSK->vm, key, value);
+            }
+        }
+        
         vm_emit(&pSK->vm, OP_STORE);
     }
 
@@ -510,7 +505,11 @@ static int lambda(SKState* pSK)
     // This handles (define f (lambda ...)) - we want f to hold the lambda
     vm_emit_push_object(&pSK->vm, proc_obj);
 
-    vm_pop(&pSK->vm);    // remove proc_obj from stack (was pushed for GC safety)
+    // NOTE: We intentionally DO NOT pop proc_obj from the stack here!
+    // It must stay on the stack as a GC root until parsing completes.
+    // The bytecode contains a pointer to proc_obj, but GC doesn't scan bytecode.
+    // Leaving it on stack keeps it alive during subsequent allocs that might trigger GC.
+    // The stack will be cleared before execution starts.
 
     unindent(pSK);
     return 0;
@@ -890,17 +889,13 @@ static int expr(SKState* pSK)
                     {
                         expr_tail(pSK); // parse function arguments (if any)
 
-                        // Use TAILCALL if in tail position, otherwise regular CALL
-                        if (pSK->in_tail_position)
-                        {
-                            vm_emit(&pSK->vm, OP_TAILCALL);
-                            vm_emit(&pSK->vm, (VMCode_t)proc);
-                        }
-                        else
-                        {
-                            vm_emit(&pSK->vm, OP_CALL);
-                            vm_emit(&pSK->vm, (VMCode_t)proc);
-                        }
+                        // Record offset for potential tail call patching
+                        CodeChunk* chunk = vm_get_current_chunk();
+                        pSK->last_call_offset = (int)chunk->count;
+                        pSK->last_call_chunk = chunk;
+                        
+                        vm_emit(&pSK->vm, OP_CALL);
+                        vm_emit(&pSK->vm, (VMCode_t)proc);
                     }
                     else if (local_fn)
                     {
@@ -908,13 +903,29 @@ static int expr(SKState* pSK)
 
                         vm_emit_number(&pSK->vm, AS_NUM(proc));
                         vm_emit(&pSK->vm, OP_GET_LOCAL);
-                        // Use TAILCALL if in tail position (via ICALL variant handled by same opcode)
-                        // Note: OP_TAILCALL handles indirect calls too
-                        vm_emit(&pSK->vm, OP_ICALL);  // TODO: add OP_TAIL_ICALL if needed
+                        
+                        // Record offset for potential tail call patching
+                        CodeChunk* chunk = vm_get_current_chunk();
+                        pSK->last_call_offset = (int)chunk->count;
+                        pSK->last_call_chunk = chunk;
+                        
+                        vm_emit(&pSK->vm, OP_ICALL);
                     }
                     else
                     {
-                        yyerror(pSK, "procedure expected!");
+                        // Not a known function at parse time - emit runtime lookup
+                        // This handles forward references like (define f (lambda ...)) ... (f args)
+                        expr_tail(pSK); // parse function arguments
+                        
+                        vm_emit_push_object(&pSK->vm, key);  // push the name
+                        vm_emit(&pSK->vm, OP_LOAD);           // look up at runtime
+                        
+                        // Record offset for potential tail call patching
+                        CodeChunk* chunk = vm_get_current_chunk();
+                        pSK->last_call_offset = (int)chunk->count;
+                        pSK->last_call_chunk = chunk;
+                        
+                        vm_emit(&pSK->vm, OP_ICALL);
                     }
                 }
                 else

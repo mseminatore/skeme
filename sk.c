@@ -83,6 +83,8 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     pSK->expr_level = 0;
     pSK->lineno = 1;
     pSK->column = 1;
+    pSK->last_call_offset = -1;     // no call yet
+    pSK->last_call_chunk = NULL;
 //    pSK->yyin = NULL;
 
     // initialize error handling

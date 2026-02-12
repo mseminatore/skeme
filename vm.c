@@ -505,7 +505,24 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_TAILCALL:
-            printf("TAILCALL\n");
+        {
+            Object* fn_obj = (Object*)*ip++;
+
+            if (IS_PROCEDURE(fn_obj))
+            {
+                Procedure* proc = (Procedure*)fn_obj;
+                printf("TAILCALL '%s' %p\n", proc->name->value, proc->chunk.code);
+            }
+            else
+            {
+                NativeFunction* proc = (NativeFunction*)fn_obj;
+                printf("TAILCALL NATIVE FN '%s'\n", proc->name->value);
+            }
+        }
+            break;
+
+        case OP_TAILCALL_I:
+            printf("TAILCALL_I\n");
             break;
 
         case OP_GET_LOCAL:
@@ -751,10 +768,11 @@ static VMExecResult vm_exec_one(VM* pvm)
         break;
 
     case OP_ICALL:
-    {
-        Object* fn_obj = vm_pop(pvm);
-        vm_call_procedure(pvm, fn_obj, "ICALL");
-    }
+        VM_LOG("ICALL\n");
+        {
+            Object* fn_obj = vm_pop(pvm);
+            vm_call_procedure(pvm, fn_obj, "ICALL");
+        }
         break;
 
     case OP_CALL:
@@ -917,9 +935,12 @@ static VMExecResult vm_exec_one(VM* pvm)
     case OP_TAILCALL:
         VM_LOG("TAILCALL\n");
         {
+            // Read function object from bytecode (same as OP_CALL)
+            Object* fn_obj = (Object*)*pvm->ip++;
+            
+            // Pop nargs from stack
             Object* n = vm_pop(pvm);
             int nargs = AS_NUM(n);
-            Object* fn_obj = vm_pop(pvm);
             
             if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
                 Procedure* proc = IS_CLOSURE(fn_obj) 
@@ -934,43 +955,110 @@ static VMExecResult vm_exec_one(VM* pvm)
                 // Get current frame info
                 int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
                 
-                // Copy new args over old args
-                // Old args are at: fp - 3 - old_arity + 0, +1, ... +old_arity-1
-                // New args are at top of stack
-                int args_base = pvm->fp - 3 - old_arity;
-                for (int i = 0; i < nargs; i++) {
-                    pvm->stack[args_base + i] = pvm->stack[pvm->sp - nargs + i];
-                }
-                
-                // Update arity in frame
-                pvm->stack[pvm->fp - 1] = MAKE_NUM(nargs);
-                
-                // Reset sp to just after new args (frame stays in place)
-                pvm->sp = pvm->fp;
-                
-                // Set current_closure if calling a closure
-                if (IS_CLOSURE(fn_obj)) {
-                    pvm->current_closure = (Closure*)fn_obj;
+                // TCO only when arities match (simple case)
+                // When arities differ, frame size changes which is complex
+                if (nargs == old_arity) {
+                    // Copy new args over old args in place
+                    // Old args at: fp - 3 - old_arity, ..., fp - 4
+                    // New args at: sp - nargs, ..., sp - 1 (we already popped nargs count)
+                    int old_args_base = pvm->fp - 3 - old_arity;
+                    int new_args_base = pvm->sp - nargs;
+                    
+                    // Copy args BEFORE modifying sp
+                    for (int i = 0; i < nargs; i++) {
+                        pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
+                    }
+                    
+                    // Reset sp to frame pointer (discard temporary values)
+                    pvm->sp = pvm->fp;
+                    
+                    // Set current_closure if calling a closure
+                    if (IS_CLOSURE(fn_obj)) {
+                        pvm->current_closure = (Closure*)fn_obj;
+                    } else {
+                        pvm->current_closure = NULL;
+                    }
+                    
+                    // Jump to new function (same frame, no new ret_addr pushed)
+                    pvm->ip = proc->chunk.code;
                 } else {
-                    pvm->current_closure = NULL;
+                    // Different arity - fall back to regular call
+                    // Push nargs back and use regular call path
+                    vm_push(pvm, MAKE_NUM(nargs));
+                    vm_call_procedure(pvm, fn_obj, "TAILCALL-FALLBACK");
                 }
-                
-                // Jump to new function
-                pvm->ip = proc->chunk.code;
             }
             else if (IS_NATIVE_FN(fn_obj)) {
-                // Native functions can't be tail-called - just do regular call
-                NativeFunction* native = (NativeFunction*)fn_obj;
-                // Push args back for native call
-                for (int i = 0; i < nargs; i++) {
-                    vm_push(pvm, pvm->stack[pvm->sp - nargs + i]);
-                }
-                vm_push(pvm, MAKE_NUM(nargs));
-                native->func(pvm->sk_state);
-                // Native result replaces frame - need OP_RET to clean up
+                // Native functions can't be tail-called the same way
+                // Fall back to regular call behavior
+                vm_push(pvm, MAKE_NUM(nargs));  // push nargs back
+                vm_call_procedure(pvm, fn_obj, "TAILCALL-NATIVE");
             }
             else {
                 yyerror(pvm->sk_state, "TAILCALL: not a procedure");
+                return VM_ERROR;
+            }
+        }
+        break;
+
+    case OP_TAILCALL_I:
+        VM_LOG("TAILCALL_I\n");
+        {
+            // Pop function object from stack (same as OP_ICALL)
+            Object* fn_obj = vm_pop(pvm);
+            
+            // Pop nargs from stack
+            Object* n = vm_pop(pvm);
+            int nargs = AS_NUM(n);
+            
+            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+                Procedure* proc = IS_CLOSURE(fn_obj) 
+                    ? ((Closure*)fn_obj)->function 
+                    : (Procedure*)fn_obj;
+                
+                if (proc->arity != nargs) {
+                    yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments");
+                    return VM_ERROR;
+                }
+                
+                // Get current frame info
+                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+                
+                // TCO only when arities match (simple case)
+                if (nargs == old_arity) {
+                    // Copy new args over old args in place
+                    int old_args_base = pvm->fp - 3 - old_arity;
+                    int new_args_base = pvm->sp - nargs;
+                    
+                    for (int i = 0; i < nargs; i++) {
+                        pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
+                    }
+                    
+                    // Reset sp to frame pointer
+                    pvm->sp = pvm->fp;
+                    
+                    // Set current_closure if calling a closure
+                    if (IS_CLOSURE(fn_obj)) {
+                        pvm->current_closure = (Closure*)fn_obj;
+                    } else {
+                        pvm->current_closure = NULL;
+                    }
+                    
+                    // Jump to new function
+                    pvm->ip = proc->chunk.code;
+                } else {
+                    // Different arity - fall back to regular call
+                    vm_push(pvm, MAKE_NUM(nargs));
+                    vm_call_procedure(pvm, fn_obj, "TAILCALL_I-FALLBACK");
+                }
+            }
+            else if (IS_NATIVE_FN(fn_obj)) {
+                // Native functions can't be tail-called the same way
+                vm_push(pvm, MAKE_NUM(nargs));  // push nargs back
+                vm_call_procedure(pvm, fn_obj, "TAILCALL_I-NATIVE");
+            }
+            else {
+                yyerror(pvm->sk_state, "TAILCALL_I: not a procedure");
                 return VM_ERROR;
             }
         }

@@ -109,6 +109,9 @@ int main(int argc, char *argv[])
         // parse the input file
         sk_parse(&sk);
 
+        // Clear any compile-time GC roots from the stack before execution
+        vm_clear_stack(&sk.vm);
+
 		// execute the parsed code
         vm_exec(&sk.vm, repl_chunk.code);
 
