@@ -22,6 +22,7 @@ int g_bVMLog = FALSE;
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
 
 CodeChunk* g_current_chunk = NULL;
+static VM* g_vm_instance = NULL;  // set during vm_init, used by vm_print_object for custom type dispatch
 
 //-----------------------------------------------
 // print an object
@@ -138,7 +139,16 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         break;
 
         default:
-            fprintf(stream, "#<obj type=%d>", OBJ_TYPE(obj));
+        {
+            // Dispatch to custom type descriptor if registered
+            const SKTypeDesc* desc = g_vm_instance ? vm_get_type_desc(g_vm_instance, OBJ_TYPE(obj)) : NULL;
+            if (desc && desc->print_fn)
+                desc->print_fn(obj, flags, stream);
+            else if (desc)
+                fprintf(stream, "#<%s>", desc->name);
+            else
+                fprintf(stream, "#<obj type=%d>", OBJ_TYPE(obj));
+        }
             break;
         }
     }
@@ -233,6 +243,13 @@ int vm_init(VM* pvm) {
     pvm->freeObjects = 0;
 #endif
 
+    // Init extensible type registry
+    pvm->custom_types = NULL;
+    pvm->num_custom_types = 0;
+    pvm->custom_types_capacity = 0;
+
+    g_vm_instance = pvm;
+
     return VM_OK;
 }
 
@@ -254,7 +271,50 @@ int vm_shutdown(VM* pvm)
     ht_free(pvm->interned_strings);
 	pvm->interned_strings = NULL;
 
+    // Free extensible type registry
+    if (pvm->custom_types) {
+        free(pvm->custom_types);
+        pvm->custom_types = NULL;
+        pvm->num_custom_types = 0;
+        pvm->custom_types_capacity = 0;
+    }
+
     return VM_OK;
+}
+
+//--------------------------------------------------------------
+// Register a custom object type
+// Returns type ID >= OBJ_LAST on success, -1 on failure
+//--------------------------------------------------------------
+int vm_register_type(VM* pvm, const SKTypeDesc* desc)
+{
+    if (!pvm || !desc || !desc->name) return -1;
+
+    // Grow array if needed
+    if (pvm->num_custom_types >= pvm->custom_types_capacity) {
+        int new_cap = pvm->custom_types_capacity < 4 ? 4 : pvm->custom_types_capacity * 2;
+        SKTypeDesc* new_arr = (SKTypeDesc*)realloc(pvm->custom_types, sizeof(SKTypeDesc) * new_cap);
+        if (!new_arr) return -1;
+        pvm->custom_types = new_arr;
+        pvm->custom_types_capacity = new_cap;
+    }
+
+    int type_id = OBJ_LAST + pvm->num_custom_types;
+    pvm->custom_types[pvm->num_custom_types] = *desc;
+    pvm->num_custom_types++;
+
+    return type_id;
+}
+
+//--------------------------------------------------------------
+// Look up type descriptor for a custom type
+//--------------------------------------------------------------
+const SKTypeDesc* vm_get_type_desc(VM* pvm, int type_id)
+{
+    if (!pvm || type_id < OBJ_LAST) return NULL;
+    int idx = type_id - OBJ_LAST;
+    if (idx >= pvm->num_custom_types) return NULL;
+    return &pvm->custom_types[idx];
 }
 
 //--------------------------------------------------------------
@@ -1363,7 +1423,12 @@ static void freeObject(VM* pvm, Object* object)
         break;
 
     default:
-        // nothing to do!
+        {
+            // Dispatch to custom type descriptor if registered
+            const SKTypeDesc* desc = vm_get_type_desc(pvm, OBJ_TYPE(object));
+            if (desc && desc->free_fn)
+                desc->free_fn(pvm, object);
+        }
         break;
     }
 
@@ -1477,7 +1542,12 @@ static void blackenObject(VM* pvm, Object* object)
         break;
 
     default:
-        // Handle other object types as needed
+        {
+            // Dispatch to custom type descriptor if registered
+            const SKTypeDesc* desc = vm_get_type_desc(pvm, object->type);
+            if (desc && desc->mark_fn)
+                desc->mark_fn(pvm, object);
+        }
         break;
     }
 }

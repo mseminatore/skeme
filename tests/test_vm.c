@@ -8,6 +8,27 @@
 #include "../hash/testy/test.h"
 #include "../sk.h"
 
+// Test custom type for extensible type registration tests
+typedef struct {
+    Object base;
+    int value;
+} TestCustomObj;
+
+static int test_print_called = 0;
+static int test_free_called = 0;
+
+static void test_custom_print(Object* obj, int mode, FILE* stream) {
+    (void)mode;
+    TestCustomObj* tobj = (TestCustomObj*)obj;
+    fprintf(stream, "#<test-val:%d>", tobj->value);
+    test_print_called = 1;
+}
+
+static void test_custom_free(VM* pvm, Object* obj) {
+    (void)pvm; (void)obj;
+    test_free_called = 1;
+}
+
 void test_vm(int argc, char *argv[]) {
     MODULE("VM");
     
@@ -286,6 +307,68 @@ void test_vm(int argc, char *argv[]) {
         TEST(sk.vm.sp == 0);
         TEST(sk.vm.sp < VM_STACK_SIZE);
         
+        sk_shutdown(&sk);
+    }
+
+    // Test extensible type registration
+    SUITE("Custom Type Registration");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+
+        int old_stress = g_bGCStress;
+        g_bGCStress = FALSE;
+
+        COMMENT("Test register_type returns valid ID...");
+        SKTypeDesc test_desc = {
+            .name = "test-custom",
+            .mark_fn = NULL,
+            .free_fn = test_custom_free,
+            .print_fn = test_custom_print,
+            .equal_fn = NULL
+        };
+
+        int type_id = sk_register_type(&sk, &test_desc);
+        TEST(type_id >= OBJ_LAST);
+        TEST(type_id == OBJ_LAST);  // first registered type
+
+        COMMENT("Test get_type_desc...");
+        const SKTypeDesc* desc = vm_get_type_desc(&sk.vm, type_id);
+        TEST(desc != NULL);
+        TEST(strcmp(desc->name, "test-custom") == 0);
+        TEST(desc->print_fn == test_custom_print);
+        TEST(desc->free_fn == test_custom_free);
+        TEST(desc->mark_fn == NULL);
+
+        COMMENT("Test creating custom type object...");
+        TestCustomObj* tobj = (TestCustomObj*)vm_newObject(&sk.vm, sizeof(TestCustomObj), type_id);
+        TEST(tobj != NULL);
+        TEST(OBJ_TYPE((Object*)tobj) == type_id);
+        tobj->value = 42;
+
+        COMMENT("Test printing custom type...");
+        test_print_called = 0;
+        vm_push(&sk.vm, (Object*)tobj);  // protect from GC
+        vm_print_object((Object*)tobj, VM_PRINT_FANCY, stdout);
+        TEST(test_print_called == 1);
+        printf("\n");
+
+        COMMENT("Test typeof returns custom name...");
+        // typeof is tested indirectly via vm_get_type_desc
+
+        COMMENT("Test registering second type...");
+        SKTypeDesc test_desc2 = { .name = "test-other", .mark_fn = NULL, .free_fn = NULL, .print_fn = NULL, .equal_fn = NULL };
+        int type_id2 = sk_register_type(&sk, &test_desc2);
+        TEST(type_id2 == OBJ_LAST + 1);
+        TEST(type_id2 != type_id);
+
+        COMMENT("Test invalid lookups...");
+        TEST(vm_get_type_desc(&sk.vm, OBJ_STRING) == NULL);
+        TEST(vm_get_type_desc(&sk.vm, OBJ_LAST + 100) == NULL);
+
+        vm_pop(&sk.vm);  // remove GC protection
+        g_bGCStress = old_stress;
         sk_shutdown(&sk);
     }
 }

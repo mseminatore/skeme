@@ -229,3 +229,13 @@ int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])
 
     return 0;
 }
+
+//--------------------------------------------------------------
+// Register a custom object type with the VM
+// Returns type ID >= OBJ_LAST on success, -1 on failure
+//--------------------------------------------------------------
+int sk_register_type(SKState *pSK, const SKTypeDesc *desc)
+{
+    if (!pSK || !desc) return -1;
+    return vm_register_type(&pSK->vm, desc);
+}

@@ -1193,7 +1193,10 @@ static int sk_typeof(SKState* pSK)
             break;
 
         default:
-            type_name = "object";
+        {
+            const SKTypeDesc* desc = vm_get_type_desc(&pSK->vm, OBJ_TYPE(obj));
+            type_name = desc ? desc->name : "object";
+        }
             break;
         }
     }

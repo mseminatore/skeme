@@ -318,6 +318,15 @@ typedef struct File {
     String* name;           // file name
 } Port;
 
+// Type descriptor for extensible object types
+typedef struct SKTypeDesc {
+    const char* name;                           // type name for display, e.g. "fraction"
+    void (*mark_fn)(struct VM* pvm, Object* obj);   // GC mark: trace any Object* fields (NULL = no-op)
+    void (*free_fn)(struct VM* pvm, Object* obj);   // cleanup: close handles, free sub-allocs (NULL = no-op)
+    void (*print_fn)(Object* obj, int mode, FILE* stream); // display/write (NULL = #<typename>)
+    int (*equal_fn)(Object* a, Object* b);      // eqv?/equal? (NULL = pointer equality)
+} SKTypeDesc;
+
 // Define the VM structure
 typedef struct VM {
 	int sp;                         // Stack pointer, should be size_t or uint?
@@ -346,6 +355,11 @@ typedef struct VM {
     Object** grayStack;
 
     struct SKState* sk_state;       // Back-pointer to SKState
+
+    // Extensible type registry
+    SKTypeDesc* custom_types;       // Array of registered type descriptors
+    int num_custom_types;           // Number of registered custom types
+    int custom_types_capacity;      // Capacity of custom_types array
 
 #ifdef VM_USE_FREE_LIST
     int freeObjects;      // Number of free objects in the free list
@@ -420,5 +434,12 @@ Object* vm_get_local_var_ex(VM* pvm, const char* name, int* scope_depth);
 // Call a function from C code with given arguments
 // Works with both native functions and Scheme procedures
 Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args);
+
+// Extensible type registration
+// Returns a type ID >= OBJ_LAST, or -1 on failure
+int vm_register_type(VM* pvm, const SKTypeDesc* desc);
+
+// Look up type descriptor for a custom type (returns NULL if not found)
+const SKTypeDesc* vm_get_type_desc(VM* pvm, int type_id);
 
 #endif // __VM_H
