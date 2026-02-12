@@ -195,7 +195,6 @@ int vm_init(VM* pvm) {
     pvm->sp = 0;
     pvm->fp = 0;
     pvm->ip = 0;
-    pvm->return_sp = 0;
     pvm->head = NULL;
     pvm->numObjects = 0;
     pvm->objectsCollected = 0;
@@ -208,7 +207,6 @@ int vm_init(VM* pvm) {
 
     // clear stack
     //memset(pvm->stack, 0, sizeof(pvm->stack));
-	//memset(pvm->return_stack, 0, sizeof(pvm->return_stack));
 
 	// init globals - since we use pointer keys, use default hash and compare funcs
     pvm->global_table = ht_create();
@@ -618,7 +616,7 @@ static VMExecResult vm_exec_one(VM* pvm)
     VMCode_t opcode = *pvm->ip++;
     Object* obj;
 
-    VM_LOG("IP=%p SP=%d RP=%d: ", pvm->ip - 1, pvm->sp, pvm->return_sp);
+    VM_LOG("IP=%p SP=%d FP=%d: ", pvm->ip - 1, pvm->sp, pvm->fp);
 
     switch(opcode)
     {
@@ -692,9 +690,9 @@ static VMExecResult vm_exec_one(VM* pvm)
             Object* ret_val = vm_pop(pvm);
             Object* nframe_obj = vm_pop(pvm);
             pvm->fp = AS_NUM(nframe_obj);
-            vm_pop_n(pvm, AS_NUM(nargs_obj));
-            vm_push(pvm, ret_val);
-            pvm->ip = vm_pop_ip(pvm);
+            pvm->ip = vm_pop_ip(pvm);           // Pop return address BEFORE popping args
+            vm_pop_n(pvm, AS_NUM(nargs_obj));   // Pop args
+            vm_push(pvm, ret_val);              // Push return value
         }
         break;
 
@@ -878,7 +876,6 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Save current VM state
         VMCode_t* saved_ip = pvm->ip;
         int saved_fp = pvm->fp;
-        int saved_return_sp = pvm->return_sp;
         int saved_sp = pvm->sp;
 
         // Push arguments onto stack (in order - first arg pushed first)
@@ -909,7 +906,6 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Restore state
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
-        pvm->return_sp = saved_return_sp;
         pvm->sp = saved_sp;  // Ensure stack is properly restored
 
         return result;
@@ -1261,31 +1257,26 @@ void vm_push_global(VM* pvm, const char *name)
 //--------------------------------------------------------------
 // Push a return address onto the return stack
 //--------------------------------------------------------------
+//--------------------------------------------------------------
+// Push a return address onto the unified stack (as tagged value)
+//--------------------------------------------------------------
 void vm_push_ip(VM* pvm, VMCode_t *ip)
 {
-	if (pvm->return_sp >= VM_STACK_SIZE) {
-		fprintf(stderr, "Return stack overflow!\n");
-		return;
-	}
-
-	pvm->return_stack[pvm->return_sp++] = ip;
-
-    if (pvm->return_sp > pvm->max_call_depth) {
-        pvm->max_call_depth = pvm->return_sp;
-    }
+    // Push return address as tagged value onto unified stack
+    vm_push(pvm, MAKE_RETADDR(ip));
 }
 
 //--------------------------------------------------------------
-// Pop a return address from the return stack
+// Pop a return address from the unified stack
 //--------------------------------------------------------------
 VMCode_t* vm_pop_ip(VM* pvm) 
 {
-	if (pvm->return_sp <= 0) {
-		fprintf(stderr, "Return stack underflow!\n");
-		return NULL;
-	}
-
-	return pvm->return_stack[--pvm->return_sp];
+    Object* obj = vm_pop(pvm);
+    if (!IS_RETADDR(obj)) {
+        fprintf(stderr, "Expected return address on stack!\n");
+        return NULL;
+    }
+    return AS_RETADDR(obj);
 }
 
 //--------------------------------------------------------------
@@ -1776,7 +1767,6 @@ void vm_freeObjects(VM* pvm) {
     pvm->max_stack_size = 0;
     pvm->sp = 0;
     pvm->fp = 0;
-    pvm->return_sp = 0;
     pvm->objectsCollected = 0;
 }
 

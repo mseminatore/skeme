@@ -99,11 +99,12 @@ typedef struct Object {
 #define TAG_BITS 3
 #define TAG_BIT_SHIFT TAG_BITS
 #define TAG_MASK ((1 << TAG_BITS) - 1)  // 0x7
-#define TAG_OBJ   0x0   // Heap objects (8-byte aligned pointers)
-#define TAG_NUM   0x1   // Integers: value << 3 | 0x1
-#define TAG_BOOL  0x2   // Booleans: false=0x02, true=0x0A
-#define TAG_CHAR  0x3   // Characters: char_value << 3 | 0x3
-#define TAG_FLOAT 0x4   // Floats (64-bit only): float_bits << 3 | 0x4
+#define TAG_OBJ     0x0   // Heap objects (8-byte aligned pointers)
+#define TAG_NUM     0x1   // Integers: value << 3 | 0x1
+#define TAG_BOOL    0x2   // Booleans: false=0x02, true=0x0A
+#define TAG_CHAR    0x3   // Characters: char_value << 3 | 0x3
+#define TAG_FLOAT   0x4   // Floats (64-bit only): float_bits << 3 | 0x4
+#define TAG_RETADDR 0x5   // Return addresses (code pointers)
 
 // macros to check and convert to object pointers
 #define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & TAG_MASK))
@@ -148,6 +149,11 @@ static inline float sk_decode_float(intptr_t bits) {
 #define IS_TAGGED_FLOAT(obj)    (0)
 #define IS_FLOAT(obj)           (OBJ_TYPE(obj) == OBJ_FLOAT)
 #endif
+
+// Return addresses (stored on unified stack)
+#define IS_RETADDR(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_RETADDR))
+#define AS_RETADDR(obj)         ((VMCode_t*)((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_RETADDR(addr)      ((Object*)(((uintptr_t)(addr) << TAG_BIT_SHIFT) | TAG_RETADDR))
 
 // object classification - heap types
 #define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
@@ -296,7 +302,7 @@ typedef struct VM {
     int fp;                         // Frame pointer
     VMCode_t *ip;                   // Instruction pointer
     Object* head;                   // Head of the object list
-    Object* stack[VM_STACK_SIZE];   // Stack of object pointers
+    Object* stack[VM_STACK_SIZE];   // Unified stack (data + return addresses)
     size_t numObjects;              // Number of allocated objects should be size_t
     size_t peakObjects;             // Peak number of allocated objects
     size_t objectsCollected;        // Number of objects garbage collected
@@ -311,9 +317,6 @@ typedef struct VM {
 	HashTable* interned_strings;    // Hash table for interned strings
 
     Environment *current_scope;     // Current environment/scope
-
-    VMCode_t *return_stack[VM_STACK_SIZE]; // Return address stack
-    int return_sp;                        // Return address stack pointer
     
     int grayCount;
     int grayCapacity;

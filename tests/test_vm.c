@@ -20,7 +20,6 @@ void test_vm(int argc, char *argv[]) {
         TEST(vm_init(&sk.vm) == VM_OK);
         TEST(sk.vm.sp == 0);
         TEST(sk.vm.fp == 0);
-        TEST(sk.vm.return_sp == 0);
         TEST(sk.vm.numObjects == 0);
         TEST(sk.vm.head == NULL);
         TEST(sk.vm.global_table != NULL);
@@ -145,13 +144,14 @@ void test_vm(int argc, char *argv[]) {
         
         VMCode_t code[] = { OP_HALT };
         VMCode_t* addr = &code[0];
+        int initial_sp = sk.vm.sp;
         
         vm_push_ip(&sk.vm, addr);
-        TEST(sk.vm.return_sp == 1);
+        TEST(sk.vm.sp == initial_sp + 1);  // Return addr now on unified stack
         
         VMCode_t* popped_addr = vm_pop_ip(&sk.vm);
         TEST(popped_addr == addr);
-        TEST(sk.vm.return_sp == 0);
+        TEST(sk.vm.sp == initial_sp);
         
         vm_shutdown(&sk.vm);
     }

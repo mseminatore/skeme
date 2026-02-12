@@ -298,12 +298,14 @@ static int formals(SKState* pSK, Procedure* proc)
         Environment* env = pSK->vm.current_scope;
 
         // update all bindings in the current environment
+        // Stack layout: [args..., ret_addr, old_fp] with fp pointing past old_fp
+        // So args are at fp-3, fp-4, etc. (old_fp at fp-1, ret_addr at fp-2)
         size_t env_index = 0;
         ht_key_t env_key;
         ht_value_t env_value;
         while (ht_next(env->bindings, &env_index, &env_key, &env_value))
         {
-			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 1)); // set parameter stack offset
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 2)); // +2 for ret_addr and old_fp
         }
     }
 
@@ -323,9 +325,8 @@ static int local_body(SKState* pSK)
 {
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     
-	// TODO  - handle local definitions
-
-	while (LOOKAHEAD == '(')
+	// Parse the body expressions - last expression's value becomes return value
+	while (LOOKAHEAD != ')')
         expr(pSK);
 
 	unindent(pSK);
@@ -570,6 +571,11 @@ static int if_expr(SKState* pSK)
     if (LOOKAHEAD != ')')
     {
         expr(pSK);                             // else branch expression
+    }
+    else
+    {
+        // No else clause - push nil/false as default value
+        vm_emit(&pSK->vm, OP_FALSE);
     }
 #endif
 
