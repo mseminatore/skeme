@@ -25,9 +25,8 @@ Tokens tokens[] =
     {"cond",    COND },
     {"else",    ELSE },
     {"load",    LOAD },
-    // { "begin",   BEGIN },
-
-    // { "case",    CASE_TOKEN },
+    { "begin",   BEGIN },
+    { "case",    CASE_TOKEN },
     // { "let",     LET },
     // { "quote",   QUOTE },
     // { "eval",    EVAL },

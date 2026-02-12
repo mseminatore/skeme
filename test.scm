@@ -349,6 +349,21 @@
 (test-case "map add two lists" (equal? (map add2 (list 1 2 3) (list 10 20 30)) (list 11 22 33)))
 (test-case "map mul two lists" (equal? (map mul2 (list 2 3 4) (list 5 6 7)) (list 10 18 28)))
 
+;----------------------
+; test begin expression
+;----------------------
+(test-case "begin returns last" (= (begin 1 2 3) 3))
+(test-case "begin single expr" (= (begin 42) 42))
+(test-case "begin with exprs" (= (begin (+ 1 2) (* 3 4)) 12))
+
+;----------------------
+; test case expression
+;----------------------
+(test-case "case match first" (= (case 1 ((1) 10) ((2) 20)) 10))
+(test-case "case match second" (= (case 2 ((1) 10) ((2) 20)) 20))
+(test-case "case else" (= (case 3 ((1) 10) ((2) 20) (else 30)) 30))
+(test-case "case multi-datum" (= (case 2 ((1 2 3) 10) (else 20)) 10))
+
 
 ;----------------------
 ; report test results

@@ -692,6 +692,144 @@ static int cond_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// begin_expr := '(' 'begin' expr+ ')'
+// Evaluates expressions in sequence, returns last value
+//-----------------------------------------------
+static int begin_expr(SKState* pSK)
+{
+    PARSE_LOG("begin_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, BEGIN);
+
+    if (LOOKAHEAD == ')')
+    {
+        // (begin) with no expressions - push nil
+        vm_emit(&pSK->vm, OP_FALSE);
+        unindent(pSK);
+        return 0;
+    }
+
+    // Parse first expression
+    expr(pSK);
+
+    // Parse remaining expressions, discarding all but last
+    while (LOOKAHEAD != ')')
+    {
+        vm_emit(&pSK->vm, OP_POP);  // discard previous value
+        expr(pSK);
+    }
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// case_expr := '(' 'case' expr clause+ ')'
+// clause := '(' '(' datum* ')' expr ')' | '(' 'else' expr ')'
+// Matches key against datums using eqv? semantics
+//-----------------------------------------------
+static int case_expr(SKState* pSK)
+{
+    PARSE_LOG("case_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+    int end_addrs[MAX_REL_CLAUSES];
+    int terms = 0;
+
+    match(pSK, CASE_TOKEN);
+
+    // Evaluate the key expression - stays on stack throughout
+    expr(pSK);
+
+    // Look up eqv? for datum comparison
+    Object* eqv_key = vm_get_string(&pSK->vm, "eqv?");
+    Object* eqv_fn = vm_get_global(&pSK->vm, eqv_key);
+
+    if (!eqv_fn || !IS_FUNCTION(eqv_fn))
+    {
+        yyerror(pSK, "case: 'eqv?' not found");
+        unindent(pSK);
+        return 0;
+    }
+
+    // Parse clauses
+    while (LOOKAHEAD != ')')
+    {
+        match(pSK, '(');
+
+        if (LOOKAHEAD == ELSE)
+        {
+            // else clause - unconditional
+            match(pSK, ELSE);
+            vm_emit(&pSK->vm, OP_POP);   // discard the key
+            expr(pSK);                    // evaluate body
+        }
+        else
+        {
+            // datum clause: ((datum1 datum2 ...) body)
+            match(pSK, '(');
+
+            // We need to match key against any of the datums
+            // Strategy: for each datum, DUP key, push datum, call eqv?
+            // OR the results together - if any match, take the branch
+
+            int match_addrs[MAX_REL_CLAUSES];
+            int num_datums = 0;
+
+            while (LOOKAHEAD != ')')
+            {
+                vm_emit(&pSK->vm, OP_DUP);       // duplicate key for comparison
+                expr(pSK);                        // push datum value
+                vm_emit_number(&pSK->vm, 2);      // nargs = 2
+                vm_emit(&pSK->vm, OP_CALL);
+                vm_emit(&pSK->vm, (VMCode_t)eqv_fn);
+
+                // If match, branch to body
+                vm_emit(&pSK->vm, OP_BNF);        // branch if NOT false (i.e. true)
+                match_addrs[num_datums++] = vm_emit(&pSK->vm, 0);
+
+                if (num_datums >= MAX_REL_CLAUSES) break;
+            }
+
+            match(pSK, ')');  // close datum list
+
+            // No datum matched - skip body, jump to next clause
+            vm_emit(&pSK->vm, OP_BRA);
+            int skip_addr = vm_emit(&pSK->vm, 0);
+
+            // Backpatch all datum match addresses to here (body start)
+            for (int i = 0; i < num_datums; i++)
+            {
+                vm_get_current_chunk()->code[match_addrs[i]] = 
+                    vm_get_current_chunk()->count - match_addrs[i];
+            }
+
+            // Body: pop key, evaluate body expression
+            vm_emit(&pSK->vm, OP_POP);   // discard the key
+            expr(pSK);                    // evaluate body
+
+            // Jump to end of case
+            vm_emit(&pSK->vm, OP_BRA);
+            end_addrs[terms++] = vm_emit(&pSK->vm, 0);
+
+            // Backpatch skip address (no match -> next clause)
+            vm_get_current_chunk()->code[skip_addr] = 
+                vm_get_current_chunk()->count - skip_addr;
+        }
+
+        match(pSK, ')');  // close clause
+    }
+
+    // Backpatch all end addresses
+    for (int i = 0; i < terms; i++)
+    {
+        vm_get_current_chunk()->code[end_addrs[i]] = 
+            vm_get_current_chunk()->count - end_addrs[i];
+    }
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
 // expr_tail := expr*
 //-----------------------------------------------
 static int expr_tail(SKState* pSK)
@@ -855,6 +993,14 @@ static int expr(SKState* pSK)
         case COND:
             cond_expr(pSK);
 			break;
+
+        case BEGIN:
+            begin_expr(pSK);
+            break;
+
+        case CASE_TOKEN:
+            case_expr(pSK);
+            break;
 
         case '+':        case '-':
         case '*':
