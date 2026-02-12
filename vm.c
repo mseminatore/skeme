@@ -566,13 +566,11 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
             return;
         }
 
-        vm_push_ip(pvm, pvm->ip);   // push return address onto stack
-
-        // call function by setting IP to function address
-        pvm->ip = proc->chunk.code;
-
-        vm_push(pvm, MAKE_NUM(pvm->fp));    // push old frame pointer onto stack
-        pvm->fp = pvm->sp;                  // set-up new frame pointer
+        vm_push_ip(pvm, pvm->ip);               // push return address onto stack
+        pvm->ip = proc->chunk.code;             // set IP to function code
+        vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
+        vm_push(pvm, MAKE_NUM(proc->arity));    // push arity (for RET to use)
+        pvm->fp = pvm->sp;                      // fp points past arity
     }
     else if (IS_NATIVE_FN(fn_obj))
     {
@@ -686,13 +684,17 @@ static VMExecResult vm_exec_one(VM* pvm)
     case OP_RET:
         VM_LOG("RET\n");
         {
-            Object* nargs_obj = vm_pop(pvm);
-            Object* ret_val = vm_pop(pvm);
-            Object* nframe_obj = vm_pop(pvm);
-            pvm->fp = AS_NUM(nframe_obj);
-            pvm->ip = vm_pop_ip(pvm);           // Pop return address BEFORE popping args
-            vm_pop_n(pvm, AS_NUM(nargs_obj));   // Pop args
-            vm_push(pvm, ret_val);              // Push return value
+            // Frame layout: [args..., ret_addr, saved_fp, arity]
+            //                                              ^ fp points here
+            Object* ret_val = vm_pop(pvm);          // Pop return value (result of body)
+            int arity = AS_NUM(vm_peek(pvm, 0));    // Read arity from stack[fp-1]
+            int saved_fp = AS_NUM(vm_peek(pvm, 1)); // Read saved_fp from stack[fp-2]
+            VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]); // Read ret_addr from stack[fp-3]
+            
+            pvm->sp = pvm->fp - 3 - arity;          // Pop entire frame (arity + ret_addr + saved_fp + arity_slot)
+            pvm->fp = saved_fp;                     // Restore frame pointer
+            vm_push(pvm, ret_val);                  // Push return value
+            pvm->ip = ret_addr;                     // Jump to return address
         }
         break;
 
@@ -882,15 +884,12 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        // Note: Don't push nargs here - the procedure's bytecode emits its arity before RET
-        
-        // Push NULL as return address sentinel (so OP_RET sets ip=NULL)
-        vm_push_ip(pvm, NULL);
-
-        // Set up call frame
-        pvm->ip = proc->chunk.code;
-        vm_push(pvm, MAKE_NUM(pvm->fp));
+        // Set up frame: [args..., ret_addr, saved_fp, arity]
+        vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
+        vm_push(pvm, MAKE_NUM(pvm->fp));     // saved fp
+        vm_push(pvm, MAKE_NUM(nargs));       // arity
         pvm->fp = pvm->sp;
+        pvm->ip = proc->chunk.code;
 
         // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
         while (pvm->ip != NULL)

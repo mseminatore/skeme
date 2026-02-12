@@ -298,14 +298,14 @@ static int formals(SKState* pSK, Procedure* proc)
         Environment* env = pSK->vm.current_scope;
 
         // update all bindings in the current environment
-        // Stack layout: [args..., ret_addr, old_fp] with fp pointing past old_fp
-        // So args are at fp-3, fp-4, etc. (old_fp at fp-1, ret_addr at fp-2)
+        // Stack layout: [args..., ret_addr, saved_fp, arity] with fp pointing past arity
+        // So args are at fp-4, fp-5, etc. (arity at fp-1, saved_fp at fp-2, ret_addr at fp-3)
         size_t env_index = 0;
         ht_key_t env_key;
         ht_value_t env_value;
         while (ht_next(env->bindings, &env_index, &env_key, &env_value))
         {
-			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 2)); // +2 for ret_addr and old_fp
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 3)); // +3 for ret_addr, saved_fp, arity
         }
     }
 
@@ -376,8 +376,7 @@ static int definition(SKState* pSK)
         // function body
         local_body(pSK);
 
-        // return from function
-        vm_emit_number(&pSK->vm, proc->arity);
+        // return from function (arity is now stored in frame by CALL)
         vm_emit(&pSK->vm, OP_RET);
         vm_set_current_chunk(&pSK->vm, prev_chunk);
 
@@ -447,8 +446,7 @@ static int lambda(SKState* pSK)
     // function body
     local_body(pSK);
 
-    // return from function (body's result is on stack)
-    vm_emit_number(&pSK->vm, proc->arity);
+    // return from function (arity is now stored in frame by CALL)
     vm_emit(&pSK->vm, OP_RET);
     vm_set_current_chunk(&pSK->vm, prev_chunk);
 
