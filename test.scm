@@ -380,6 +380,75 @@
 (test-case "closure pair first" (= (p #t) 3))
 (test-case "closure pair second" (= (p #f) 7))
 
+;----------------------
+; test numeric functions
+;----------------------
+(test-case "abs positive" (= (abs 5) 5))
+(test-case "abs negative" (= (abs -5) 5))
+(test-case "abs zero" (= (abs 0) 0))
+(test-case "quotient" (= (quotient 17 5) 3))
+(test-case "quotient negative" (= (quotient -17 5) -3))
+(test-case "remainder" (= (remainder 17 5) 2))
+(test-case "remainder negative" (= (remainder -17 5) -2))
+(test-case "expt" (= (expt 2 10) 1024))
+(test-case "expt zero" (= (expt 5 0) 1))
+(test-case "expt one" (= (expt 7 1) 7))
+(test-case "sqrt exact" (= (sqrt 25) 5))
+(test-case "sqrt 0" (= (sqrt 0) 0))
+(test-case "floor" (= (floor 3.7) 3))
+(test-case "floor negative" (= (floor -3.2) -4))
+(test-case "ceiling" (= (ceiling 3.2) 4))
+(test-case "ceiling negative" (= (ceiling -3.7) -3))
+(test-case "truncate" (= (truncate 3.9) 3))
+(test-case "truncate negative" (= (truncate -3.9) -3))
+(test-case "round" (= (round 3.5) 4))
+(test-case "round down" (= (round 3.4) 3))
+(test-case "positive? true" (positive? 5))
+(test-case "positive? false" (not (positive? -3)))
+(test-case "positive? zero" (not (positive? 0)))
+(test-case "negative? true" (negative? -3))
+(test-case "negative? false" (not (negative? 5)))
+(test-case "gcd" (= (gcd 12 8) 4))
+(test-case "gcd coprime" (= (gcd 7 13) 1))
+(test-case "gcd with zero" (= (gcd 5 0) 5))
+(test-case "lcm" (= (lcm 4 6) 12))
+(test-case "lcm with zero" (= (lcm 0 5) 0))
+
+;----------------------
+; test predicate functions
+;----------------------
+(test-case "procedure? native" (procedure? car))
+(test-case "procedure? lambda" (procedure? (lambda (x) x)))
+(test-case "procedure? non-proc" (not (procedure? 42)))
+
+;----------------------
+; test string functions
+;----------------------
+(test-case "string-length" (= (string-length "hello") 5))
+(test-case "string-length empty" (= (string-length "") 0))
+(test-case "string-ref first" (= (char->integer (string-ref "hello" 0)) (char->integer #\h)))
+(test-case "string-ref last" (= (char->integer (string-ref "hello" 4)) (char->integer #\o)))
+(test-case "substring" (equal? (substring "hello world" 0 5) "hello"))
+(test-case "substring middle" (equal? (substring "hello world" 6 11) "world"))
+(test-case "substring empty" (equal? (substring "hello" 2 2) ""))
+(test-case "string-copy" (equal? (string-copy "hello") "hello"))
+
+;----------------------
+; test list functions
+;----------------------
+(test-case "list-ref first" (= (list-ref (list 10 20 30) 0) 10))
+(test-case "list-ref last" (= (list-ref (list 10 20 30) 2) 30))
+(test-case "list-tail" (equal? (list-tail (list 1 2 3 4 5) 2) (list 3 4 5)))
+(test-case "list-tail zero" (equal? (list-tail (list 1 2 3) 0) (list 1 2 3)))
+(test-case "member found" (equal? (member 3 (list 1 2 3 4 5)) (list 3 4 5)))
+(test-case "member not found" (not (member 6 (list 1 2 3 4 5))))
+(test-case "memq found" (pair? (memq 2 (list 1 2 3))))
+(test-case "memq not found" (not (memq 6 (list 1 2 3))))
+(test-case "assoc found" (equal? (assoc "b" (list (list "a" 1) (list "b" 2) (list "c" 3))) (list "b" 2)))
+(test-case "assoc not found" (not (assoc "z" (list (list "a" 1) (list "b" 2)))))
+(test-case "assq found" (pair? (assq 2 (list (list 1 "a") (list 2 "b") (list 3 "c")))))
+(test-case "assq not found" (not (assq 9 (list (list 1 "a") (list 2 "b")))))
+
 
 ;----------------------
 ; report test results
