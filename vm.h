@@ -240,6 +240,17 @@ enum {
     OP_GET_LOCAL,   // get a local variable
     OP_SET_LOCAL,   // set a local variable
     OP_PRINT_TOS,   // print the top of the stack
+    // specialized arithmetic opcodes
+    OP_ADD,         // (+ a b) inline
+    OP_SUB,         // (- a b) inline
+    OP_MUL,         // (* a b) inline
+    OP_LT,          // (< a b) inline
+    OP_LE,          // (<= a b) inline
+    OP_EQ_NUM,      // (= a b) inline numeric equality
+    // small-constant opcodes
+    OP_NUM_0,       // push 0
+    OP_NUM_1,       // push 1
+    OP_NUM_2,       // push 2
     OP_LAST         // last opcode
 };
     
@@ -382,13 +393,23 @@ int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
 void vm_print_object(Object* obj, int flags, FILE *stream);
 
-// stack management
-void vm_push(VM* pvm, Object* obj);
-Object* vm_pop(VM* pvm);
-Object* vm_peek(VM* pvm, int distance);
+// stack management - inlined for performance
+static inline void vm_push(VM* pvm, Object* obj) {
+    pvm->stack[pvm->sp++] = obj;
+    if (pvm->sp > (int)pvm->max_stack_size)
+        pvm->max_stack_size = pvm->sp;
+}
+static inline Object* vm_pop(VM* pvm) {
+    return pvm->stack[--pvm->sp];
+}
+static inline Object* vm_peek(VM* pvm, int distance) {
+    return pvm->stack[pvm->sp - 1 - distance];
+}
+static inline Object* vm_fp_peek(VM* pvm, int distance) {
+    return pvm->stack[pvm->fp - 1 - distance];
+}
 void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
 void vm_pop_n(VM* pvm, int n);
-Object* vm_fp_peek(VM* pvm, int distance);
 int vm_clear_stack(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);

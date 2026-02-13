@@ -619,6 +619,16 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("PRINT_TOS\n");
 			break;
 
+        case OP_ADD: printf("ADD\n"); break;
+        case OP_SUB: printf("SUB\n"); break;
+        case OP_MUL: printf("MUL\n"); break;
+        case OP_LT:  printf("LT\n"); break;
+        case OP_LE:  printf("LE\n"); break;
+        case OP_EQ_NUM: printf("EQ_NUM\n"); break;
+        case OP_NUM_0: printf("NUM_0\n"); break;
+        case OP_NUM_1: printf("NUM_1\n"); break;
+        case OP_NUM_2: printf("NUM_2\n"); break;
+
         default:
             printf("Unknown opcode: %zd\n", instruction);
             break;
@@ -914,6 +924,67 @@ static VMExecResult op_unknown(VM* pvm) {
     return VM_ERROR;
 }
 
+// Specialized arithmetic opcodes
+static VMExecResult op_add(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) + AS_NUM(b));
+    else
+        pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) + AS_DOUBLE(b)));
+    return VM_CONTINUE;
+}
+static VMExecResult op_sub(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) - AS_NUM(b));
+    else
+        pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) - AS_DOUBLE(b)));
+    return VM_CONTINUE;
+}
+static VMExecResult op_mul(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) * AS_NUM(b));
+    else
+        pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) * AS_DOUBLE(b)));
+    return VM_CONTINUE;
+}
+static VMExecResult op_lt(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        vm_push(pvm, AS_NUM(a) < AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+    else
+        vm_push(pvm, AS_DOUBLE(a) < AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+    return VM_CONTINUE;
+}
+static VMExecResult op_le(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        vm_push(pvm, AS_NUM(a) <= AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+    else
+        vm_push(pvm, AS_DOUBLE(a) <= AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+    return VM_CONTINUE;
+}
+static VMExecResult op_eq_num(VM* pvm) {
+    Object* b = pvm->stack[--pvm->sp];
+    Object* a = pvm->stack[--pvm->sp];
+    if (IS_NUM(a) && IS_NUM(b))
+        vm_push(pvm, AS_NUM(a) == AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+    else
+        vm_push(pvm, AS_DOUBLE(a) == AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+    return VM_CONTINUE;
+}
+
+// Small-constant opcodes
+static VMExecResult op_num_0(VM* pvm) { vm_push(pvm, MAKE_NUM(0)); return VM_CONTINUE; }
+static VMExecResult op_num_1(VM* pvm) { vm_push(pvm, MAKE_NUM(1)); return VM_CONTINUE; }
+static VMExecResult op_num_2(VM* pvm) { vm_push(pvm, MAKE_NUM(2)); return VM_CONTINUE; }
+
 // Function pointer dispatch table indexed by opcode
 static const OpHandler op_dispatch[OP_LAST] = {
     op_halt, op_push, op_pop, op_push_ip, op_pop_ip,
@@ -923,6 +994,8 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_tailcall, op_tailcall_i, op_bra, op_bnt, op_bnf, op_nop,
     op_make_closure, op_get_upvalue, op_set_upvalue, op_list,
     op_get_local, op_set_local, op_print_tos,
+    op_add, op_sub, op_mul, op_lt, op_le, op_eq_num,
+    op_num_0, op_num_1, op_num_2,
 };
 
 //---------------------------------------------------------------
@@ -1115,7 +1188,9 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         &&L_STORE, &&L_DUP, &&L_LOAD, &&L_RET, &&L_CALL, &&L_ICALL,
         &&L_TAILCALL, &&L_TAILCALL_I, &&L_BRA, &&L_BNT, &&L_BNF, &&L_NOP,
         &&L_MAKE_CLOSURE, &&L_GET_UPVALUE, &&L_SET_UPVALUE, &&L_LIST,
-        &&L_GET_LOCAL, &&L_SET_LOCAL, &&L_PRINT_TOS
+        &&L_GET_LOCAL, &&L_SET_LOCAL, &&L_PRINT_TOS,
+        &&L_ADD, &&L_SUB, &&L_MUL, &&L_LT, &&L_LE, &&L_EQ_NUM,
+        &&L_NUM_0, &&L_NUM_1, &&L_NUM_2
     };
 
     #define DISPATCH() do { \
@@ -1363,6 +1438,43 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
         DISPATCH();
 
+    // Specialized arithmetic opcodes
+    L_ADD:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) + AS_NUM(b));
+          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) + AS_DOUBLE(b))); }
+        DISPATCH();
+    L_SUB:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) - AS_NUM(b));
+          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) - AS_DOUBLE(b))); }
+        DISPATCH();
+    L_MUL:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) * AS_NUM(b));
+          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) * AS_DOUBLE(b))); }
+        DISPATCH();
+    L_LT:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) < AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+          else vm_push(pvm, AS_DOUBLE(a) < AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
+        DISPATCH();
+    L_LE:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) <= AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+          else vm_push(pvm, AS_DOUBLE(a) <= AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
+        DISPATCH();
+    L_EQ_NUM:
+        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
+          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) == AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+          else vm_push(pvm, AS_DOUBLE(a) == AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
+        DISPATCH();
+
+    // Small-constant opcodes
+    L_NUM_0: vm_push(pvm, MAKE_NUM(0)); DISPATCH();
+    L_NUM_1: vm_push(pvm, MAKE_NUM(1)); DISPATCH();
+    L_NUM_2: vm_push(pvm, MAKE_NUM(2)); DISPATCH();
+
     #undef DISPATCH
 
 done:
@@ -1398,7 +1510,9 @@ static const char* opcode_names[] = {
     "STORE", "DUP", "LOAD", "RET", "CALL", "ICALL",
     "TAILCALL", "TAILCALL_I", "BRA", "BNT", "BNF", "NOP",
     "MAKE_CLOSURE", "GET_UPVALUE", "SET_UPVALUE", "LIST",
-    "GET_LOCAL", "SET_LOCAL", "PRINT_TOS"
+    "GET_LOCAL", "SET_LOCAL", "PRINT_TOS",
+    "ADD", "SUB", "MUL", "LT", "LE", "EQ_NUM",
+    "NUM_0", "NUM_1", "NUM_2"
 };
 
 void vm_print_profile(VM* pvm)
@@ -1851,18 +1965,7 @@ VMCode_t* vm_pop_ip(VM* pvm)
 //--------------------------------------------------------------
 // Push an object onto the stack
 //--------------------------------------------------------------
-void vm_push(VM* pvm, Object* obj) {
-    if (pvm->sp >= VM_STACK_SIZE) {
-        fprintf(stderr, "Stack overflow!\n");
-        return;
-    }
-
-    pvm->stack[pvm->sp++] = obj;
-
-    if (pvm->sp > pvm->max_stack_size) {
-        pvm->max_stack_size = pvm->sp;
-	}
-}
+// vm_push, vm_pop, vm_peek, vm_fp_peek are now static inline in vm.h
 
 //--------------------------------------------------------------
 // Replace an object on the stack
@@ -1880,18 +1983,6 @@ void vm_stack_replace_n(VM* pvm, int distance, Object* obj)
 }
 
 //--------------------------------------------------------------
-// Pop an object from the stack
-//--------------------------------------------------------------
-Object* vm_pop(VM* pvm) {
-    if (pvm->sp <= 0) {
-        fprintf(stderr, "Stack underflow!\n");
-        return NULL;
-    }
-
-    return pvm->stack[--pvm->sp];
-}
-
-//--------------------------------------------------------------
 // Pop n objects from the stack
 //--------------------------------------------------------------
 void vm_pop_n(VM* pvm, int n)
@@ -1901,30 +1992,6 @@ void vm_pop_n(VM* pvm, int n)
         return;
     }
     pvm->sp -= n;
-}
-
-//--------------------------------------------------------------
-// Peek at an object on the stack without popping it
-//--------------------------------------------------------------
-Object* vm_peek(VM* pvm, int distance) {
-    if (pvm->sp - 1 - distance < 0) {
-        fprintf(stderr, "Stack underflow on peek!\n");
-        return NULL;
-    }
-
-    return pvm->stack[pvm->sp - 1 - distance];
-}
-
-//--------------------------------------------------------------
-// Peek at an object relative to the frame without popping it
-//--------------------------------------------------------------
-Object* vm_fp_peek(VM* pvm, int distance) {
-    if (pvm->fp - 1 - distance < 0) {
-        fprintf(stderr, "Stack underflow on fp_peek!\n");
-        return NULL;
-    }
-
-    return pvm->stack[pvm->fp - 1 - distance];
 }
 
 //--------------------------------------------------------------

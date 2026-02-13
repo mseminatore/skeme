@@ -220,7 +220,14 @@ static int atom(SKState* pSK)
         // handle number
         PARSE_LOG("NUMBER: %d\n", pSK->yylval.ival);
 
-		vm_emit_number(&pSK->vm, pSK->yylval.ival);
+        if (pSK->yylval.ival == 0)
+            vm_emit(&pSK->vm, OP_NUM_0);
+        else if (pSK->yylval.ival == 1)
+            vm_emit(&pSK->vm, OP_NUM_1);
+        else if (pSK->yylval.ival == 2)
+            vm_emit(&pSK->vm, OP_NUM_2);
+        else
+            vm_emit_number(&pSK->vm, pSK->yylval.ival);
         match(pSK, NUMBER);
         unindent(pSK);
         break;
@@ -1105,14 +1112,52 @@ static int expr(SKState* pSK)
                     {
                         int count = expr_tail(pSK); // parse function arguments (if any)
 
-                        // Record offset for potential tail call patching
-                        CodeChunk* chunk = vm_get_current_chunk();
-                        pSK->last_call_offset = (int)chunk->count;
-                        pSK->last_call_chunk = chunk;
+                        // Check for specialized arithmetic opcodes (2-arg calls to known builtins)
+                        if (count == 2 && IS_NATIVE_FN(proc))
+                        {
+                            NativeFunction* nf = (NativeFunction*)proc;
+                            const char* fname = nf->name->value;
+                            int spec_op = -1;
+                            if (fname[0] == '+' && fname[1] == '\0') spec_op = OP_ADD;
+                            else if (fname[0] == '-' && fname[1] == '\0') spec_op = OP_SUB;
+                            else if (fname[0] == '*' && fname[1] == '\0') spec_op = OP_MUL;
+                            else if (fname[0] == '<' && fname[1] == '=' && fname[2] == '\0') spec_op = OP_LE;
+                            else if (fname[0] == '<' && fname[1] == '\0') spec_op = OP_LT;
+                            else if (fname[0] == '=' && fname[1] == '\0') spec_op = OP_EQ_NUM;
+
+                            if (spec_op >= 0)
+                            {
+                                // No call frame needed — emit single opcode
+                                // Record offset so tail-call patching skips this (no-op patch)
+                                CodeChunk* chunk = vm_get_current_chunk();
+                                pSK->last_call_offset = (int)chunk->count;
+                                pSK->last_call_chunk = chunk;
+
+                                vm_emit(&pSK->vm, (VMCode_t)spec_op);
+                            }
+                            else
+                            {
+                                // Regular CALL for non-specialized native functions
+                                CodeChunk* chunk = vm_get_current_chunk();
+                                pSK->last_call_offset = (int)chunk->count;
+                                pSK->last_call_chunk = chunk;
+
+                                vm_emit(&pSK->vm, OP_CALL);
+                                vm_emit(&pSK->vm, (VMCode_t)proc);
+                                vm_emit(&pSK->vm, (VMCode_t)count);
+                            }
+                        }
+                        else
+                        {
+                            // Record offset for potential tail call patching
+                            CodeChunk* chunk = vm_get_current_chunk();
+                            pSK->last_call_offset = (int)chunk->count;
+                            pSK->last_call_chunk = chunk;
                         
-                        vm_emit(&pSK->vm, OP_CALL);
-                        vm_emit(&pSK->vm, (VMCode_t)proc);
-                        vm_emit(&pSK->vm, (VMCode_t)count);
+                            vm_emit(&pSK->vm, OP_CALL);
+                            vm_emit(&pSK->vm, (VMCode_t)proc);
+                            vm_emit(&pSK->vm, (VMCode_t)count);
+                        }
                     }
                     else if (local_fn)
                     {
