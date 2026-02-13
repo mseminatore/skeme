@@ -424,6 +424,8 @@ static int sk_exit(SKState* pSK)
 
     printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
 
+    vm_print_profile(&pSK->vm);
+
     exit(exit_code);
     return SK_TRUE;
 }
