@@ -75,6 +75,7 @@ typedef enum {
 extern int g_bGCLog;
 extern int g_bVMLog;
 extern int g_bGCStress;
+extern int g_bProfile;
 
 
 //-----------------------------
@@ -286,6 +287,7 @@ typedef struct Procedure {
     String *name;       // function name
     UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
     int upvalue_count;      // number of upvalues
+    uint64_t call_count;    // profiling: number of times called
 } Procedure;
 
 // native function object
@@ -361,6 +363,13 @@ typedef struct VM {
     int num_custom_types;           // Number of registered custom types
     int custom_types_capacity;      // Capacity of custom_types array
 
+    // Profiling counters (active when g_bProfile is set)
+    uint64_t opcode_counts[OP_LAST]; // per-opcode execution counts
+    uint64_t total_opcodes;          // total instructions executed
+    double gc_time_ms;               // cumulative GC time in milliseconds
+    double native_call_time_ms;      // cumulative native function call time
+    double exec_time_ms;             // total vm_exec time
+
 #ifdef VM_USE_FREE_LIST
     int freeObjects;      // Number of free objects in the free list
     Object *freeList[VM_FREE_LIST];    // Free list for object reuse
@@ -417,6 +426,9 @@ VMCode_t* vm_get_chunk_ip();
 void vm_exec(VM* pvm, VMCode_t *addr);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
+
+// profiling
+void vm_print_profile(VM* pvm);
 
 // local/global variable management
 int vm_define_global(VM* pvm, Object* key, Object* value);

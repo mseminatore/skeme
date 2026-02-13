@@ -15,6 +15,7 @@ const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
 int g_bSymbols = FALSE;
 int g_bInteractive = FALSE;
+extern int g_bProfile;
 
 CodeChunk repl_chunk;
 
@@ -23,13 +24,14 @@ CodeChunk repl_chunk;
 //--------------------------------
 void usage()
 {
-    printf("\nUsage: %s [-d] [-i] [-t] <inputfile>\n", APP_NAME);
-    printf("  -d : enable parser debug output\n");
-    printf("  -h : display usage\n");
-    printf("  -i : take input from stdin\n");
-    printf("  -p : parser logging\n");
-    printf("  -t : generate symbol table\n");
-    printf("  -v : enable verbose output\n");
+    printf("\nUsage: %s [-d] [-i] [-t] [-profile] <inputfile>\n", APP_NAME);
+    printf("  -d       : enable parser debug output\n");
+    printf("  -h       : display usage\n");
+    printf("  -i       : take input from stdin\n");
+    printf("  -p       : parser logging\n");
+    printf("  -profile : enable VM profiling\n");
+    printf("  -t       : generate symbol table\n");
+    printf("  -v       : enable verbose output\n");
     exit(0);
 }
 
@@ -42,6 +44,12 @@ int getopt(SKState* pSK, int n, char *args[])
     
 	for (i = 1; args[i] && args[i][0] == '-'; i++)
 	{
+        // multi-char flags
+        if (strcmp(args[i], "-profile") == 0) {
+            g_bProfile = TRUE;
+            continue;
+        }
+
         // flag for enabling verbose logging
 		if (args[i][1] == 'v')
 			g_bDebug = TRUE;
@@ -173,6 +181,8 @@ int main(int argc, char *argv[])
         dump_symbols(&sk);
 
     LOG("max stack size: %d, max call depth: %d\n", sk.vm.max_stack_size, sk.vm.max_call_depth);
+
+    vm_print_profile(&sk.vm);
 
     LOG("Shutting down...");
     sk_shutdown(&sk);

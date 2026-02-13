@@ -285,16 +285,16 @@ static int atom(SKState* pSK)
             else if (scope_depth == 0 && IS_NUM(obj))
             {
                 // Local variable in current scope
-                vm_emit_number(&pSK->vm, AS_NUM(obj));
                 vm_emit(&pSK->vm, OP_GET_LOCAL);
+                vm_emit(&pSK->vm, (VMCode_t)AS_NUM(obj));
             }
             else if (scope_depth > 0 && IS_NUM(obj))
             {
                 // Variable from enclosing scope — capture as upvalue
                 int uv_idx = register_upvalue(pSK, var_name, scope_depth, AS_NUM(obj));
                 if (uv_idx >= 0) {
-                    vm_emit_number(&pSK->vm, uv_idx);
                     vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                    vm_emit(&pSK->vm, (VMCode_t)uv_idx);
                 }
             }
             else
@@ -560,16 +560,16 @@ static int lambda(SKState* pSK)
         // First, push captured values from enclosing scope's locals
         for (int i = 0; i < num_upvalues; i++)
         {
-            vm_emit_number(&pSK->vm, captured[i].local_index);
             vm_emit(&pSK->vm, OP_GET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
         }
 
         // Then push the procedure object
         vm_emit_push_object(&pSK->vm, proc_obj);
 
-        // Then push the upvalue count and make the closure
-        vm_emit_number(&pSK->vm, num_upvalues);
+        // Then emit the closure with upvalue count as immediate
         vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
     }
     else
     {
@@ -604,8 +604,8 @@ static int parse_list(SKState* pSK)
         nargs++;
     }
 
-    vm_emit_number(&pSK->vm, nargs);
     vm_emit(&pSK->vm, OP_LIST);
+    vm_emit(&pSK->vm, (VMCode_t)nargs);
 
     unindent(pSK);
     return 0;
@@ -850,9 +850,9 @@ static int case_expr(SKState* pSK)
             {
                 vm_emit(&pSK->vm, OP_DUP);       // duplicate key for comparison
                 expr(pSK);                        // push datum value
-                vm_emit_number(&pSK->vm, 2);      // nargs = 2
                 vm_emit(&pSK->vm, OP_CALL);
                 vm_emit(&pSK->vm, (VMCode_t)eqv_fn);
+                vm_emit(&pSK->vm, (VMCode_t)2);   // nargs = 2
 
                 // If match, branch to body
                 vm_emit(&pSK->vm, OP_BNF);        // branch if NOT false (i.e. true)
@@ -914,9 +914,7 @@ static int expr_tail(SKState* pSK)
         count++;
     }
 
-	// push number of arguments onto stack
-    vm_emit_number(&pSK->vm, count);
-
+	// return number of arguments (caller will emit as immediate operand)
     return count;
 }
 
@@ -1105,7 +1103,7 @@ static int expr(SKState* pSK)
 
                     if (IS_FUNCTION(proc))
                     {
-                        expr_tail(pSK); // parse function arguments (if any)
+                        int count = expr_tail(pSK); // parse function arguments (if any)
 
                         // Record offset for potential tail call patching
                         CodeChunk* chunk = vm_get_current_chunk();
@@ -1114,13 +1112,14 @@ static int expr(SKState* pSK)
                         
                         vm_emit(&pSK->vm, OP_CALL);
                         vm_emit(&pSK->vm, (VMCode_t)proc);
+                        vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                     else if (local_fn)
                     {
-                        expr_tail(pSK); // parse function arguments (if any)
+                        int count = expr_tail(pSK); // parse function arguments (if any)
 
-                        vm_emit_number(&pSK->vm, AS_NUM(proc));
                         vm_emit(&pSK->vm, OP_GET_LOCAL);
+                        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(proc));
                         
                         // Record offset for potential tail call patching
                         CodeChunk* chunk = vm_get_current_chunk();
@@ -1128,12 +1127,13 @@ static int expr(SKState* pSK)
                         pSK->last_call_chunk = chunk;
                         
                         vm_emit(&pSK->vm, OP_ICALL);
+                        vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                     else
                     {
                         // Not a known function at parse time - emit runtime lookup
                         // This handles forward references like (define f (lambda ...)) ... (f args)
-                        expr_tail(pSK); // parse function arguments
+                        int count = expr_tail(pSK); // parse function arguments
                         
                         vm_emit_push_object(&pSK->vm, key);  // push the name
                         vm_emit(&pSK->vm, OP_LOAD);           // look up at runtime
@@ -1144,6 +1144,7 @@ static int expr(SKState* pSK)
                         pSK->last_call_chunk = chunk;
                         
                         vm_emit(&pSK->vm, OP_ICALL);
+                        vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                 }
                 else

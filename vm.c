@@ -10,6 +10,7 @@
 
 int g_bGCLog = FALSE;
 int g_bVMLog = FALSE;
+int g_bProfile = FALSE;
 
 #if defined(VM_STRESS_GC)
     int g_bGCStress = TRUE;
@@ -20,6 +21,25 @@ int g_bVMLog = FALSE;
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
+
+// High-resolution timer for profiling
+#ifdef SK_PLATFORM_WINDOWS
+#include <windows.h>
+static double profile_get_ms(void) {
+    static LARGE_INTEGER freq = {0};
+    LARGE_INTEGER now;
+    if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&now);
+    return (double)now.QuadPart * 1000.0 / (double)freq.QuadPart;
+}
+#else
+#include <time.h>
+static double profile_get_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
+#endif
 
 CodeChunk* g_current_chunk = NULL;
 static VM* g_vm_instance = NULL;  // set during vm_init, used by vm_print_object for custom type dispatch
@@ -501,22 +521,23 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_ICALL:
-            printf("CALL [SP]\n");
+            printf("ICALL nargs=%zd\n", *ip++);
             break;
 
         case OP_CALL:
         {
             Object* fn_obj = (Object*)*ip++;
+            int nargs = (int)*ip++;
 
             if (IS_PROCEDURE(fn_obj))
             {
                 Procedure* proc = (Procedure*)fn_obj;
-                printf("CALL '%s' %p\n", proc->name->value, proc->chunk.code);
+                printf("CALL '%s' %p nargs=%d\n", proc->name->value, proc->chunk.code, nargs);
             }
             else
             {
                 NativeFunction* proc = (NativeFunction*)fn_obj;
-                printf("CALL NATIVE FN '%s'\n", proc->name->value);
+                printf("CALL NATIVE FN '%s' nargs=%d\n", proc->name->value, nargs);
             }
         }
             break;
@@ -545,7 +566,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             break;
 
         case OP_LIST:
-            printf("MAKE_LIST\n");
+            printf("MAKE_LIST count=%zd\n", *ip++);
             break;
 
         // case OP_PROC:
@@ -553,40 +574,41 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         //     break;
 
         case OP_MAKE_CLOSURE:
-            printf("MAKE_CLOSURE\n");
+            printf("MAKE_CLOSURE upvalues=%zd\n", *ip++);
             break;
 
         case OP_GET_UPVALUE:
-            printf("GET_UPVALUE\n");
+            printf("GET_UPVALUE idx=%zd\n", *ip++);
             break;
 
         case OP_SET_UPVALUE:
-            printf("SET_UPVALUE\n");
+            printf("SET_UPVALUE idx=%zd\n", *ip++);
             break;
 
         case OP_TAILCALL:
         {
             Object* fn_obj = (Object*)*ip++;
+            int nargs = (int)*ip++;
 
             if (IS_PROCEDURE(fn_obj))
             {
                 Procedure* proc = (Procedure*)fn_obj;
-                printf("TAILCALL '%s' %p\n", proc->name->value, proc->chunk.code);
+                printf("TAILCALL '%s' %p nargs=%d\n", proc->name->value, proc->chunk.code, nargs);
             }
             else
             {
                 NativeFunction* proc = (NativeFunction*)fn_obj;
-                printf("TAILCALL NATIVE FN '%s'\n", proc->name->value);
+                printf("TAILCALL NATIVE FN '%s' nargs=%d\n", proc->name->value, nargs);
             }
         }
             break;
 
         case OP_TAILCALL_I:
-            printf("TAILCALL_I\n");
+            printf("TAILCALL_I nargs=%zd\n", *ip++);
             break;
 
         case OP_GET_LOCAL:
-            printf("GET_LOCAL\n");
+            printf("GET_LOCAL idx=%zd\n", *ip++);
             break;
             
         case OP_SET_LOCAL:
@@ -637,7 +659,7 @@ static void vm_pop_frame(VM* pvm)
     pvm->fp = AS_NUM(fp_obj);
 }
 
-static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
+static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
 {
     if (IS_CLOSURE(fn_obj))
     {
@@ -645,8 +667,7 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
         Procedure* proc = closure->function;
         VM_LOG("%s CLOSURE '%s' %p\n", call_type, proc->name->value, proc->chunk.code);
 
-        Object* n = vm_pop(pvm);
-        int nargs = AS_NUM(n);
+        if (g_bProfile) proc->call_count++;
 
         if (proc->arity != nargs)
         {
@@ -668,8 +689,7 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
         Procedure* proc = (Procedure*)fn_obj;
         VM_LOG("%s '%s' %p\n", call_type, proc->name->value, proc->chunk.code);
 
-        Object* n = vm_pop(pvm);
-        int nargs = AS_NUM(n);
+        if (g_bProfile) proc->call_count++;
 
         if (proc->arity != nargs)
         {
@@ -698,8 +718,6 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
             int arity = proc->arity;
             if (arity >= 0)
             {
-                Object* n = vm_pop(pvm);
-                int nargs = AS_NUM(n);
                 if (nargs != arity)
                 {
                     yyerror(pvm->sk_state, "incorrect number of arguments to native function");
@@ -709,8 +727,19 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
                     return;
                 }
             }
+            else
+            {
+                // Variable arity - push nargs for the native function to read
+                vm_push(pvm, MAKE_NUM(nargs));
+            }
 
-            func(pvm->sk_state); // Pass the SKState via back-pointer
+            if (g_bProfile) {
+                double t0 = profile_get_ms();
+                func(pvm->sk_state);
+                pvm->native_call_time_ms += profile_get_ms() - t0;
+            } else {
+                func(pvm->sk_state);
+            }
         }
         else {
             fprintf(stderr, "NULL function pointer in NATIVE call!\n");
@@ -721,429 +750,198 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, const char* call_type)
 }
 
 //---------------------------------------------------------------
-// Execute a single VM instruction
-// Returns: VM_CONTINUE to keep going, VM_HALT to stop, VM_ERROR on error
+// Function pointer dispatch handlers
+// Each returns VM_CONTINUE, VM_HALT, or VM_ERROR
+//---------------------------------------------------------------
+typedef VMExecResult (*OpHandler)(VM*);
+
+static VMExecResult op_push(VM* pvm) { vm_push(pvm, (Object*)*pvm->ip++); return VM_CONTINUE; }
+static VMExecResult op_pop(VM* pvm) { vm_pop(pvm); return VM_CONTINUE; }
+static VMExecResult op_push_ip(VM* pvm) { vm_push_ip(pvm, pvm->ip); return VM_CONTINUE; }
+static VMExecResult op_pop_ip(VM* pvm) { pvm->ip = vm_pop_ip(pvm); return VM_CONTINUE; }
+static VMExecResult op_push_fp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->fp)); return VM_CONTINUE; }
+static VMExecResult op_pop_fp(VM* pvm) { pvm->fp = AS_NUM(vm_pop(pvm)); return VM_CONTINUE; }
+static VMExecResult op_push_sp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->sp)); return VM_CONTINUE; }
+static VMExecResult op_pop_sp(VM* pvm) { pvm->sp = AS_NUM(vm_pop(pvm)); return VM_CONTINUE; }
+static VMExecResult op_num(VM* pvm) { vm_push(pvm, MAKE_NUM(*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_string(VM* pvm) { vm_push(pvm, vm_new_string(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_true(VM* pvm) { vm_pushBoolean(pvm, TRUE); return VM_CONTINUE; }
+static VMExecResult op_false(VM* pvm) { vm_pushBoolean(pvm, FALSE); return VM_CONTINUE; }
+static VMExecResult op_dup(VM* pvm) { vm_push(pvm, vm_peek(pvm, 0)); return VM_CONTINUE; }
+static VMExecResult op_nop(VM* pvm) { (void)pvm; return VM_CONTINUE; }
+static VMExecResult op_halt(VM* pvm) { (void)pvm; return VM_HALT; }
+static VMExecResult op_set_local(VM* pvm) { (void)pvm; return VM_CONTINUE; }
+
+static VMExecResult op_store(VM* pvm) {
+    Object *value = vm_pop(pvm), *key = vm_pop(pvm);
+    if (!IS_STRING(key)) { yyerror(pvm->sk_state, "invalid variable name"); return VM_ERROR; }
+    vm_update_global(pvm, key, value);
+    return VM_CONTINUE;
+}
+static VMExecResult op_load(VM* pvm) {
+    Object* key = vm_pop(pvm);
+    vm_push(pvm, vm_get_global(pvm, key));
+    return VM_CONTINUE;
+}
+static VMExecResult op_ret(VM* pvm) {
+    Object* ret_val = vm_pop(pvm);
+    int arity = AS_NUM(vm_peek(pvm, 0));
+    int saved_fp = AS_NUM(vm_peek(pvm, 1));
+    VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
+    pvm->sp = pvm->fp - 3 - arity;
+    pvm->fp = saved_fp;
+    vm_push(pvm, ret_val);
+    pvm->ip = ret_addr;
+    return VM_CONTINUE;
+}
+static VMExecResult op_call(VM* pvm) {
+    Object* fn_obj = (Object*)*pvm->ip++;
+    int nargs = (int)*pvm->ip++;
+    vm_call_procedure(pvm, fn_obj, nargs, "CALL");
+    return VM_CONTINUE;
+}
+static VMExecResult op_icall(VM* pvm) {
+    Object* fn_obj = vm_pop(pvm);
+    int nargs = (int)*pvm->ip++;
+    vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
+    return VM_CONTINUE;
+}
+static VMExecResult op_bra(VM* pvm) { pvm->ip += *pvm->ip; return VM_CONTINUE; }
+static VMExecResult op_bnt(VM* pvm) {
+    if (IS_FALSE(vm_pop(pvm))) pvm->ip += *pvm->ip; else pvm->ip++;
+    return VM_CONTINUE;
+}
+static VMExecResult op_bnf(VM* pvm) {
+    if (!IS_FALSE(vm_pop(pvm))) pvm->ip += *pvm->ip; else pvm->ip++;
+    return VM_CONTINUE;
+}
+static VMExecResult op_get_local(VM* pvm) {
+    vm_push(pvm, vm_fp_peek(pvm, (int)*pvm->ip++));
+    return VM_CONTINUE;
+}
+static VMExecResult op_list(VM* pvm) {
+    Pair* alist = NULL; Pair* pair = NULL;
+    int n = (int)*pvm->ip++;
+    for (int i = 0; i < n; i++) {
+        vm_push(pvm, (Object*)pair);
+        alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+        vm_pop(pvm);
+        alist->car = vm_pop(pvm);
+        alist->cdr = (Object*)pair;
+        pair = alist;
+    }
+    vm_push(pvm, (Object*)alist);
+    return VM_CONTINUE;
+}
+static VMExecResult op_print_tos(VM* pvm) {
+    if (pvm->sp) {
+        fprintf(stdout, TERM_BRIGHT_BLUE);
+        vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
+        fprintf(stdout, TERM_RESET"\n");
+    }
+    return VM_CONTINUE;
+}
+static VMExecResult op_make_closure(VM* pvm) {
+    int upvalue_count = (int)*pvm->ip++;
+    Object* proc_obj = vm_pop(pvm);
+    if (!IS_PROCEDURE(proc_obj)) { yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure"); return VM_ERROR; }
+    vm_push(pvm, proc_obj);
+    Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
+    closure->function = (Procedure*)vm_pop(pvm);
+    closure->upvalue_count = upvalue_count;
+    vm_push(pvm, (Object*)closure);
+    if (upvalue_count > 0) {
+        closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
+        vm_pop(pvm);
+        for (int i = upvalue_count - 1; i >= 0; i--) closure->upvalues[i] = vm_pop(pvm);
+    } else { closure->upvalues = NULL; vm_pop(pvm); }
+    vm_push(pvm, (Object*)closure);
+    return VM_CONTINUE;
+}
+static VMExecResult op_get_upvalue(VM* pvm) {
+    int idx = (int)*pvm->ip++;
+    if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+        yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index"); vm_push(pvm, NULL);
+    } else { vm_push(pvm, pvm->current_closure->upvalues[idx]); }
+    return VM_CONTINUE;
+}
+static VMExecResult op_set_upvalue(VM* pvm) {
+    int idx = (int)*pvm->ip++;
+    Object* value = vm_pop(pvm);
+    if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+        yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
+    } else { pvm->current_closure->upvalues[idx] = value; }
+    return VM_CONTINUE;
+}
+static VMExecResult op_tailcall(VM* pvm) {
+    Object* fn_obj = (Object*)*pvm->ip++;
+    int nargs = (int)*pvm->ip++;
+    if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+        Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
+        if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments"); return VM_ERROR; }
+        int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+        if (nargs == old_arity) {
+            int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
+            for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
+            pvm->sp = pvm->fp;
+            pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
+            pvm->ip = proc->chunk.code;
+        } else { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-FALLBACK"); }
+    } else if (IS_NATIVE_FN(fn_obj)) { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-NATIVE");
+    } else { yyerror(pvm->sk_state, "TAILCALL: not a procedure"); return VM_ERROR; }
+    return VM_CONTINUE;
+}
+static VMExecResult op_tailcall_i(VM* pvm) {
+    Object* fn_obj = vm_pop(pvm);
+    int nargs = (int)*pvm->ip++;
+    if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+        Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
+        if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments"); return VM_ERROR; }
+        int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+        if (nargs == old_arity) {
+            int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
+            for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
+            pvm->sp = pvm->fp;
+            pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
+            pvm->ip = proc->chunk.code;
+        } else { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-FALLBACK"); }
+    } else if (IS_NATIVE_FN(fn_obj)) { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-NATIVE");
+    } else { yyerror(pvm->sk_state, "TAILCALL_I: not a procedure"); return VM_ERROR; }
+    return VM_CONTINUE;
+}
+static VMExecResult op_unknown(VM* pvm) {
+    fprintf(stderr, "Unknown opcode at ip=%p\n", pvm->ip - 1);
+    return VM_ERROR;
+}
+
+// Function pointer dispatch table indexed by opcode
+static const OpHandler op_dispatch[OP_LAST] = {
+    op_halt, op_push, op_pop, op_push_ip, op_pop_ip,
+    op_push_fp, op_pop_fp, op_push_sp, op_pop_sp,
+    op_num, op_string, op_true, op_false,
+    op_store, op_dup, op_load, op_ret, op_call, op_icall,
+    op_tailcall, op_tailcall_i, op_bra, op_bnt, op_bnf, op_nop,
+    op_make_closure, op_get_upvalue, op_set_upvalue, op_list,
+    op_get_local, op_set_local, op_print_tos,
+};
+
+//---------------------------------------------------------------
+// Execute a single VM instruction via function pointer table
+// Used by vm_call_function's internal loop
 //---------------------------------------------------------------
 static VMExecResult vm_exec_one(VM* pvm)
 {
     VMCode_t opcode = *pvm->ip++;
-    Object* obj;
 
-    VM_LOG("IP=%p SP=%d FP=%d: ", pvm->ip - 1, pvm->sp, pvm->fp);
-
-    switch(opcode)
-    {
-    case OP_PUSH:
-        VM_LOG("PUSH obj %p\n", (Object*)*pvm->ip);
-        vm_push(pvm, (Object*)*pvm->ip++);
-        break;
-
-    case OP_POP:
-        VM_LOG("POP obj\n");
-        vm_pop(pvm);
-        break;
-
-    case OP_PUSH_IP:
-        VM_LOG("PUSH IP\n");
-        vm_push_ip(pvm, pvm->ip);
-        break;
-
-    case OP_POP_IP:
-        VM_LOG("POP IP\n");
-        pvm->ip = vm_pop_ip(pvm);
-        break;
-
-    case OP_PUSH_FP:
-        VM_LOG("PUSH FP\n");
-        vm_push(pvm, MAKE_NUM(pvm->fp));
-        break;
-
-    case OP_POP_FP:
-        VM_LOG("POP FP\n");
-        {
-            Object* fp_obj = vm_pop(pvm);
-            pvm->fp = AS_NUM(fp_obj);
-        }
-        break;
-
-    case OP_PUSH_SP:
-        VM_LOG("PUSH SP\n");
-        vm_push(pvm, MAKE_NUM(pvm->sp));
-        break;
-
-    case OP_POP_SP:
-        VM_LOG("POP SP\n");
-        {
-            Object* sp_obj = vm_pop(pvm);
-            pvm->sp = AS_NUM(sp_obj);
-        }
-        break;
-
-    case OP_DUP:
-        VM_LOG("DUP\n");
-        obj = vm_peek(pvm, 0);
-        vm_push(pvm, obj);
-        break;
-
-    case OP_NUM:
-        VM_LOG("PUSH NUM %zu\n", *pvm->ip);
-        vm_push(pvm, MAKE_NUM(*pvm->ip++));
-        break;
-
-    case OP_STRING:
-        VM_LOG("PUSH STRING '%s'\n", (const char*)*pvm->ip);
-        obj = vm_new_string(pvm, (const char*)*pvm->ip++);
-        vm_push(pvm, obj);
-        break;
-
-    case OP_RET:
-        VM_LOG("RET\n");
-        {
-            // Frame layout: [args..., ret_addr, saved_fp, arity]
-            //                                              ^ fp points here
-            Object* ret_val = vm_pop(pvm);          // Pop return value (result of body)
-            int arity = AS_NUM(vm_peek(pvm, 0));    // Read arity from stack[fp-1]
-            int saved_fp = AS_NUM(vm_peek(pvm, 1)); // Read saved_fp from stack[fp-2]
-            VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]); // Read ret_addr from stack[fp-3]
-            
-            pvm->sp = pvm->fp - 3 - arity;          // Pop entire frame (arity + ret_addr + saved_fp + arity_slot)
-            pvm->fp = saved_fp;                     // Restore frame pointer
-            vm_push(pvm, ret_val);                  // Push return value
-            pvm->ip = ret_addr;                     // Jump to return address
-        }
-        break;
-
-    case OP_HALT:
-        VM_LOG("HALT\n");
-        return VM_HALT;
-
-    case OP_TRUE:
-        VM_LOG("PUSH TRUE\n");
-        vm_pushBoolean(pvm, TRUE);
-        break;
-
-    case OP_FALSE:
-        VM_LOG("PUSH FALSE\n");
-        vm_pushBoolean(pvm, FALSE);
-        break;
-
-    case OP_ICALL:
-        VM_LOG("ICALL\n");
-        {
-            Object* fn_obj = vm_pop(pvm);
-            vm_call_procedure(pvm, fn_obj, "ICALL");
-        }
-        break;
-
-    case OP_CALL:
-    {
-        Object* fn_obj = (Object*)*pvm->ip++;
-        vm_call_procedure(pvm, fn_obj, "CALL");
-    }
-        break;
-
-    case OP_BNT:
-        VM_LOG("BNT %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-        obj = vm_pop(pvm);
-        if (IS_FALSE(obj))
-            pvm->ip += *pvm->ip;
-        else
-            pvm->ip++;
-        break;
-
-    case OP_BNF:
-        VM_LOG("BNF %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-        obj = vm_pop(pvm);
-        if (!IS_FALSE(obj))
-            pvm->ip += *pvm->ip;
-        else
-            pvm->ip++;
-        break;
-
-    case OP_NOP:
-        VM_LOG("NOP\n");
-        break;
-
-    case OP_BRA:
-        VM_LOG("BRA %p\n", (VMCode_t*)(pvm->ip + *pvm->ip));
-        pvm->ip += *pvm->ip;
-        break;
-
-    case OP_STORE:
-    {
-        Object *value = vm_pop(pvm);
-        Object *key = vm_pop(pvm);
-        if (!IS_STRING(key))
-        {
-            yyerror(pvm->sk_state, "invalid variable name");
-            printf("STORE: key is not a string! Obj type = %d\n", OBJ_TYPE(key));
-            return VM_ERROR;
-        }
-
-        VM_LOG("STORE '%s'\n", ((String*)key)->value);
-        vm_update_global(pvm, key, value);
-    }
-        break;
-
-    case OP_LOAD:
-    {
-        Object* key = vm_pop(pvm);
-        VM_LOG("LOAD '%s'\n", ((String*)key)->value);
-        Object* value = vm_get_global(pvm, key);
-        vm_push(pvm, value);
-    }
-        break;
-
-    case OP_GET_LOCAL:
-        VM_LOG("GET_LOCAL\n");
-        {
-            Object* index_obj = vm_pop(pvm);
-            int index = AS_NUM(index_obj);
-            Object* local_var = vm_fp_peek(pvm, index);
-            vm_push(pvm, local_var);
-        }
-        break;
-
-    case OP_LIST:
-    {
-        VM_LOG("MAKE_LIST\n");
-        Pair* alist = NULL;
-        Pair* pair = NULL;
-
-        obj = vm_pop(pvm);
-        int n = AS_NUM(obj);
-        for (int i = 0; i < n; i++)
-        {
-            vm_push(pvm, (Object*)pair);    // stash pair on stack to prevent premature GC
-            alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
-            vm_pop(pvm);                    // discard stashed pair
-            alist->car = vm_pop(pvm);
-            alist->cdr = (Object*)pair;
-            pair = alist;
-        }
-
-        vm_push(pvm, (Object*)alist);
-    }
-        break;
-
-    case OP_PRINT_TOS:
-        VM_LOG("PRINT_TOS\n");
-        if (pvm->sp)
-        {
-            fprintf(stdout, TERM_BRIGHT_BLUE);
-            vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
-            fprintf(stdout, TERM_RESET"\n");
-        }
-        break;
-
-    case OP_MAKE_CLOSURE:
-        VM_LOG("MAKE_CLOSURE\n");
-        {
-            Object* count_raw = vm_pop(pvm);
-            int upvalue_count = AS_NUM(count_raw);
-            Object* proc_obj = vm_pop(pvm);
-
-            if (!IS_PROCEDURE(proc_obj)) {
-                yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure");
-                return VM_ERROR;
-            }
-            
-            // Push proc_obj back as GC root during closure allocation
-            vm_push(pvm, proc_obj);
-            
-            // Allocate closure (may trigger GC - proc_obj + upvalues safe on stack)
-            Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
-            closure->function = (Procedure*)vm_pop(pvm);  // pop proc_obj back
-            closure->upvalue_count = upvalue_count;
-            
-            // Push closure as GC root during upvalues array allocation
-            vm_push(pvm, (Object*)closure);
-            
-            if (upvalue_count > 0) {
-                // Allocate upvalues array (may trigger GC - closure safe on stack)
-                closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
-                
-                // Pop closure from stack
-                vm_pop(pvm);
-                
-                // Pop upvalues in reverse order (first upvalue is deepest on stack)
-                for (int i = upvalue_count - 1; i >= 0; i--) {
-                    closure->upvalues[i] = vm_pop(pvm);
-                }
-            } else {
-                closure->upvalues = NULL;
-                vm_pop(pvm);  // pop closure
-            }
-            
-            vm_push(pvm, (Object*)closure);
-        }
-        break;
-
-    case OP_GET_UPVALUE:
-        VM_LOG("GET_UPVALUE\n");
-        {
-            Object* uv_raw = vm_pop(pvm);
-            int idx = AS_NUM(uv_raw);
-            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
-                yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index");
-                vm_push(pvm, NULL);
-            } else {
-                vm_push(pvm, pvm->current_closure->upvalues[idx]);
-            }
-        }
-        break;
-
-    case OP_SET_UPVALUE:
-        VM_LOG("SET_UPVALUE\n");
-        {
-            int idx = AS_NUM(vm_pop(pvm));
-            Object* value = vm_pop(pvm);
-            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
-                yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
-            } else {
-                pvm->current_closure->upvalues[idx] = value;
-            }
-        }
-        break;
-
-    case OP_TAILCALL:
-        VM_LOG("TAILCALL\n");
-        {
-            // Read function object from bytecode (same as OP_CALL)
-            Object* fn_obj = (Object*)*pvm->ip++;
-            
-            // Pop nargs from stack
-            Object* n = vm_pop(pvm);
-            int nargs = AS_NUM(n);
-            
-            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-                Procedure* proc = IS_CLOSURE(fn_obj) 
-                    ? ((Closure*)fn_obj)->function 
-                    : (Procedure*)fn_obj;
-                
-                if (proc->arity != nargs) {
-                    yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments");
-                    return VM_ERROR;
-                }
-                
-                // Get current frame info
-                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
-                
-                // TCO only when arities match (simple case)
-                // When arities differ, frame size changes which is complex
-                if (nargs == old_arity) {
-                    // Copy new args over old args in place
-                    // Old args at: fp - 3 - old_arity, ..., fp - 4
-                    // New args at: sp - nargs, ..., sp - 1 (we already popped nargs count)
-                    int old_args_base = pvm->fp - 3 - old_arity;
-                    int new_args_base = pvm->sp - nargs;
-                    
-                    // Copy args BEFORE modifying sp
-                    for (int i = 0; i < nargs; i++) {
-                        pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
-                    }
-                    
-                    // Reset sp to frame pointer (discard temporary values)
-                    pvm->sp = pvm->fp;
-                    
-                    // Set current_closure if calling a closure
-                    if (IS_CLOSURE(fn_obj)) {
-                        pvm->current_closure = (Closure*)fn_obj;
-                    } else {
-                        pvm->current_closure = NULL;
-                    }
-                    
-                    // Jump to new function (same frame, no new ret_addr pushed)
-                    pvm->ip = proc->chunk.code;
-                } else {
-                    // Different arity - fall back to regular call
-                    // Push nargs back and use regular call path
-                    vm_push(pvm, MAKE_NUM(nargs));
-                    vm_call_procedure(pvm, fn_obj, "TAILCALL-FALLBACK");
-                }
-            }
-            else if (IS_NATIVE_FN(fn_obj)) {
-                // Native functions can't be tail-called the same way
-                // Fall back to regular call behavior
-                vm_push(pvm, MAKE_NUM(nargs));  // push nargs back
-                vm_call_procedure(pvm, fn_obj, "TAILCALL-NATIVE");
-            }
-            else {
-                yyerror(pvm->sk_state, "TAILCALL: not a procedure");
-                return VM_ERROR;
-            }
-        }
-        break;
-
-    case OP_TAILCALL_I:
-        VM_LOG("TAILCALL_I\n");
-        {
-            // Pop function object from stack (same as OP_ICALL)
-            Object* fn_obj = vm_pop(pvm);
-            
-            // Pop nargs from stack
-            Object* n = vm_pop(pvm);
-            int nargs = AS_NUM(n);
-            
-            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-                Procedure* proc = IS_CLOSURE(fn_obj) 
-                    ? ((Closure*)fn_obj)->function 
-                    : (Procedure*)fn_obj;
-                
-                if (proc->arity != nargs) {
-                    yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments");
-                    return VM_ERROR;
-                }
-                
-                // Get current frame info
-                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
-                
-                // TCO only when arities match (simple case)
-                if (nargs == old_arity) {
-                    // Copy new args over old args in place
-                    int old_args_base = pvm->fp - 3 - old_arity;
-                    int new_args_base = pvm->sp - nargs;
-                    
-                    for (int i = 0; i < nargs; i++) {
-                        pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
-                    }
-                    
-                    // Reset sp to frame pointer
-                    pvm->sp = pvm->fp;
-                    
-                    // Set current_closure if calling a closure
-                    if (IS_CLOSURE(fn_obj)) {
-                        pvm->current_closure = (Closure*)fn_obj;
-                    } else {
-                        pvm->current_closure = NULL;
-                    }
-                    
-                    // Jump to new function
-                    pvm->ip = proc->chunk.code;
-                } else {
-                    // Different arity - fall back to regular call
-                    vm_push(pvm, MAKE_NUM(nargs));
-                    vm_call_procedure(pvm, fn_obj, "TAILCALL_I-FALLBACK");
-                }
-            }
-            else if (IS_NATIVE_FN(fn_obj)) {
-                // Native functions can't be tail-called the same way
-                vm_push(pvm, MAKE_NUM(nargs));  // push nargs back
-                vm_call_procedure(pvm, fn_obj, "TAILCALL_I-NATIVE");
-            }
-            else {
-                yyerror(pvm->sk_state, "TAILCALL_I: not a procedure");
-                return VM_ERROR;
-            }
-        }
-        break;
-
-    default:
-        fprintf(stderr, "Unknown opcode: %zu\n", opcode);
-        return VM_ERROR;
+    if (g_bProfile && opcode < OP_LAST) {
+        pvm->opcode_counts[opcode]++;
+        pvm->total_opcodes++;
     }
 
-    return VM_CONTINUE;
+    if (opcode >= 0 && opcode < OP_LAST)
+        return op_dispatch[opcode](pvm);
+
+    return op_unknown(pvm);
 }
 
 //---------------------------------------------------------------
@@ -1287,6 +1085,8 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
 
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address
+// Uses computed gotos on GCC/Clang for faster dispatch,
+// falls back to switch-based vm_exec_one on MSVC.
 //---------------------------------------------------------------
 void vm_exec(VM* pvm, VMCode_t *addr)
 {
@@ -1302,14 +1102,380 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
     VM_LOG("\n---- VM Execution Trace ----\n");
 
+    double start = g_bProfile ? profile_get_ms() : 0;
+
     pvm->ip = addr;
 
+#if defined(__GNUC__) || defined(__clang__)
+    // Threaded dispatch using computed gotos
+    static void* dispatch_table[] = {
+        &&L_HALT, &&L_PUSH, &&L_POP, &&L_PUSH_IP, &&L_POP_IP,
+        &&L_PUSH_FP, &&L_POP_FP, &&L_PUSH_SP, &&L_POP_SP,
+        &&L_NUM, &&L_STRING, &&L_TRUE, &&L_FALSE,
+        &&L_STORE, &&L_DUP, &&L_LOAD, &&L_RET, &&L_CALL, &&L_ICALL,
+        &&L_TAILCALL, &&L_TAILCALL_I, &&L_BRA, &&L_BNT, &&L_BNF, &&L_NOP,
+        &&L_MAKE_CLOSURE, &&L_GET_UPVALUE, &&L_SET_UPVALUE, &&L_LIST,
+        &&L_GET_LOCAL, &&L_SET_LOCAL, &&L_PRINT_TOS
+    };
+
+    #define DISPATCH() do { \
+        VMCode_t op_ = *pvm->ip++; \
+        if (g_bProfile && op_ < OP_LAST) { pvm->opcode_counts[op_]++; pvm->total_opcodes++; } \
+        goto *dispatch_table[op_]; \
+    } while(0)
+
+    Object* obj;
+    DISPATCH();
+
+    L_PUSH:
+        vm_push(pvm, (Object*)*pvm->ip++);
+        DISPATCH();
+    L_POP:
+        vm_pop(pvm);
+        DISPATCH();
+    L_PUSH_IP:
+        vm_push_ip(pvm, pvm->ip);
+        DISPATCH();
+    L_POP_IP:
+        pvm->ip = vm_pop_ip(pvm);
+        DISPATCH();
+    L_PUSH_FP:
+        vm_push(pvm, MAKE_NUM(pvm->fp));
+        DISPATCH();
+    L_POP_FP:
+        { Object* fp_obj = vm_pop(pvm); pvm->fp = AS_NUM(fp_obj); }
+        DISPATCH();
+    L_PUSH_SP:
+        vm_push(pvm, MAKE_NUM(pvm->sp));
+        DISPATCH();
+    L_POP_SP:
+        { Object* sp_obj = vm_pop(pvm); pvm->sp = AS_NUM(sp_obj); }
+        DISPATCH();
+    L_DUP:
+        obj = vm_peek(pvm, 0);
+        vm_push(pvm, obj);
+        DISPATCH();
+    L_NUM:
+        vm_push(pvm, MAKE_NUM(*pvm->ip++));
+        DISPATCH();
+    L_STRING:
+        obj = vm_new_string(pvm, (const char*)*pvm->ip++);
+        vm_push(pvm, obj);
+        DISPATCH();
+    L_TRUE:
+        vm_pushBoolean(pvm, TRUE);
+        DISPATCH();
+    L_FALSE:
+        vm_pushBoolean(pvm, FALSE);
+        DISPATCH();
+    L_RET:
+        {
+            Object* ret_val = vm_pop(pvm);
+            int arity = AS_NUM(vm_peek(pvm, 0));
+            int saved_fp = AS_NUM(vm_peek(pvm, 1));
+            VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
+            pvm->sp = pvm->fp - 3 - arity;
+            pvm->fp = saved_fp;
+            vm_push(pvm, ret_val);
+            pvm->ip = ret_addr;
+        }
+        DISPATCH();
+    L_HALT:
+        goto done;
+    L_CALL:
+        {
+            Object* fn_obj = (Object*)*pvm->ip++;
+            int nargs = (int)*pvm->ip++;
+            vm_call_procedure(pvm, fn_obj, nargs, "CALL");
+        }
+        DISPATCH();
+    L_ICALL:
+        {
+            Object* fn_obj = vm_pop(pvm);
+            int nargs = (int)*pvm->ip++;
+            vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
+        }
+        DISPATCH();
+    L_BNT:
+        obj = vm_pop(pvm);
+        if (IS_FALSE(obj))
+            pvm->ip += *pvm->ip;
+        else
+            pvm->ip++;
+        DISPATCH();
+    L_BNF:
+        obj = vm_pop(pvm);
+        if (!IS_FALSE(obj))
+            pvm->ip += *pvm->ip;
+        else
+            pvm->ip++;
+        DISPATCH();
+    L_BRA:
+        pvm->ip += *pvm->ip;
+        DISPATCH();
+    L_NOP:
+        DISPATCH();
+    L_STORE:
+        {
+            Object *value = vm_pop(pvm);
+            Object *key = vm_pop(pvm);
+            if (!IS_STRING(key)) {
+                yyerror(pvm->sk_state, "invalid variable name");
+                goto done;
+            }
+            vm_update_global(pvm, key, value);
+        }
+        DISPATCH();
+    L_LOAD:
+        {
+            Object* key = vm_pop(pvm);
+            Object* value = vm_get_global(pvm, key);
+            vm_push(pvm, value);
+        }
+        DISPATCH();
+    L_GET_LOCAL:
+        {
+            int index = (int)*pvm->ip++;
+            Object* local_var = vm_fp_peek(pvm, index);
+            vm_push(pvm, local_var);
+        }
+        DISPATCH();
+    L_SET_LOCAL:
+        DISPATCH();
+    L_LIST:
+        {
+            Pair* alist = NULL;
+            Pair* pair = NULL;
+            int n = (int)*pvm->ip++;
+            for (int i = 0; i < n; i++) {
+                vm_push(pvm, (Object*)pair);
+                alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+                vm_pop(pvm);
+                alist->car = vm_pop(pvm);
+                alist->cdr = (Object*)pair;
+                pair = alist;
+            }
+            vm_push(pvm, (Object*)alist);
+        }
+        DISPATCH();
+    L_PRINT_TOS:
+        if (pvm->sp) {
+            fprintf(stdout, TERM_BRIGHT_BLUE);
+            vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
+            fprintf(stdout, TERM_RESET"\n");
+        }
+        DISPATCH();
+    L_MAKE_CLOSURE:
+        {
+            int upvalue_count = (int)*pvm->ip++;
+            Object* proc_obj = vm_pop(pvm);
+            if (!IS_PROCEDURE(proc_obj)) {
+                yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure");
+                goto done;
+            }
+            vm_push(pvm, proc_obj);
+            Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
+            closure->function = (Procedure*)vm_pop(pvm);
+            closure->upvalue_count = upvalue_count;
+            vm_push(pvm, (Object*)closure);
+            if (upvalue_count > 0) {
+                closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
+                vm_pop(pvm);
+                for (int i = upvalue_count - 1; i >= 0; i--)
+                    closure->upvalues[i] = vm_pop(pvm);
+            } else {
+                closure->upvalues = NULL;
+                vm_pop(pvm);
+            }
+            vm_push(pvm, (Object*)closure);
+        }
+        DISPATCH();
+    L_GET_UPVALUE:
+        {
+            int idx = (int)*pvm->ip++;
+            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+                yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index");
+                vm_push(pvm, NULL);
+            } else {
+                vm_push(pvm, pvm->current_closure->upvalues[idx]);
+            }
+        }
+        DISPATCH();
+    L_SET_UPVALUE:
+        {
+            int idx = (int)*pvm->ip++;
+            Object* value = vm_pop(pvm);
+            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+                yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
+            } else {
+                pvm->current_closure->upvalues[idx] = value;
+            }
+        }
+        DISPATCH();
+    L_TAILCALL:
+        {
+            Object* fn_obj = (Object*)*pvm->ip++;
+            int nargs = (int)*pvm->ip++;
+            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+                Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
+                if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments"); goto done; }
+                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+                if (nargs == old_arity) {
+                    int old_args_base = pvm->fp - 3 - old_arity;
+                    int new_args_base = pvm->sp - nargs;
+                    for (int i = 0; i < nargs; i++) pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
+                    pvm->sp = pvm->fp;
+                    pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
+                    pvm->ip = proc->chunk.code;
+                } else {
+                    vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-FALLBACK");
+                }
+            } else if (IS_NATIVE_FN(fn_obj)) {
+                vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-NATIVE");
+            } else {
+                yyerror(pvm->sk_state, "TAILCALL: not a procedure"); goto done;
+            }
+        }
+        DISPATCH();
+    L_TAILCALL_I:
+        {
+            Object* fn_obj = vm_pop(pvm);
+            int nargs = (int)*pvm->ip++;
+            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+                Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
+                if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments"); goto done; }
+                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+                if (nargs == old_arity) {
+                    int old_args_base = pvm->fp - 3 - old_arity;
+                    int new_args_base = pvm->sp - nargs;
+                    for (int i = 0; i < nargs; i++) pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
+                    pvm->sp = pvm->fp;
+                    pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
+                    pvm->ip = proc->chunk.code;
+                } else {
+                    vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-FALLBACK");
+                }
+            } else if (IS_NATIVE_FN(fn_obj)) {
+                vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-NATIVE");
+            } else {
+                yyerror(pvm->sk_state, "TAILCALL_I: not a procedure"); goto done;
+            }
+        }
+        DISPATCH();
+
+    #undef DISPATCH
+
+done:
+    if (g_bProfile)
+        pvm->exec_time_ms += profile_get_ms() - start;
+
+#else
+    // MSVC: function pointer table dispatch
     while(1)
     {
-        VMExecResult result = vm_exec_one(pvm);
+        VMCode_t opcode = *pvm->ip++;
+        if (g_bProfile && opcode < OP_LAST) {
+            pvm->opcode_counts[opcode]++;
+            pvm->total_opcodes++;
+        }
+        OpHandler handler = (opcode >= 0 && opcode < OP_LAST) ? op_dispatch[opcode] : op_unknown;
+        VMExecResult result = handler(pvm);
         if (result == VM_HALT || result == VM_ERROR)
-            return;
+            break;
     }
+
+    if (g_bProfile)
+        pvm->exec_time_ms += profile_get_ms() - start;
+#endif
+}
+
+//---------------------------------------------------------------
+// Print profiling report
+//---------------------------------------------------------------
+static const char* opcode_names[] = {
+    "HALT", "PUSH", "POP", "PUSH_IP", "POP_IP", "PUSH_FP", "POP_FP",
+    "PUSH_SP", "POP_SP", "NUM", "STRING", "TRUE", "FALSE",
+    "STORE", "DUP", "LOAD", "RET", "CALL", "ICALL",
+    "TAILCALL", "TAILCALL_I", "BRA", "BNT", "BNF", "NOP",
+    "MAKE_CLOSURE", "GET_UPVALUE", "SET_UPVALUE", "LIST",
+    "GET_LOCAL", "SET_LOCAL", "PRINT_TOS"
+};
+
+void vm_print_profile(VM* pvm)
+{
+    if (!g_bProfile || !pvm) return;
+
+    fprintf(stderr, "\n===== Profiling Report =====\n\n");
+
+    // Timing summary
+    double dispatch_time = pvm->exec_time_ms - pvm->gc_time_ms - pvm->native_call_time_ms;
+    if (dispatch_time < 0) dispatch_time = 0;
+
+    fprintf(stderr, "--- Timing ---\n");
+    fprintf(stderr, "  Total execution:   %10.3f ms\n", pvm->exec_time_ms);
+    fprintf(stderr, "  Dispatch (interp): %10.3f ms  (%5.1f%%)\n", dispatch_time,
+            pvm->exec_time_ms > 0 ? dispatch_time * 100.0 / pvm->exec_time_ms : 0);
+    fprintf(stderr, "  GC:                %10.3f ms  (%5.1f%%)\n", pvm->gc_time_ms,
+            pvm->exec_time_ms > 0 ? pvm->gc_time_ms * 100.0 / pvm->exec_time_ms : 0);
+    fprintf(stderr, "  Native calls:      %10.3f ms  (%5.1f%%)\n", pvm->native_call_time_ms,
+            pvm->exec_time_ms > 0 ? pvm->native_call_time_ms * 100.0 / pvm->exec_time_ms : 0);
+    fprintf(stderr, "  GC cycles:         %10zu\n\n", pvm->gc_cycles);
+
+    // Opcode histogram (sorted by frequency)
+    fprintf(stderr, "--- Opcode Frequency (total: %llu) ---\n", (unsigned long long)pvm->total_opcodes);
+
+    // Sort by count (simple insertion sort on indices)
+    int sorted[OP_LAST];
+    for (int i = 0; i < OP_LAST; i++) sorted[i] = i;
+    for (int i = 1; i < OP_LAST; i++) {
+        int key = sorted[i];
+        int j = i - 1;
+        while (j >= 0 && pvm->opcode_counts[sorted[j]] < pvm->opcode_counts[key]) {
+            sorted[j + 1] = sorted[j];
+            j--;
+        }
+        sorted[j + 1] = key;
+    }
+
+    for (int i = 0; i < OP_LAST; i++) {
+        int op = sorted[i];
+        if (pvm->opcode_counts[op] == 0) break;
+        const char* name = (op < (int)(sizeof(opcode_names)/sizeof(opcode_names[0]))) ? opcode_names[op] : "???";
+        double pct = pvm->total_opcodes > 0 ? pvm->opcode_counts[op] * 100.0 / pvm->total_opcodes : 0;
+        fprintf(stderr, "  %-14s %12llu  (%5.1f%%)\n", name, (unsigned long long)pvm->opcode_counts[op], pct);
+    }
+
+    // Hot functions - walk the GC object list to find Procedures
+    fprintf(stderr, "\n--- Hot Functions (top 10) ---\n");
+    typedef struct { const char* name; uint64_t count; } HotFunc;
+    HotFunc hot[10];
+    int hot_count = 0;
+
+    for (Object* obj = pvm->head; obj != NULL; obj = obj->next) {
+        if (obj->type == OBJ_PROCEDURE) {
+            Procedure* proc = (Procedure*)obj;
+            if (proc->call_count == 0) continue;
+            const char* name = proc->name ? proc->name->value : "<anonymous>";
+
+            // Insert into sorted top-10
+            int pos = hot_count;
+            while (pos > 0 && hot[pos - 1].count < proc->call_count) {
+                if (pos < 10) hot[pos] = hot[pos - 1];
+                pos--;
+            }
+            if (pos < 10) {
+                hot[pos].name = name;
+                hot[pos].count = proc->call_count;
+                if (hot_count < 10) hot_count++;
+            }
+        }
+    }
+
+    for (int i = 0; i < hot_count; i++) {
+        fprintf(stderr, "  %-20s %12llu calls\n", hot[i].name, (unsigned long long)hot[i].count);
+    }
+
+    fprintf(stderr, "\n============================\n");
 }
 
 //--------------------------------------------------------------
@@ -1616,6 +1782,8 @@ static void removeWhiteObjects(VM* pvm) {
 void vm_gc(VM* pvm) {
     GC_LOG("-- gc begin\n");
 
+    double gc_start = g_bProfile ? profile_get_ms() : 0;
+
     size_t before SK_UNUSED = pvm->allocatedBytes;
 
     markObjects(pvm);
@@ -1630,6 +1798,9 @@ void vm_gc(VM* pvm) {
     int freed SK_UNUSED = sweepObjects(pvm);
 
     pvm->gc_cycles++;
+
+    if (g_bProfile)
+        pvm->gc_time_ms += profile_get_ms() - gc_start;
     
     GC_LOG("-- gc end [%d / %zu] objs freed/live, [%zu / %zu] bytes freed/alloc'd, next at %zu.\n\n", freed, pvm->numObjects, before - pvm->allocatedBytes, pvm->allocatedBytes, pvm->nextGC);
 }
