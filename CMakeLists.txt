@@ -28,6 +28,9 @@ set_property(TARGET skeme PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT
 
 target_compile_definitions(skeme PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme PRIVATE ht)
+if(NOT MSVC)
+    target_link_libraries(skeme PRIVATE m)
+endif()
 
 # Unit tests executable
 add_executable(skeme_tests
@@ -50,6 +53,9 @@ add_executable(skeme_tests
 )
 target_compile_definitions(skeme_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
 target_link_libraries(skeme_tests PRIVATE ht testy)
+if(NOT MSVC)
+    target_link_libraries(skeme_tests PRIVATE m)
+endif()
 
 # Add coverage support for Debug builds
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
