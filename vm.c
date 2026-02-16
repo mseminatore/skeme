@@ -1175,7 +1175,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
 //---------------------------------------------------------------
 // Execute the VM code starting from the given address
 // Uses computed gotos on GCC/Clang for faster dispatch,
-// falls back to switch-based vm_exec_one on MSVC.
+// Uses function pointer table dispatch for portable, clean execution.
 //---------------------------------------------------------------
 void vm_exec(VM* pvm, VMCode_t *addr)
 {
@@ -1195,341 +1195,23 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
     pvm->ip = addr;
 
-#if defined(__GNUC__) || defined(__clang__)
-    // Threaded dispatch using computed gotos
-    static void* dispatch_table[] = {
-        &&L_HALT, &&L_PUSH, &&L_POP, &&L_PUSH_IP, &&L_POP_IP,
-        &&L_PUSH_FP, &&L_POP_FP, &&L_PUSH_SP, &&L_POP_SP,
-        &&L_NUM, &&L_STRING, &&L_TRUE, &&L_FALSE,
-        &&L_STORE, &&L_DUP, &&L_LOAD, &&L_RET, &&L_CALL, &&L_ICALL, &&L_XCALL,
-        &&L_TAILCALL, &&L_TAILCALL_I, &&L_BRA, &&L_BNT, &&L_BNF, &&L_NOP,
-        &&L_MAKE_CLOSURE, &&L_GET_UPVALUE, &&L_SET_UPVALUE, &&L_LIST,
-        &&L_GET_LOCAL, &&L_SET_LOCAL, &&L_PRINT_TOS,
-        &&L_ADD, &&L_SUB, &&L_MUL, &&L_LT, &&L_LE, &&L_EQ_NUM,
-        &&L_NUM_0, &&L_NUM_1, &&L_NUM_2
-    };
-
-    #define DISPATCH() do { \
-        VMCode_t op_ = *pvm->ip++; \
-        if (g_bProfile && op_ < OP_LAST) { pvm->opcode_counts[op_]++; pvm->total_opcodes++; } \
-        goto *dispatch_table[op_]; \
-    } while(0)
-
-    Object* obj;
-    DISPATCH();
-
-    L_PUSH:
-        vm_push(pvm, (Object*)*pvm->ip++);
-        DISPATCH();
-    L_POP:
-        vm_pop(pvm);
-        DISPATCH();
-    L_PUSH_IP:
-        vm_push_ip(pvm, pvm->ip);
-        DISPATCH();
-    L_POP_IP:
-        pvm->ip = vm_pop_ip(pvm);
-        DISPATCH();
-    L_PUSH_FP:
-        vm_push(pvm, MAKE_NUM(pvm->fp));
-        DISPATCH();
-    L_POP_FP:
-        { Object* fp_obj = vm_pop(pvm); pvm->fp = AS_NUM(fp_obj); }
-        DISPATCH();
-    L_PUSH_SP:
-        vm_push(pvm, MAKE_NUM(pvm->sp));
-        DISPATCH();
-    L_POP_SP:
-        { Object* sp_obj = vm_pop(pvm); pvm->sp = AS_NUM(sp_obj); }
-        DISPATCH();
-    L_DUP:
-        obj = vm_peek(pvm, 0);
-        vm_push(pvm, obj);
-        DISPATCH();
-    L_NUM:
-        vm_push(pvm, MAKE_NUM(*pvm->ip++));
-        DISPATCH();
-    L_STRING:
-        obj = vm_new_string(pvm, (const char*)*pvm->ip++);
-        vm_push(pvm, obj);
-        DISPATCH();
-    L_TRUE:
-        vm_pushBoolean(pvm, TRUE);
-        DISPATCH();
-    L_FALSE:
-        vm_pushBoolean(pvm, FALSE);
-        DISPATCH();
-    L_RET:
-        {
-            Object* ret_val = vm_pop(pvm);
-            int arity = AS_NUM(vm_peek(pvm, 0));
-            int saved_fp = AS_NUM(vm_peek(pvm, 1));
-            VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
-            pvm->sp = pvm->fp - 3 - arity;
-            pvm->fp = saved_fp;
-            vm_push(pvm, ret_val);
-            pvm->ip = ret_addr;
-        }
-        DISPATCH();
-    L_HALT:
-        goto done;
-    L_CALL:
-        {
-            Object* fn_obj = (Object*)*pvm->ip++;
-            int nargs = (int)*pvm->ip++;
-            vm_call_procedure(pvm, fn_obj, nargs, "CALL");
-        }
-        DISPATCH();
-    L_ICALL:
-        {
-            Object* fn_obj = vm_pop(pvm);
-            int nargs = (int)*pvm->ip++;
-            vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
-        }
-        DISPATCH();
-    L_XCALL:
-        {
-            int nargs = (int)*pvm->ip++;
-            Object* fn_obj = vm_peek(pvm, nargs);
-            for (int i = nargs; i > 0; i--)
-                pvm->stack[pvm->sp - 1 - i] = pvm->stack[pvm->sp - i];
-            pvm->sp--;
-            vm_call_procedure(pvm, fn_obj, nargs, "XCALL");
-        }
-        DISPATCH();
-    L_BNT:
-        obj = vm_pop(pvm);
-        if (IS_FALSE(obj))
-            pvm->ip += *pvm->ip;
-        else
-            pvm->ip++;
-        DISPATCH();
-    L_BNF:
-        obj = vm_pop(pvm);
-        if (!IS_FALSE(obj))
-            pvm->ip += *pvm->ip;
-        else
-            pvm->ip++;
-        DISPATCH();
-    L_BRA:
-        pvm->ip += *pvm->ip;
-        DISPATCH();
-    L_NOP:
-        DISPATCH();
-    L_STORE:
-        {
-            Object *value = vm_pop(pvm);
-            Object *key = vm_pop(pvm);
-            if (!IS_STRING(key)) {
-                yyerror(pvm->sk_state, "invalid variable name");
-                goto done;
-            }
-            vm_update_global(pvm, key, value);
-        }
-        DISPATCH();
-    L_LOAD:
-        {
-            Object* key = vm_pop(pvm);
-            Object* value = vm_get_global(pvm, key);
-            vm_push(pvm, value);
-        }
-        DISPATCH();
-    L_GET_LOCAL:
-        {
-            int index = (int)*pvm->ip++;
-            Object* local_var = vm_fp_peek(pvm, index);
-            vm_push(pvm, local_var);
-        }
-        DISPATCH();
-    L_SET_LOCAL:
-        {
-            int index = (int)*pvm->ip++;
-            Object* value = vm_pop(pvm);
-            vm_fp_set(pvm, index, value);
-        }
-        DISPATCH();
-    L_LIST:
-        {
-            Pair* alist = NULL;
-            Pair* pair = NULL;
-            int n = (int)*pvm->ip++;
-            for (int i = 0; i < n; i++) {
-                vm_push(pvm, (Object*)pair);
-                alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
-                vm_pop(pvm);
-                alist->car = vm_pop(pvm);
-                alist->cdr = (Object*)pair;
-                pair = alist;
-            }
-            vm_push(pvm, (Object*)alist);
-        }
-        DISPATCH();
-    L_PRINT_TOS:
-        if (pvm->sp) {
-            fprintf(stdout, TERM_BRIGHT_BLUE);
-            vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
-            fprintf(stdout, TERM_RESET"\n");
-        }
-        DISPATCH();
-    L_MAKE_CLOSURE:
-        {
-            int upvalue_count = (int)*pvm->ip++;
-            Object* proc_obj = vm_pop(pvm);
-            if (!IS_PROCEDURE(proc_obj)) {
-                yyerror(pvm->sk_state, "OP_MAKE_CLOSURE: expected procedure");
-                goto done;
-            }
-            vm_push(pvm, proc_obj);
-            Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
-            closure->function = (Procedure*)vm_pop(pvm);
-            closure->upvalue_count = upvalue_count;
-            vm_push(pvm, (Object*)closure);
-            if (upvalue_count > 0) {
-                closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
-                vm_pop(pvm);
-                for (int i = upvalue_count - 1; i >= 0; i--)
-                    closure->upvalues[i] = vm_pop(pvm);
-            } else {
-                closure->upvalues = NULL;
-                vm_pop(pvm);
-            }
-            vm_push(pvm, (Object*)closure);
-        }
-        DISPATCH();
-    L_GET_UPVALUE:
-        {
-            int idx = (int)*pvm->ip++;
-            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
-                yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index");
-                vm_push(pvm, NULL);
-            } else {
-                vm_push(pvm, pvm->current_closure->upvalues[idx]);
-            }
-        }
-        DISPATCH();
-    L_SET_UPVALUE:
-        {
-            int idx = (int)*pvm->ip++;
-            Object* value = vm_pop(pvm);
-            if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
-                yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
-            } else {
-                pvm->current_closure->upvalues[idx] = value;
-            }
-        }
-        DISPATCH();
-    L_TAILCALL:
-        {
-            Object* fn_obj = (Object*)*pvm->ip++;
-            int nargs = (int)*pvm->ip++;
-            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-                Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
-                if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments"); goto done; }
-                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
-                if (nargs == old_arity) {
-                    int old_args_base = pvm->fp - 3 - old_arity;
-                    int new_args_base = pvm->sp - nargs;
-                    for (int i = 0; i < nargs; i++) pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
-                    pvm->sp = pvm->fp;
-                    pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
-                    pvm->ip = proc->chunk.code;
-                } else {
-                    vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-FALLBACK");
-                }
-            } else if (IS_NATIVE_FN(fn_obj)) {
-                vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-NATIVE");
-            } else {
-                yyerror(pvm->sk_state, "TAILCALL: not a procedure"); goto done;
-            }
-        }
-        DISPATCH();
-    L_TAILCALL_I:
-        {
-            Object* fn_obj = vm_pop(pvm);
-            int nargs = (int)*pvm->ip++;
-            if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-                Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
-                if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments"); goto done; }
-                int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
-                if (nargs == old_arity) {
-                    int old_args_base = pvm->fp - 3 - old_arity;
-                    int new_args_base = pvm->sp - nargs;
-                    for (int i = 0; i < nargs; i++) pvm->stack[old_args_base + i] = pvm->stack[new_args_base + i];
-                    pvm->sp = pvm->fp;
-                    pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
-                    pvm->ip = proc->chunk.code;
-                } else {
-                    vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-FALLBACK");
-                }
-            } else if (IS_NATIVE_FN(fn_obj)) {
-                vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-NATIVE");
-            } else {
-                yyerror(pvm->sk_state, "TAILCALL_I: not a procedure"); goto done;
-            }
-        }
-        DISPATCH();
-
-    // Specialized arithmetic opcodes
-    L_ADD:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) + AS_NUM(b));
-          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) + AS_DOUBLE(b))); }
-        DISPATCH();
-    L_SUB:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) - AS_NUM(b));
-          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) - AS_DOUBLE(b))); }
-        DISPATCH();
-    L_MUL:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) pvm->stack[pvm->sp++] = MAKE_NUM(AS_NUM(a) * AS_NUM(b));
-          else pvm->stack[pvm->sp++] = vm_new_float(pvm, (float)(AS_DOUBLE(a) * AS_DOUBLE(b))); }
-        DISPATCH();
-    L_LT:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) < AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
-          else vm_push(pvm, AS_DOUBLE(a) < AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
-        DISPATCH();
-    L_LE:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) <= AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
-          else vm_push(pvm, AS_DOUBLE(a) <= AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
-        DISPATCH();
-    L_EQ_NUM:
-        { Object* b = pvm->stack[--pvm->sp]; Object* a = pvm->stack[--pvm->sp];
-          if (IS_NUM(a) && IS_NUM(b)) vm_push(pvm, AS_NUM(a) == AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
-          else vm_push(pvm, AS_DOUBLE(a) == AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE()); }
-        DISPATCH();
-
-    // Small-constant opcodes
-    L_NUM_0: vm_push(pvm, MAKE_NUM(0)); DISPATCH();
-    L_NUM_1: vm_push(pvm, MAKE_NUM(1)); DISPATCH();
-    L_NUM_2: vm_push(pvm, MAKE_NUM(2)); DISPATCH();
-
-    #undef DISPATCH
-
-done:
-    if (g_bProfile)
-        pvm->exec_time_ms += profile_get_ms() - start;
-
-#else
-    // MSVC: function pointer table dispatch
-    while(1)
+    // Function pointer table dispatch - portable across all compilers
+    for (;;)
     {
         VMCode_t opcode = *pvm->ip++;
+
         if (g_bProfile && opcode < OP_LAST) {
             pvm->opcode_counts[opcode]++;
             pvm->total_opcodes++;
         }
-        OpHandler handler = (opcode >= 0 && opcode < OP_LAST) ? op_dispatch[opcode] : op_unknown;
-        VMExecResult result = handler(pvm);
-        if (result == VM_HALT || result == VM_ERROR)
+
+        VMExecResult result = op_dispatch[opcode](pvm);
+        if (result != VM_CONTINUE)
             break;
     }
 
     if (g_bProfile)
         pvm->exec_time_ms += profile_get_ms() - start;
-#endif
 }
 
 //---------------------------------------------------------------
@@ -1538,7 +1220,7 @@ done:
 static const char* opcode_names[] = {
     "HALT", "PUSH", "POP", "PUSH_IP", "POP_IP", "PUSH_FP", "POP_FP",
     "PUSH_SP", "POP_SP", "NUM", "STRING", "TRUE", "FALSE",
-    "STORE", "DUP", "LOAD", "RET", "CALL", "ICALL",
+    "STORE", "DUP", "LOAD", "RET", "CALL", "ICALL", "XCALL",
     "TAILCALL", "TAILCALL_I", "BRA", "BNT", "BNF", "NOP",
     "MAKE_CLOSURE", "GET_UPVALUE", "SET_UPVALUE", "LIST",
     "GET_LOCAL", "SET_LOCAL", "PRINT_TOS",
