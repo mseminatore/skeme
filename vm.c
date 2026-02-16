@@ -2267,8 +2267,10 @@ int vm_update_global(VM *pvm, Object* key, Object *value)
 //--------------------------------------------------------------
 Object *vm_get_global(VM *pvm, Object* key)
 {
-    ht_value_t val = ht_find(pvm->global_table, key);
-    return (Object*)val;
+    ht_value_t val = NULL;
+    if (ht_lookup(pvm->global_table, key, &val) == HT_OK)
+        return (Object*)val;
+    return NULL;
 }
 
 //--------------------------------------------------------------
@@ -2302,14 +2304,13 @@ Object* vm_get_local_var(VM* pvm, const char* name)
         ht_value_t val;
         while (env)
         {
-            val = ht_find(env->bindings, key);
-            if (val)
+            if (ht_lookup(env->bindings, key, &val) == HT_OK)
                 return (Object*)val;
             env = env->parent;
         }
 	}
 
-    return NULL;    // vm_get_global(pvm, key);
+    return NULL;
 }
 
 //--------------------------------------------------------------
@@ -2328,8 +2329,7 @@ Object* vm_get_local_var_ex(VM* pvm, const char* name, int* scope_depth)
         ht_value_t val;
         while (env)
         {
-            val = ht_find(env->bindings, key);
-            if (val)
+            if (ht_lookup(env->bindings, key, &val) == HT_OK)
             {
                 if (scope_depth) *scope_depth = depth;
                 return (Object*)val;
@@ -2339,7 +2339,7 @@ Object* vm_get_local_var_ex(VM* pvm, const char* name, int* scope_depth)
         }
 	}
 
-    if (scope_depth) *scope_depth = -1;  // Not found in local scopes
+    if (scope_depth) *scope_depth = -1;
     return NULL;
 }
 

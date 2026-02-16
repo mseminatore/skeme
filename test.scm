@@ -286,8 +286,8 @@
 (define add-lambda (lambda (a b) (+ a b)))
 (test-case "lambda two args" (= (add-lambda 3 4) 7))
 
-; Note: passing lambdas directly as arguments requires closure support
-; (test-case "pass lambda to fn" (= (bind1 (lambda (n) (+ n 1)) 10) 11))
+; Note: passing lambdas directly as arguments
+(test-case "pass lambda to fn" (= (bind1 (lambda (n) (+ n 1)) 10) 11))
 
 ;----------------------
 ; test character literals and predicates
@@ -380,6 +380,62 @@
 (test-case "closure pair first" (= (p #t) 3))
 (test-case "closure pair second" (= (p #f) 7))
 
+; closure capturing multiple variables
+(define (make-linear a b) (lambda (x) (+ (* a x) b)))
+(define line (make-linear 3 7))
+(test-case "closure multi-capture" (= (line 10) 37))
+
+; mutable closure (counter)
+(define (make-counter)
+  (define count 0)
+  (lambda ()
+    (set! count (+ count 1))
+    count))
+(define counter (make-counter))
+(test-case "mutable closure 1" (= (counter) 1))
+(test-case "mutable closure 2" (= (counter) 2))
+(test-case "mutable closure 3" (= (counter) 3))
+
+; two closures sharing mutable state
+(define (make-shared)
+  (define x 0)
+  (list
+    (lambda () (set! x (+ x 1)) x)
+    (lambda () x)))
+(define shared (make-shared))
+(define inc! (car shared))
+(define get-val (cadr shared))
+(inc!)
+(test-case "shared closure mutation" (= (get-val) 1))
+(inc!)
+(test-case "shared closure mutation 2" (= (get-val) 2))
+
+; lambda as argument
+(test-case "lambda as map arg" (equal? (map (lambda (x) (* x x)) (list 1 2 3)) (list 1 4 9)))
+
+; closure via define-lambda (workaround for inner define)
+(define (make-multiplier factor)
+  (define mul (lambda (x) (* factor x)))
+  mul)
+(define triple (make-multiplier 3))
+(test-case "define-lambda capture" (= (triple 7) 21))
+
+; 2-level nested lambdas
+(define (level1 a)
+  (lambda (b) (+ a b)))
+(define lev2 (level1 100))
+(test-case "2-level closure" (= (lev2 5) 105))
+
+; 2-level with 2 captured vars
+(define (cap2 a b)
+  (lambda (x) (+ a b x)))
+(define h2 (cap2 10 20))
+(test-case "2-level 2 captures" (= (h2 5) 35))
+
+; NOTE: Known limitations documented here (not tested as passing):
+; - Inner (define (f x) ...) does NOT capture enclosing vars (use lambda form instead)
+; - 3+ level nesting: grandparent scope vars read as parent's value
+
 ;----------------------
 ; test numeric functions
 ;----------------------
@@ -448,6 +504,17 @@
 (test-case "assoc not found" (not (assoc "z" (list (list "a" 1) (list "b" 2)))))
 (test-case "assq found" (pair? (assq 2 (list (list 1 "a") (list 2 "b") (list 3 "c")))))
 (test-case "assq not found" (not (assq 9 (list (list 1 "a") (list 2 "b")))))
+
+;----------------------------
+; nil-valued variable lookup
+;----------------------------
+(define nil-global '())
+(test-case "nil global lookup" (null? nil-global))
+
+(define (test-nil-local-fn)
+  (define y '())
+  (null? y))
+(test-case "nil local lookup" (test-nil-local-fn))
 
 
 ;----------------------
