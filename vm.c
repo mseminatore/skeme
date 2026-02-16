@@ -816,6 +816,17 @@ static VMExecResult op_icall(VM* pvm) {
     vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
     return VM_CONTINUE;
 }
+static VMExecResult op_xcall(VM* pvm) {
+    // Function is under the args: stack [fn, arg1, ..., argN]
+    int nargs = (int)*pvm->ip++;
+    Object* fn_obj = vm_peek(pvm, nargs);   // peek past the N args
+    // Shift args down by one to overwrite the fn slot
+    for (int i = nargs; i > 0; i--)
+        pvm->stack[pvm->sp - 1 - i] = pvm->stack[pvm->sp - i];
+    pvm->sp--;  // we consumed one extra slot (the fn)
+    vm_call_procedure(pvm, fn_obj, nargs, "XCALL");
+    return VM_CONTINUE;
+}
 static VMExecResult op_bra(VM* pvm) { pvm->ip += *pvm->ip; return VM_CONTINUE; }
 static VMExecResult op_bnt(VM* pvm) {
     if (IS_FALSE(vm_pop(pvm))) pvm->ip += *pvm->ip; else pvm->ip++;
@@ -990,7 +1001,7 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_halt, op_push, op_pop, op_push_ip, op_pop_ip,
     op_push_fp, op_pop_fp, op_push_sp, op_pop_sp,
     op_num, op_string, op_true, op_false,
-    op_store, op_dup, op_load, op_ret, op_call, op_icall,
+    op_store, op_dup, op_load, op_ret, op_call, op_icall, op_xcall,
     op_tailcall, op_tailcall_i, op_bra, op_bnt, op_bnf, op_nop,
     op_make_closure, op_get_upvalue, op_set_upvalue, op_list,
     op_get_local, op_set_local, op_print_tos,
@@ -1185,7 +1196,7 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         &&L_HALT, &&L_PUSH, &&L_POP, &&L_PUSH_IP, &&L_POP_IP,
         &&L_PUSH_FP, &&L_POP_FP, &&L_PUSH_SP, &&L_POP_SP,
         &&L_NUM, &&L_STRING, &&L_TRUE, &&L_FALSE,
-        &&L_STORE, &&L_DUP, &&L_LOAD, &&L_RET, &&L_CALL, &&L_ICALL,
+        &&L_STORE, &&L_DUP, &&L_LOAD, &&L_RET, &&L_CALL, &&L_ICALL, &&L_XCALL,
         &&L_TAILCALL, &&L_TAILCALL_I, &&L_BRA, &&L_BNT, &&L_BNF, &&L_NOP,
         &&L_MAKE_CLOSURE, &&L_GET_UPVALUE, &&L_SET_UPVALUE, &&L_LIST,
         &&L_GET_LOCAL, &&L_SET_LOCAL, &&L_PRINT_TOS,
@@ -1269,6 +1280,16 @@ void vm_exec(VM* pvm, VMCode_t *addr)
             Object* fn_obj = vm_pop(pvm);
             int nargs = (int)*pvm->ip++;
             vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
+        }
+        DISPATCH();
+    L_XCALL:
+        {
+            int nargs = (int)*pvm->ip++;
+            Object* fn_obj = vm_peek(pvm, nargs);
+            for (int i = nargs; i > 0; i--)
+                pvm->stack[pvm->sp - 1 - i] = pvm->stack[pvm->sp - i];
+            pvm->sp--;
+            vm_call_procedure(pvm, fn_obj, nargs, "XCALL");
         }
         DISPATCH();
     L_BNT:

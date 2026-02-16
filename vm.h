@@ -227,6 +227,7 @@ enum {
     OP_RET,         // return from a function
     OP_CALL,        // call a function
     OP_ICALL,       // call an indirect function
+    OP_XCALL,       // call with fn under args: stack [fn, arg1..argN]
     OP_TAILCALL,    // tail call (reuses current frame) - function in bytecode
     OP_TAILCALL_I,  // indirect tail call - function on stack
     OP_BRA,         // branch always

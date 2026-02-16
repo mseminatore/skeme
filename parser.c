@@ -1192,6 +1192,26 @@ static int expr(SKState* pSK)
             case_expr(pSK);
             break;
 
+        case '(':
+            {
+                // Subexpression in function position: ((expr) args...)
+                // Evaluate the head expression (pushes callable onto stack)
+                expr(pSK);
+
+                // Parse arguments (pushed on top of fn)
+                int count = expr_tail(pSK);
+
+                // Record offset for potential tail call patching
+                CodeChunk* chunk = vm_get_current_chunk();
+                pSK->last_call_offset = (int)chunk->count;
+                pSK->last_call_chunk = chunk;
+
+                // Expression call — fn is under args on stack
+                vm_emit(&pSK->vm, OP_XCALL);
+                vm_emit(&pSK->vm, (VMCode_t)count);
+            }
+            break;
+
         case '+':        case '-':
         case '*':
         case '/':

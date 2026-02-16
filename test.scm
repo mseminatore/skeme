@@ -413,6 +413,13 @@
 ; lambda as argument
 (test-case "lambda as map arg" (equal? (map (lambda (x) (* x x)) (list 1 2 3)) (list 1 4 9)))
 
+; subexpression calls — ((expr) args)
+(test-case "call lambda expr" (= ((lambda (x) x) 42) 42))
+(test-case "call lambda expr 2" (= ((lambda (x y) (+ x y)) 3 4) 7))
+(test-case "call result of fn" (= ((make-adder 5) 10) 15))
+(test-case "call lambda no args" (= ((lambda () 99)) 99))
+(test-case "call lambda with lambda arg" (= ((lambda (f) (f 10)) (lambda (x) (* x x))) 100))
+
 ; closure via define-lambda (workaround for inner define)
 (define (make-multiplier factor)
   (define mul (lambda (x) (* factor x)))
