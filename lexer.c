@@ -27,7 +27,9 @@ Tokens tokens[] =
     {"load",    LOAD },
     { "begin",   BEGIN },
     { "case",    CASE_TOKEN },
-    // { "let",     LET },
+    { "let",     LET },
+    { "let*",    LET_STAR },
+    { "letrec",  LETREC },
     // { "quote",   QUOTE },
     // { "eval",    EVAL },
     { NULL, 0}
@@ -550,7 +552,7 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || isalnum(c)));
+        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || c == '*' || isalnum(c)));
         
         // put back the last character!
         ungetch(pSK, c);

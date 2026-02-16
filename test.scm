@@ -89,6 +89,23 @@
 (test-case "set! two locals" (= (set-two 5 10) 40))
 
 ;----------------------
+; let / let* bindings
+;----------------------
+(test-case "let basic" (= (let ((x 10) (y 20)) (+ x y)) 30))
+(test-case "let single" (= (let ((x 42)) x) 42))
+(test-case "let body expr" (= (let ((a 3) (b 4)) (* a b)) 12))
+(test-case "let nested" (= (let ((x 5)) (let ((y 10)) (+ x y))) 15))
+
+(define (make-let-adder n)
+  (let ((offset n))
+    (lambda (x) (+ offset x))))
+(define la (make-let-adder 100))
+(test-case "let closure capture" (= (la 5) 105))
+
+(test-case "let* basic" (= (let* ((x 10) (y 20)) (+ x y)) 30))
+(test-case "let* single" (= (let* ((x 42)) x) 42))
+
+;----------------------
 ; construct a pair
 ;----------------------
 (test-case "cons a pair" (cons 1 2))

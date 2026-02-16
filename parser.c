@@ -759,6 +759,154 @@ static int load_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// Helper: create lambda from collected binding names, parse body, handle closures
+// Returns proc_obj. Caller must have already emitted value code.
+// Stack after: [...vals..., proc/closure]
+//-----------------------------------------------
+static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindings)
+{
+    ParseUpvalue saved_upvalues[MAX_UPVALUES];
+    int saved_upvalue_count = pSK->upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+    pSK->upvalue_count = 0;
+
+    vm_new_environment(&pSK->vm);
+
+    Object* proc_obj = vm_new_proc(&pSK->vm);
+    vm_push(&pSK->vm, proc_obj);
+
+    Procedure* proc = AS_OBJ(Procedure, proc_obj);
+    static int let_id = 0;
+    char let_name[32];
+    snprintf(let_name, sizeof(let_name), "<let-%d>", let_id++);
+    proc->name = (String*)vm_new_string(&pSK->vm, let_name);
+    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
+
+    CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
+
+    // Register parameter names
+    proc->arity = nbindings;
+    for (int i = 0; i < nbindings; i++)
+        vm_set_var(&pSK->vm, bind_names[i], MAKE_NUM(i + 1));
+
+    // Fix up frame offsets
+    if (pSK->vm.current_scope)
+    {
+        Environment* env = pSK->vm.current_scope;
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+            ht_add(env->bindings, env_key, MAKE_NUM(nbindings - AS_NUM(env_value) + 3));
+    }
+
+    // Parse body
+    local_body(pSK);
+
+    vm_emit(&pSK->vm, OP_RET);
+    vm_set_current_chunk(&pSK->vm, prev_chunk);
+    vm_free_environment(&pSK->vm);
+
+    // Handle closure capture
+    int num_upvalues = pSK->upvalue_count;
+    ParseUpvalue captured[MAX_UPVALUES];
+    if (num_upvalues > 0)
+        memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+    pSK->upvalue_count = saved_upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+    for (int i = 0; i < num_upvalues; i++)
+    {
+        if (captured[i].scope_depth > 1)
+        {
+            int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                captured[i].scope_depth - 1, captured[i].local_index);
+            captured[i].local_index = parent_uv_idx;
+            captured[i].is_upvalue = 1;
+        }
+    }
+
+    if (num_upvalues > 0)
+    {
+        for (int i = 0; i < num_upvalues; i++)
+        {
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+        }
+        vm_emit_push_object(&pSK->vm, proc_obj);
+        vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, proc_obj);
+    }
+
+    return proc_obj;
+}
+
+//-----------------------------------------------
+// Parse let bindings: ((var val) ...) — emits values, collects names
+//-----------------------------------------------
+#define MAX_LET_BINDINGS 32
+
+static int let_parse_bindings(SKState* pSK, char bind_names[][64])
+{
+    match(pSK, '(');
+
+    int nbindings = 0;
+    while (LOOKAHEAD == '(')
+    {
+        match(pSK, '(');
+        if (nbindings >= MAX_LET_BINDINGS)
+            yyerror(pSK, "too many let bindings");
+
+        strncpy(bind_names[nbindings], pSK->yylval.word, 63);
+        bind_names[nbindings][63] = '\0';
+        nbindings++;
+
+        match(pSK, ID);
+        expr(pSK);      // emit value code into current chunk
+        match(pSK, ')');
+    }
+
+    match(pSK, ')');
+    return nbindings;
+}
+
+//-----------------------------------------------
+// let_expr: (let ((var val) ...) body ...)
+// Desugars to ((lambda (var ...) body ...) val ...)
+//-----------------------------------------------
+static int let_expr(SKState* pSK, int token)
+{
+    PARSE_LOG("let_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, token);
+
+    char bind_names[MAX_LET_BINDINGS][64];
+    int nbindings = let_parse_bindings(pSK, bind_names);
+
+    // Create lambda, parse body, handle closures
+    // Stack: [val1, ..., valN, proc/closure]
+    let_create_lambda(pSK, bind_names, nbindings);
+
+    // Call: fn on top, values underneath → ICALL
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nbindings);
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
 // set := '(' 'set!' ID expr ')'
 //-----------------------------------------------
 static int set(SKState* pSK)
@@ -1190,6 +1338,11 @@ static int expr(SKState* pSK)
 
         case SET:
             set(pSK);
+            break;
+
+        case LET:
+        case LET_STAR:
+            let_expr(pSK, LOOKAHEAD);
             break;
 
         case LOAD:
