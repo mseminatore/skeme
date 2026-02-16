@@ -610,6 +610,41 @@
 
 
 ;----------------------
+; module import system
+;----------------------
+(import math)
+
+; constants
+(test-case "pi constant" (> pi 3.14))
+(test-case "e constant" (> e 2.71))
+
+; trig basics
+(test-case "sin(0)" (= (sin 0) 0))
+(test-case "cos(0)" (= (cos 0) 1))
+(test-case "tan(0)" (= (tan 0) 0))
+
+; inverse trig
+(test-case "asin(0)" (= (asin 0) 0))
+(test-case "acos(1)" (= (acos 1) 0))
+(test-case "atan(0)" (= (atan 0) 0))
+
+; log/exp
+(test-case "exp(0)" (= (exp 0) 1))
+(test-case "pow(2,10)" (= (pow 2 10) 1024))
+(test-case "pow(3,0)" (= (pow 3 0) 1))
+
+; random
+(test-case "random range" (let ((r (random 100))) (and (>= r 0) (< r 100))))
+
+; numeric predicates
+(test-case "finite? number" (finite? 42))
+(test-case "not nan? number" (not (nan? 42)))
+
+; double import is safe
+(import math)
+(test-case "double import ok" (= (sin 0) 0))
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)

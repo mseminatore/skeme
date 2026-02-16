@@ -27,6 +27,7 @@ Tokens tokens[] =
     {"load",    LOAD },
     { "begin",   BEGIN },
     { "case",    CASE_TOKEN },
+    { "import",  IMPORT },
     { "let",     LET },
     { "let*",    LET_STAR },
     { "letrec",  LETREC },

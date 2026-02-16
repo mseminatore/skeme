@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include "parser.h"
+#include "modules.h"
 #include "term_colors.h"
 
 #define LOOKAHEAD   (pSK->lookahead)
@@ -759,7 +760,31 @@ static int load_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
-// Helper: create lambda from collected binding names, parse body, handle closures
+// import_expr := '(' 'import' ID ')'
+//-----------------------------------------------
+static int import_expr(SKState* pSK)
+{
+    PARSE_LOG("import_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, IMPORT);
+
+    if (LOOKAHEAD != ID)
+    {
+        yyerror(pSK, "expected module name in 'import' expression");
+        unindent(pSK);
+        return 0;
+    }
+
+    const char* module_name = pSK->yylval.word;
+
+    if (sk_import_module(pSK, module_name) != 0)
+        yyerror(pSK, "failed to import module");
+
+    match(pSK, ID);
+
+    unindent(pSK);
+    return 0;
+}
 // Returns proc_obj. Caller must have already emitted value code.
 // Stack after: [...vals..., proc/closure]
 //-----------------------------------------------
@@ -1347,6 +1372,10 @@ static int expr(SKState* pSK)
 
         case LOAD:
             load_expr(pSK);
+            break;
+
+        case IMPORT:
+            import_expr(pSK);
             break;
 
         case IF:
