@@ -64,7 +64,8 @@ typedef struct
 typedef struct {
     char name[64];       // variable name (for dedup)
     int scope_depth;     // how many scopes out (1 = immediate parent)
-    int local_index;     // slot index in the enclosing scope
+    int local_index;     // slot index in the enclosing scope's locals or upvalues
+    int is_upvalue;      // if true, local_index refers to parent's upvalue (not local)
 } ParseUpvalue;
 
 // skeme state structure

@@ -432,9 +432,61 @@
 (define h2 (cap2 10 20))
 (test-case "2-level 2 captures" (= (h2 5) 35))
 
-; NOTE: Known limitations documented here (not tested as passing):
-; - Inner (define (f x) ...) does NOT capture enclosing vars (use lambda form instead)
-; - 3+ level nesting: grandparent scope vars read as parent's value
+; 3-level nested lambdas
+(define (outer3 a)
+  (lambda (b) (lambda () a)))
+(define outer3-f1 (outer3 100))
+(define outer3-f2 (outer3-f1 200))
+(test-case "3-level closure" (= (outer3-f2) 100))
+
+; 4-level nesting across all levels
+(define (lev-a x)
+  (lambda (y)
+    (lambda (z)
+      (lambda () (+ x y z)))))
+(define lev-b (lev-a 1))
+(define lev-c (lev-b 2))
+(define lev-d (lev-c 3))
+(test-case "4-level closure" (= (lev-d) 6))
+
+; set! across 3 levels
+(define (make-deep-counter)
+  (define n 0)
+  (lambda ()
+    (lambda ()
+      (set! n (+ n 1))
+      n)))
+(define deep-mid (make-deep-counter))
+(define deep-inc (deep-mid))
+(test-case "deep set! 1" (= (deep-inc) 1))
+(test-case "deep set! 2" (= (deep-inc) 2))
+
+; inner (define (f args) body) captures enclosing vars
+(define (outer-def x)
+  (define (inner-def) x)
+  (inner-def))
+(test-case "inner define capture" (= (outer-def 42) 42))
+
+; inner define with args captures enclosing vars
+(define (outer-def2 x)
+  (define (add-to-x y) (+ x y))
+  (add-to-x 10))
+(test-case "inner define with args" (= (outer-def2 5) 15))
+
+; inner define returned as closure
+(define (make-adder-def n)
+  (define (adder x) (+ n x))
+  adder)
+(define add5 (make-adder-def 5))
+(test-case "inner define as closure" (= (add5 10) 15))
+
+; inner define 3-level nesting
+(define (outer-3def a)
+  (define (middle b)
+    (define (inner-3) (+ a b))
+    (inner-3))
+  (middle 20))
+(test-case "inner define 3-level" (= (outer-3def 10) 30))
 
 ;----------------------
 ; test numeric functions

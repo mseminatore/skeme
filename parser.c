@@ -182,6 +182,7 @@ static int register_upvalue(SKState* pSK, const char* name, int scope_depth, int
     pSK->upvalues[idx].name[sizeof(pSK->upvalues[idx].name) - 1] = '\0';
     pSK->upvalues[idx].scope_depth = scope_depth;
     pSK->upvalues[idx].local_index = local_index;
+    pSK->upvalues[idx].is_upvalue = 0;  // default: capture from parent's locals
 
     return idx;
 }
@@ -432,7 +433,20 @@ static int definition(SKState* pSK)
     {
 		// function definition
 		match(pSK, '(');
-        
+
+        // Check if we're inside a local scope (nested define)
+        int is_local = (pSK->vm.current_scope != NULL);
+
+        // Save upvalue state for nested lambdas (like lambda() does)
+        ParseUpvalue saved_upvalues[MAX_UPVALUES];
+        int saved_upvalue_count = pSK->upvalue_count;
+        if (is_local)
+        {
+            if (saved_upvalue_count > 0)
+                memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+            pSK->upvalue_count = 0;
+        }
+
         vm_new_environment(&pSK->vm);   // create new environment for function scope
 
         // function name
@@ -446,8 +460,22 @@ static int definition(SKState* pSK)
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
-		if (!vm_define_global(&pSK->vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
-            yyerror(pSK, "failed to add global var");
+        // Store as GC root in globals
+        if (!is_local)
+        {
+            // Top-level: the proc IS the final value, store under its real name
+            vm_define_global(&pSK->vm, proc_name, proc_obj);
+        }
+        else
+        {
+            // Nested: store under a unique internal name for GC safety only
+            // The real name will be bound via OP_STORE at runtime
+            static int inner_def_id = 0;
+            char gc_name[48];
+            snprintf(gc_name, sizeof(gc_name), "<define-%d>", inner_def_id++);
+            Object* gc_key = vm_new_string(&pSK->vm, gc_name);
+            vm_define_global(&pSK->vm, gc_key, proc_obj);
+        }
 
         match(pSK, ID);
 		
@@ -464,6 +492,66 @@ static int definition(SKState* pSK)
         vm_set_current_chunk(&pSK->vm, prev_chunk);
 
         vm_free_environment(&pSK->vm); // pop function environment off chain
+
+        if (is_local)
+        {
+            // Capture upvalue info before restoring outer state
+            int num_upvalues = pSK->upvalue_count;
+            ParseUpvalue captured[MAX_UPVALUES];
+            if (num_upvalues > 0)
+                memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+            // Restore outer lambda's upvalue state
+            pSK->upvalue_count = saved_upvalue_count;
+            if (saved_upvalue_count > 0)
+                memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+            // Propagate deep captures upward (same as lambda)
+            for (int i = 0; i < num_upvalues; i++)
+            {
+                if (captured[i].scope_depth > 1)
+                {
+                    int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                        captured[i].scope_depth - 1, captured[i].local_index);
+                    captured[i].local_index = parent_uv_idx;
+                    captured[i].is_upvalue = 1;
+                }
+            }
+
+            if (num_upvalues > 0)
+            {
+                // Emit closure creation and store to global under its real name
+                vm_emit_push_object(&pSK->vm, proc_name);
+
+                for (int i = 0; i < num_upvalues; i++)
+                {
+                    if (captured[i].is_upvalue)
+                    {
+                        vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+                    }
+                    else
+                    {
+                        vm_emit(&pSK->vm, OP_GET_LOCAL);
+                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+                    }
+                }
+
+                vm_emit_push_object(&pSK->vm, proc_obj);
+                vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+                vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+
+                // Store the closure to global under its real name
+                vm_emit(&pSK->vm, OP_STORE);
+            }
+            else
+            {
+                // No upvalues — store plain procedure to global under its real name
+                vm_emit_push_object(&pSK->vm, proc_name);
+                vm_emit_push_object(&pSK->vm, proc_obj);
+                vm_emit(&pSK->vm, OP_STORE);
+            }
+        }
 	}
     else
     {
@@ -559,16 +647,41 @@ static int lambda(SKState* pSK)
     if (saved_upvalue_count > 0)
         memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
 
+    // Propagate deep captures: if an inner lambda captured a variable at depth > 1,
+    // the parent (us) must also capture it as an upvalue so we can pass it along.
+    for (int i = 0; i < num_upvalues; i++)
+    {
+        if (captured[i].scope_depth > 1)
+        {
+            // Register this variable as an upvalue in the OUTER (parent) lambda
+            int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                captured[i].scope_depth - 1, captured[i].local_index);
+            // Update captured entry: at closure creation time, get from parent's upvalue
+            captured[i].local_index = parent_uv_idx;
+            captured[i].is_upvalue = 1;
+        }
+    }
+
     if (num_upvalues > 0)
     {
         // Emit closure creation in the OUTER context.
         // OP_MAKE_CLOSURE expects stack (bottom→top): [upval0, ..., upvalN-1, proc, count]
 
-        // First, push captured values from enclosing scope's locals
+        // Push captured values from enclosing scope
         for (int i = 0; i < num_upvalues; i++)
         {
-            vm_emit(&pSK->vm, OP_GET_LOCAL);
-            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+            if (captured[i].is_upvalue)
+            {
+                // Variable was captured from grandparent+ — read from parent's upvalues
+                vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+            }
+            else
+            {
+                // Variable is in immediate parent's locals
+                vm_emit(&pSK->vm, OP_GET_LOCAL);
+                vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+            }
         }
 
         // Then push the procedure object
