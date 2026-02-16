@@ -766,8 +766,19 @@ static int set(SKState* pSK)
     PARSE_LOG("set(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, SET);
+
+    // Check if var is local (with scope depth)
+    int scope_depth = -1;
+    Object* obj = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
+
     // handle variable and check for undefined symbol
     Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
+    char var_name[64];
+    strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
+    var_name[sizeof(var_name) - 1] = '\0';
+
+    match(pSK, ID);
+
     if (!key)
     {
         yyerror(pSK, "entity undefined");
@@ -775,17 +786,34 @@ static int set(SKState* pSK)
         return 0;
     }
 
-    match(pSK, ID);
-
-    if (key)
+    if (scope_depth == 0 && IS_NUM(obj))
     {
+        // Local variable in current scope
+        expr(pSK);
+        vm_emit(&pSK->vm, OP_SET_LOCAL);
+        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(obj));
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+    }
+    else if (scope_depth > 0 && IS_NUM(obj))
+    {
+        // Variable from enclosing scope — set via upvalue
+        int uv_idx = register_upvalue(pSK, var_name, scope_depth, AS_NUM(obj));
+        expr(pSK);
+        if (uv_idx >= 0) {
+            vm_emit(&pSK->vm, OP_SET_UPVALUE);
+            vm_emit(&pSK->vm, (VMCode_t)uv_idx);
+        }
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+    }
+    else
+    {
+        // Global variable
         vm_emit_push_object(&pSK->vm, key);
         expr(pSK);
         vm_emit(&pSK->vm, OP_STORE);
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
     }
-    else
-        yyerror(pSK, "entity undefined");
-    
+
     unindent(pSK);
     return 0;
 }

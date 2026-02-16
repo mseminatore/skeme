@@ -780,7 +780,12 @@ static VMExecResult op_false(VM* pvm) { vm_pushBoolean(pvm, FALSE); return VM_CO
 static VMExecResult op_dup(VM* pvm) { vm_push(pvm, vm_peek(pvm, 0)); return VM_CONTINUE; }
 static VMExecResult op_nop(VM* pvm) { (void)pvm; return VM_CONTINUE; }
 static VMExecResult op_halt(VM* pvm) { (void)pvm; return VM_HALT; }
-static VMExecResult op_set_local(VM* pvm) { (void)pvm; return VM_CONTINUE; }
+static VMExecResult op_set_local(VM* pvm) {
+    int index = (int)*pvm->ip++;
+    Object* value = vm_pop(pvm);
+    vm_fp_set(pvm, index, value);
+    return VM_CONTINUE;
+}
 
 static VMExecResult op_store(VM* pvm) {
     Object *value = vm_pop(pvm), *key = vm_pop(pvm);
@@ -1337,6 +1342,11 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         }
         DISPATCH();
     L_SET_LOCAL:
+        {
+            int index = (int)*pvm->ip++;
+            Object* value = vm_pop(pvm);
+            vm_fp_set(pvm, index, value);
+        }
         DISPATCH();
     L_LIST:
         {

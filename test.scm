@@ -72,6 +72,22 @@
 (test-case "set five to 4" (= 4 five))
 (set! five 5)
 
+; test set! on local variables
+(define (set-local-test x)
+  (set! x (+ x 10))
+  x)
+(test-case "set! local" (= (set-local-test 5) 15))
+
+(define (set-local-begin x)
+  (begin (set! x 99) x))
+(test-case "set! local in begin" (= (set-local-begin 1) 99))
+
+(define (set-two a b)
+  (set! a (* a 2))
+  (set! b (* b 3))
+  (+ a b))
+(test-case "set! two locals" (= (set-two 5 10) 40))
+
 ;----------------------
 ; construct a pair
 ;----------------------

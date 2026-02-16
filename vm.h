@@ -409,6 +409,9 @@ static inline Object* vm_peek(VM* pvm, int distance) {
 static inline Object* vm_fp_peek(VM* pvm, int distance) {
     return pvm->stack[pvm->fp - 1 - distance];
 }
+static inline void vm_fp_set(VM* pvm, int distance, Object* value) {
+    pvm->stack[pvm->fp - 1 - distance] = value;
+}
 void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
 void vm_pop_n(VM* pvm, int n);
 int vm_clear_stack(VM* pvm);
