@@ -824,6 +824,7 @@ static VMExecResult op_icall(VM* pvm) {
 static VMExecResult op_xcall(VM* pvm) {
     // Function is under the args: stack [fn, arg1, ..., argN]
     int nargs = (int)*pvm->ip++;
+    assert(pvm->sp > nargs && "Stack underflow in op_xcall");
     Object* fn_obj = vm_peek(pvm, nargs);   // peek past the N args
     // Shift args down by one to overwrite the fn slot
     for (int i = nargs; i > 0; i--)
@@ -941,7 +942,9 @@ static VMExecResult op_unknown(VM* pvm) {
 }
 
 // Specialized arithmetic opcodes
+// These bypass vm_push/vm_pop for speed; debug assertions guard correctness
 static VMExecResult op_add(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_add");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
@@ -951,6 +954,7 @@ static VMExecResult op_add(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_sub(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_sub");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
@@ -960,6 +964,7 @@ static VMExecResult op_sub(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_mul(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_mul");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
@@ -969,6 +974,7 @@ static VMExecResult op_mul(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_lt(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_lt");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
@@ -978,6 +984,7 @@ static VMExecResult op_lt(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_le(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_le");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
@@ -987,6 +994,7 @@ static VMExecResult op_le(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_eq_num(VM* pvm) {
+    assert(pvm->sp >= 2 && "Stack underflow in op_eq_num");
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))

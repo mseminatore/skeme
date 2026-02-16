@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h> // Add this include at the top of the file, before typedefs
+#include <assert.h>
 #include "hash/hash.h"
 #include "platform.h"
 
@@ -395,21 +396,27 @@ void vm_gc(VM* pvm);
 void vm_print_object(Object* obj, int flags, FILE *stream);
 
 // stack management - inlined for performance
+// Debug builds get bounds checks via assert(); release (NDEBUG) gets zero overhead
 static inline void vm_push(VM* pvm, Object* obj) {
+    assert(pvm->sp < VM_STACK_SIZE && "Stack overflow");
     pvm->stack[pvm->sp++] = obj;
     if (pvm->sp > (int)pvm->max_stack_size)
         pvm->max_stack_size = pvm->sp;
 }
 static inline Object* vm_pop(VM* pvm) {
+    assert(pvm->sp > 0 && "Stack underflow");
     return pvm->stack[--pvm->sp];
 }
 static inline Object* vm_peek(VM* pvm, int distance) {
+    assert(pvm->sp - 1 - distance >= 0 && "Stack underflow on peek");
     return pvm->stack[pvm->sp - 1 - distance];
 }
 static inline Object* vm_fp_peek(VM* pvm, int distance) {
+    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_peek");
     return pvm->stack[pvm->fp - 1 - distance];
 }
 static inline void vm_fp_set(VM* pvm, int distance, Object* value) {
+    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_set");
     pvm->stack[pvm->fp - 1 - distance] = value;
 }
 void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
