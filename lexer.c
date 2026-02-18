@@ -154,6 +154,12 @@ int pop_file_stack(SKState* pSK)
 //-----------------------------------
 int getch(SKState* pSK)
 {
+    if (pSK->eval_input) {
+        char c = pSK->eval_input[pSK->eval_pos];
+        if (c == '\0') return EOF;
+        pSK->eval_pos++;
+        return (unsigned char)c;
+    }
     return fgetc(pSK->yyin);
 }
 
@@ -162,6 +168,10 @@ int getch(SKState* pSK)
 //-----------------------------------
 int ungetch(SKState* pSK, int c)
 {
+    if (pSK->eval_input) {
+        if (pSK->eval_pos > 0) pSK->eval_pos--;
+        return c;
+    }
     return ungetc(c, pSK->yyin);
 }
 
@@ -346,6 +356,10 @@ yylex01:
     // see if input stack is empty
     if (c == EOF)
     {
+        // In eval/string mode, just return DONE — don't touch file stack
+        if (pSK->eval_input)
+            return DONE;
+
         if (pop_file_stack(pSK))
         {
             goto yylex01;

@@ -83,6 +83,10 @@ struct SKState
     FILE* output_stream;            // general output stream
     FILE *yyin;                     // current input file pointer
 
+    // String input for eval (when non-NULL, getch reads from this)
+    const char* eval_input;         // string buffer for eval
+    int eval_pos;                   // current position in eval_input
+
     int indent_level;               // current parse indent level
     int expr_level;                 // current expression nesting level
     int bDone;                      // flag to signal interpreter shutdown

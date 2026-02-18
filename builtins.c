@@ -1415,8 +1415,22 @@ static int sk_eval(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'eval' not implemented yet");
-    return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "eval: expected a string argument");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    int sp_before = pSK->vm.sp;
+    const char* code = ((String*)obj)->value;
+    sk_eval_string(pSK, code);
+
+    // If eval produced no result (e.g. define), push false as void
+    if (pSK->vm.sp == sp_before)
+        vm_push(&pSK->vm, MAKE_FALSE());
+
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -2355,7 +2369,6 @@ static SKFuncSet built_in_funcs[] =
     { "gc-stress", sk_gc_stress, 0 },
 
 	{ "symbol?", sk_symbolp, 1 },
-	// { "eval", sk_eval },
     { NULL, NULL }
 };
 

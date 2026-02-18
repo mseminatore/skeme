@@ -13,6 +13,7 @@ int sk_define(SKState* pSK, const char *key, Object *value);
 int sk_init(SKState *pSK, int argc, char *argv[]);
 int sk_shutdown(SKState *pSK);
 int sk_parse(SKState *pSK);
+int sk_eval_string(SKState *pSK, const char *code);
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[]);
 int sk_register_type(SKState *pSK, const SKTypeDesc *desc);
 int sk_display(SKState *pSK);

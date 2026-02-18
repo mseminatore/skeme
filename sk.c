@@ -172,6 +172,55 @@ int sk_parse(SKState *pSK)
 }
 
 //-----------------------------------------------
+// eval a string: parse + compile + execute
+//-----------------------------------------------
+int sk_eval_string(SKState *pSK, const char *code)
+{
+    if (!pSK || !code) return SK_FALSE;
+
+    // Save parser state
+    int saved_lookahead = pSK->lookahead;
+    int saved_expr_level = pSK->expr_level;
+    int saved_indent = pSK->indent_level;
+    const char* saved_eval_input = pSK->eval_input;
+    int saved_eval_pos = pSK->eval_pos;
+
+    // Save current code chunk and create a temporary one for eval
+    CodeChunk eval_chunk;
+    vm_init_chunk(&eval_chunk);
+    CodeChunk* saved_chunk = vm_set_current_chunk(&pSK->vm, &eval_chunk);
+
+    // Set up string input — suppress OP_PRINT_TOS by starting at expr_level 1
+    pSK->eval_input = code;
+    pSK->eval_pos = 0;
+    pSK->expr_level = 1;
+    pSK->indent_level = 0;
+    pSK->bDone = 0;
+
+    // Parse the string
+    yyparse(pSK);
+    vm_emit(&pSK->vm, OP_HALT);
+
+    // Execute the compiled code - save/restore VM ip
+    vm_set_current_chunk(&pSK->vm, saved_chunk);
+    VMCode_t* saved_ip = pSK->vm.ip;
+    vm_exec(&pSK->vm, eval_chunk.code);
+    pSK->vm.ip = saved_ip;
+
+    // Restore parser state
+    pSK->lookahead = saved_lookahead;
+    pSK->expr_level = saved_expr_level;
+    pSK->indent_level = saved_indent;
+    pSK->eval_input = saved_eval_input;
+    pSK->eval_pos = saved_eval_pos;
+
+    // Free temporary chunk
+    vm_free_chunk(&pSK->vm, &eval_chunk);
+
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // register native functions
 //-----------------------------------------------
 int sk_register_functions(SKState *pSK, const SKFuncSet funcs[])

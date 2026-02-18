@@ -1653,7 +1653,7 @@ int yyparse(SKState *pSK)
 {
     //PARSE_LOG("yyparse(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
-    if (pSK->yyin == NULL)
+    if (pSK->yyin == NULL && pSK->eval_input == NULL)
         return 0;
 
     // prime the pump

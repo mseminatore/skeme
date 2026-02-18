@@ -674,6 +674,17 @@
 (test-case "symbol round-trip" (equal? (symbol->string (string->symbol "test")) "test"))
 
 ;----------------------
+; eval tests
+;----------------------
+(test-suite "eval")
+
+(test-case "eval arithmetic" (= (eval "(+ 1 2)") 3))
+(test-case "eval list" (equal? (eval "(list 1 2 3)") (list 1 2 3)))
+(test-case "eval string" (equal? (eval "(string-append \"hello\" \" world\")") "hello world"))
+(test-case "eval define" (begin (eval "(define eval-test-var 99)") (= eval-test-var 99)))
+(test-case "eval nested" (= (eval "(+ (eval \"(+ 1 2)\") 4)") 7))
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)
