@@ -645,6 +645,35 @@
 (test-case "double import ok" (= (sin 0) 0))
 
 ;----------------------
+; quote and symbol tests
+;----------------------
+(test-suite "quote")
+
+; basic quote syntax
+(test-case "quote symbol" (symbol? 'hello))
+(test-case "quote keyword form" (symbol? (quote foo)))
+(test-case "quote number" (= '42 42))
+(test-case "quote string" (equal? '"hello" "hello"))
+(test-case "quote bool true" (eq? '#t #t))
+(test-case "quote bool false" (eq? '#f #f))
+(test-case "quote nil" (null? '()))
+
+; quoted lists
+(test-case "quote list" (equal? '(1 2 3) (list 1 2 3)))
+(test-case "quote nested" (pair? '(1 (2 3) 4)))
+(test-case "quote nested car" (= (car '(1 2 3)) 1))
+(test-case "quote nested cadr" (= (cadr '(1 2 3)) 2))
+(test-case "quote symbols in list" (symbol? (car '(a b c))))
+
+; symbol operations
+(test-case "symbol? true" (symbol? 'x))
+(test-case "symbol? false on string" (not (symbol? "x")))
+(test-case "symbol? false on number" (not (symbol? 42)))
+(test-case "symbol->string" (equal? (symbol->string 'hello) "hello"))
+(test-case "string->symbol" (symbol? (string->symbol "world")))
+(test-case "symbol round-trip" (equal? (symbol->string (string->symbol "test")) "test"))
+
+;----------------------
 ; report test results
 ;----------------------
 (test-end)

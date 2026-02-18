@@ -31,7 +31,7 @@ Tokens tokens[] =
     { "let",     LET },
     { "let*",    LET_STAR },
     { "letrec",  LETREC },
-    // { "quote",   QUOTE },
+    { "quote",   QUOTE },
     // { "eval",    EVAL },
     { NULL, 0}
 };
@@ -427,22 +427,23 @@ yylex01:
         goto yylex01;
     }
 
-    // look for char literals
+    // look for char literals and quote syntax
     if (c == '\'')
     {
         c = getch(pSK);
         if (c == '(' && follow(pSK, ')', TRUE, FALSE))
         {
-            return NIL;
+            return NIL;     // '() is empty list
         }
         else if (follow(pSK, '\'', TRUE, FALSE))
         {
             pSK->yylval.ival = backslash(pSK, c);
-            return CHAR;
+            return CHAR;    // 'x' is character literal
         }
 
+        // Quote syntax: '( starts a quoted list, 'identifier quotes a symbol
         ungetch(pSK, c);
-        return getString(pSK, '\'');
+        return QUOTE;
     }
 
     // look for empty lists

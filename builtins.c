@@ -514,6 +514,49 @@ static int sk_stringp(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: symbol?
+//-----------------------------------------------
+static int sk_symbolp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, IS_SYMBOL(obj) ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: symbol->string
+//-----------------------------------------------
+static int sk_symbol_to_string(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_SYMBOL(obj)) {
+        yyerror(pSK, "symbol->string: expected a symbol");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, vm_new_string(&pSK->vm, ((String*)obj)->value));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string->symbol
+//-----------------------------------------------
+static int sk_string_to_symbol(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "string->symbol: expected a string");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, vm_new_symbol(&pSK->vm, ((String*)obj)->value));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in function: list?
 //-----------------------------------------------
 static int sk_listp(SKState* pSK)
@@ -2268,8 +2311,8 @@ static SKFuncSet built_in_funcs[] =
     { "integer->char", sk_integer_to_char, 1 },
     { "float->string", sk_float_to_string, 1 },
     { "string->float", sk_string_to_float, 1 },
-    // { "string->symbol", sk_string_to_symbol, 1 },
-    // { "symbol->string", sk_symbol_to_string, 1 },
+    { "string->symbol", sk_string_to_symbol, 1 },
+    { "symbol->string", sk_symbol_to_string, 1 },
 
     // comparison operators
     { "<", sk_less, 2 },
@@ -2311,7 +2354,7 @@ static SKFuncSet built_in_funcs[] =
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
 
-	// { "symbol?", sk_symbolp },
+	{ "symbol?", sk_symbolp, 1 },
 	// { "eval", sk_eval },
     { NULL, NULL }
 };

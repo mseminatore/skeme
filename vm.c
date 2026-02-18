@@ -158,6 +158,10 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         }
         break;
 
+        case OBJ_SYMBOL:
+            fprintf(stream, "%s", ((String*)obj)->value);
+            break;
+
         default:
         {
             // Dispatch to custom type descriptor if registered
@@ -408,6 +412,14 @@ void vm_emit_string(VM* pvm, const char* str)
     vm_emit(pvm, (VMCode_t)str);
 }
 
+void vm_emit_symbol(VM* pvm, const char* name)
+{
+    // strdup the name so the bytecode pointer remains valid
+    // (yylval.word is a temp buffer that gets overwritten)
+    vm_emit(pvm, OP_SYMBOL);
+    vm_emit(pvm, (VMCode_t)sk_strdup(name));
+}
+
 //--------------------------------------------------------------
 // Emit an object as bytecode
 //--------------------------------------------------------------
@@ -494,6 +506,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 
         case OP_STRING:
             printf("STRING '%s'\n", (const char*)*ip++);
+            break;
+
+        case OP_SYMBOL:
+            printf("SYMBOL '%s'\n", (const char*)*ip++);
             break;
 
         case OP_TRUE:
@@ -775,6 +791,7 @@ static VMExecResult op_push_sp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->sp)); retur
 static VMExecResult op_pop_sp(VM* pvm) { pvm->sp = AS_NUM(vm_pop(pvm)); return VM_CONTINUE; }
 static VMExecResult op_num(VM* pvm) { vm_push(pvm, MAKE_NUM(*pvm->ip++)); return VM_CONTINUE; }
 static VMExecResult op_string(VM* pvm) { vm_push(pvm, vm_new_string(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_symbol(VM* pvm) { vm_push(pvm, vm_new_symbol(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
 static VMExecResult op_true(VM* pvm) { vm_pushBoolean(pvm, TRUE); return VM_CONTINUE; }
 static VMExecResult op_false(VM* pvm) { vm_pushBoolean(pvm, FALSE); return VM_CONTINUE; }
 static VMExecResult op_dup(VM* pvm) { vm_push(pvm, vm_peek(pvm, 0)); return VM_CONTINUE; }
@@ -1020,6 +1037,7 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_get_local, op_set_local, op_print_tos,
     op_add, op_sub, op_mul, op_lt, op_le, op_eq_num,
     op_num_0, op_num_1, op_num_2,
+    op_symbol,
 };
 
 //---------------------------------------------------------------
@@ -1233,7 +1251,8 @@ static const char* opcode_names[] = {
     "MAKE_CLOSURE", "GET_UPVALUE", "SET_UPVALUE", "LIST",
     "GET_LOCAL", "SET_LOCAL", "PRINT_TOS",
     "ADD", "SUB", "MUL", "LT", "LE", "EQ_NUM",
-    "NUM_0", "NUM_1", "NUM_2"
+    "NUM_0", "NUM_1", "NUM_2",
+    "SYMBOL"
 };
 
 void vm_print_profile(VM* pvm)
@@ -1508,7 +1527,8 @@ static void blackenObject(VM* pvm, Object* object)
         break;
 
     case OBJ_STRING:
-        // Strings have no references to mark
+    case OBJ_SYMBOL:
+        // Strings and symbols have no references to mark
         break;
 
     case OBJ_NATIVE_FN:
@@ -1879,6 +1899,20 @@ Object *vm_new_string(VM* pvm, const char* str)
 
     // and add to interned strings table
     ht_insert(pvm->interned_strings, stringObj->value, stringObj);
+
+    return obj;
+}
+
+//--------------------------------------------------------------
+// Create a new symbol object (like string but OBJ_SYMBOL type)
+//--------------------------------------------------------------
+Object *vm_new_symbol(VM* pvm, const char* name)
+{
+    if (!pvm || !name) return NULL;
+
+    Object* obj = vm_newObject(pvm, sizeof(String) + strlen(name) + 1, OBJ_SYMBOL);
+    String* sym = (String*)obj;
+    strcpy((char*)sym->value, name);
 
     return obj;
 }

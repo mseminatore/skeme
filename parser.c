@@ -12,6 +12,7 @@
 
 // forward declarations
 static int expr(SKState* pSK);
+static void quote_datum(SKState* pSK);
 
 #define PARSE_LOG(...) (void)(pSK && pSK->parse_log_enabled && indent(pSK) && fprintf(stderr, __VA_ARGS__))
 
@@ -269,6 +270,13 @@ static int atom(SKState* pSK)
 
         vm_emit_push_object(&pSK->vm, NULL);
         match(pSK, NIL);
+        unindent(pSK);
+        break;
+
+    case QUOTE:
+        // 'datum shorthand — QUOTE token comes from lexer when ' is seen
+        match(pSK, QUOTE);
+        quote_datum(pSK);
         unindent(pSK);
         break;
 
@@ -754,6 +762,109 @@ static int load_expr(SKState* pSK)
 
     // load (parse) the file
     push_filename_stack(pSK, filename);
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// quote_datum - recursively emit code to construct a quoted value
+// Numbers, strings, bools, chars are self-evaluating.
+// Identifiers become symbols. Lists become OP_LIST constructions.
+//-----------------------------------------------
+static void quote_datum(SKState* pSK)
+{
+    PARSE_LOG("quote_datum(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    if (LOOKAHEAD == '(')
+    {
+        match(pSK, '(');
+
+        // empty list?
+        if (LOOKAHEAD == ')')
+        {
+            match(pSK, ')');
+            vm_emit_push_object(&pSK->vm, NULL);  // nil = empty list
+            return;
+        }
+
+        // non-empty list: recursively quote each element
+        int count = 0;
+        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        {
+            quote_datum(pSK);
+            count++;
+        }
+        match(pSK, ')');
+        vm_emit(&pSK->vm, OP_LIST);
+        vm_emit(&pSK->vm, (VMCode_t)count);
+    }
+    else if (LOOKAHEAD == NUMBER)
+    {
+        vm_emit_number(&pSK->vm, pSK->yylval.ival);
+        match(pSK, NUMBER);
+    }
+    else if (LOOKAHEAD == STRING)
+    {
+        vm_emit_string(&pSK->vm, pSK->symbols[pSK->yylval.symbol].name);
+        match(pSK, STRING);
+    }
+    else if (LOOKAHEAD == TOKEN_TRUE)
+    {
+        vm_emit(&pSK->vm, OP_TRUE);
+        match(pSK, TOKEN_TRUE);
+    }
+    else if (LOOKAHEAD == TOKEN_FALSE)
+    {
+        vm_emit(&pSK->vm, OP_FALSE);
+        match(pSK, TOKEN_FALSE);
+    }
+    else if (LOOKAHEAD == CHAR)
+    {
+        vm_emit(&pSK->vm, OP_PUSH);
+        vm_emit(&pSK->vm, (VMCode_t)MAKE_CHAR(pSK->yylval.ival));
+        match(pSK, CHAR);
+    }
+    else if (LOOKAHEAD == NIL)
+    {
+        vm_emit_push_object(&pSK->vm, NULL);
+        match(pSK, NIL);
+    }
+    else if (LOOKAHEAD == QUOTE)
+    {
+        // nested quote: '('a) inside a quoted list
+        match(pSK, QUOTE);
+        quote_datum(pSK);
+        // wrap in (quote x) → build a 2-element list: (symbol:quote, datum)
+        vm_emit_symbol(&pSK->vm, "quote");
+        vm_emit(&pSK->vm, OP_LIST);
+        vm_emit(&pSK->vm, 2);
+    }
+    else if (LOOKAHEAD == ID || LOOKAHEAD == '+' || LOOKAHEAD == '-' ||
+             LOOKAHEAD == '*' || LOOKAHEAD == '/' || LOOKAHEAD == '<' ||
+             LOOKAHEAD == '>' || LOOKAHEAD == '=')
+    {
+        // identifiers and operators become symbols
+        vm_emit_symbol(&pSK->vm, pSK->yylval.word);
+        match(pSK, LOOKAHEAD);
+    }
+    else
+    {
+        yyerror(pSK, "unexpected token in quoted expression");
+        match(pSK, LOOKAHEAD);  // consume to avoid infinite loop
+    }
+}
+
+//-----------------------------------------------
+// quote_expr := '(' 'quote' datum ')'
+// Also handles 'datum (shorthand) when called directly
+//-----------------------------------------------
+static int quote_expr(SKState* pSK)
+{
+    PARSE_LOG("quote_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, QUOTE);
+    quote_datum(pSK);
 
     unindent(pSK);
     return 0;
@@ -1376,6 +1487,10 @@ static int expr(SKState* pSK)
 
         case IMPORT:
             import_expr(pSK);
+            break;
+
+        case QUOTE:
+            quote_expr(pSK);
             break;
 
         case IF:

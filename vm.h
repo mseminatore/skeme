@@ -159,6 +159,7 @@ static inline float sk_decode_float(intptr_t bits) {
 
 // object classification - heap types
 #define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
+#define IS_SYMBOL(obj)      (OBJ_TYPE(obj) == OBJ_SYMBOL)
 #define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
 #define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
 #define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
@@ -202,6 +203,7 @@ enum
     OBJ_ENVIRONMENT,
     OBJ_FLOAT,
     OBJ_PORT,
+    OBJ_SYMBOL,
 
 	// mark the last object type
     OBJ_LAST
@@ -253,6 +255,7 @@ enum {
     OP_NUM_0,       // push 0
     OP_NUM_1,       // push 1
     OP_NUM_2,       // push 2
+    OP_SYMBOL,      // push a symbol value onto the stack
     OP_LAST         // last opcode
 };
     
@@ -435,6 +438,7 @@ Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
 Object* vm_new_string(VM* pvm, const char* str);
+Object* vm_new_symbol(VM* pvm, const char* name);
 Object* vm_new_proc(VM* pvm);
 Object* vm_new_float(VM* pvm, float value);
 float vm_get_float(Object* obj);
@@ -446,6 +450,7 @@ int vm_create_default_ports(VM* pvm);
 int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
+void vm_emit_symbol(VM* pvm, const char *name);
 void vm_emit_push_object(VM* pvm, Object* obj);
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
 CodeChunk* vm_get_current_chunk();
