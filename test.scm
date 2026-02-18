@@ -685,6 +685,32 @@
 (test-case "eval nested" (= (eval "(+ (eval \"(+ 1 2)\") 4)") 7))
 
 ;----------------------
+;--- do loop tests ---
+(test-suite "do loops")
+
+; simple counter: sum 0..4
+(test-case "do simple counter"
+    (= 10 (do ((i 0 (+ i 1))
+                (sum 0 (+ sum i)))
+               ((= i 5) sum))))
+
+; do with no step (variable stays constant)
+(test-case "do no step"
+    (= 42 (do ((i 0 (+ i 1))
+                (x 42))
+               ((= i 3) x))))
+
+; do early exit (test true on first iteration)
+(test-case "do early exit"
+    (= 0 (do ((i 0 (+ i 1)))
+              ((= i 0) i))))
+
+; do with compound step expression (factorial)
+(test-case "do compound step"
+    (= 120 (do ((i 1 (+ i 1))
+                 (fact 1 (* fact i)))
+                ((> i 5) fact))))
+
 ; report test results
 ;----------------------
 (test-end)

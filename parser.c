@@ -870,6 +870,240 @@ static int import_expr(SKState* pSK)
     unindent(pSK);
     return 0;
 }
+
+//-----------------------------------------------
+// do_expr := '(' 'do' ((var init step) ...) (test result ...) body ... ')'
+// Implemented as: emit inits, create lambda frame, loop with BRA/BNT
+//-----------------------------------------------
+#define MAX_DO_BINDINGS 16
+static int do_expr(SKState* pSK)
+{
+    PARSE_LOG("do_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, DO);
+
+    // Parse bindings: ((var init step) ...)
+    char bind_names[MAX_DO_BINDINGS][64];
+    char step_strs[MAX_DO_BINDINGS][BUF_SIZE];
+    int nbindings = 0;
+
+    match(pSK, '(');
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        match(pSK, '(');
+
+        // var name
+        strncpy(bind_names[nbindings], pSK->yylval.word, 63);
+        bind_names[nbindings][63] = '\0';
+        match(pSK, ID);
+
+        // init expression — emit into outer chunk (init values)
+        expr(pSK);
+
+        // step expression — save as text for later re-parse
+        step_strs[nbindings][0] = '\0';
+        if (LOOKAHEAD != ')')
+        {
+            int depth = 0;
+            int pos = 0;
+            if (LOOKAHEAD == '(')
+            {
+                depth = 1;
+                step_strs[nbindings][pos++] = '(';
+                match(pSK, '(');
+
+                while (depth > 0 && LOOKAHEAD != DONE && pos < BUF_SIZE - 2)
+                {
+                    if (LOOKAHEAD == '(') {
+                        step_strs[nbindings][pos++] = '(';
+                        depth++;
+                        match(pSK, '(');
+                    } else if (LOOKAHEAD == ')') {
+                        step_strs[nbindings][pos++] = ')';
+                        depth--;
+                        if (depth > 0) match(pSK, ')');
+                    } else {
+                        if (LOOKAHEAD == NUMBER)
+                            pos += snprintf(step_strs[nbindings] + pos, BUF_SIZE - pos, "%d", pSK->yylval.ival);
+                        else {
+                            int len = (int)strlen(pSK->yylval.word);
+                            if (pos + len + 1 < BUF_SIZE) {
+                                memcpy(step_strs[nbindings] + pos, pSK->yylval.word, len);
+                                pos += len;
+                            }
+                        }
+                        step_strs[nbindings][pos++] = ' ';
+                        match(pSK, LOOKAHEAD);
+                    }
+                }
+                match(pSK, ')');
+            }
+            else
+            {
+                if (LOOKAHEAD == NUMBER)
+                    pos += snprintf(step_strs[nbindings] + pos, BUF_SIZE - pos, "%d", pSK->yylval.ival);
+                else {
+                    int len = (int)strlen(pSK->yylval.word);
+                    memcpy(step_strs[nbindings] + pos, pSK->yylval.word, len);
+                    pos += len;
+                }
+                match(pSK, LOOKAHEAD);
+            }
+            step_strs[nbindings][pos] = '\0';
+        }
+
+        nbindings++;
+        match(pSK, ')');
+    }
+    match(pSK, ')');
+
+    // Create lambda for loop body (inlined, not using let_create_lambda)
+    ParseUpvalue saved_upvalues[MAX_UPVALUES];
+    int saved_upvalue_count = pSK->upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+    pSK->upvalue_count = 0;
+
+    vm_new_environment(&pSK->vm);
+
+    Object* proc_obj = vm_new_proc(&pSK->vm);
+    vm_push(&pSK->vm, proc_obj);
+
+    Procedure* proc = AS_OBJ(Procedure, proc_obj);
+    static int do_id = 0;
+    char do_name[32];
+    snprintf(do_name, sizeof(do_name), "<do-%d>", do_id++);
+    proc->name = (String*)vm_new_string(&pSK->vm, do_name);
+    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
+
+    CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
+
+    proc->arity = nbindings;
+    for (int i = 0; i < nbindings; i++)
+        vm_set_var(&pSK->vm, bind_names[i], MAKE_NUM(i + 1));
+
+    if (pSK->vm.current_scope)
+    {
+        Environment* env = pSK->vm.current_scope;
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+            ht_add(env->bindings, env_key, MAKE_NUM(nbindings - AS_NUM(env_value) + 3));
+    }
+
+    // Parse test clause: (test result ...)
+    match(pSK, '(');
+
+    CodeChunk* loop_chunk = vm_get_current_chunk();
+    int loop_start = (int)loop_chunk->count;
+
+    expr(pSK);
+    vm_emit(&pSK->vm, OP_BNT);
+    int branch_to_body = vm_emit(&pSK->vm, 0);
+
+    if (LOOKAHEAD != ')')
+    {
+        expr(pSK);
+        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        {
+            vm_emit(&pSK->vm, OP_POP);
+            expr(pSK);
+        }
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, NULL);
+    }
+    match(pSK, ')');
+
+    vm_emit(&pSK->vm, OP_RET);
+
+    loop_chunk->code[branch_to_body] = loop_chunk->count - branch_to_body;
+
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        expr(pSK);
+        vm_emit(&pSK->vm, OP_POP);
+    }
+
+    // Compile step expressions: evaluate all first, then assign all (R5RS parallel update)
+    // First pass: compile all step value expressions (push results onto stack)
+    int has_step[MAX_DO_BINDINGS];
+    for (int i = 0; i < nbindings; i++)
+    {
+        has_step[i] = (step_strs[i][0] != '\0');
+        if (has_step[i])
+        {
+            const char* saved_eval = pSK->eval_input;
+            int saved_eval_pos = pSK->eval_pos;
+            int saved_lookahead = pSK->lookahead;
+            int saved_expr_level = pSK->expr_level;
+
+            pSK->eval_input = step_strs[i];
+            pSK->eval_pos = 0;
+            pSK->expr_level = 1;
+            pSK->lookahead = yylex(pSK);
+            expr(pSK);
+
+            pSK->eval_input = saved_eval;
+            pSK->eval_pos = saved_eval_pos;
+            pSK->lookahead = saved_lookahead;
+            pSK->expr_level = saved_expr_level;
+        }
+    }
+    // Second pass: assign in reverse order (last pushed = last binding)
+    for (int i = nbindings - 1; i >= 0; i--)
+    {
+        if (has_step[i])
+        {
+            vm_emit(&pSK->vm, OP_SET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)(nbindings - i + 2));
+        }
+    }
+
+    // Jump back to loop start
+    vm_emit(&pSK->vm, OP_BRA);
+    int bra_offset_pos = (int)loop_chunk->count;  // position where offset will be stored
+    vm_emit(&pSK->vm, (VMCode_t)(loop_start - bra_offset_pos));
+
+    vm_set_current_chunk(&pSK->vm, prev_chunk);
+    vm_free_environment(&pSK->vm);
+
+    // Handle closure capture
+    int num_upvalues = pSK->upvalue_count;
+    ParseUpvalue captured[MAX_UPVALUES];
+    if (num_upvalues > 0)
+        memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+    // Restore outer upvalues
+    pSK->upvalue_count = saved_upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+    if (num_upvalues > 0)
+    {
+        for (int i = 0; i < num_upvalues; i++)
+        {
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+        }
+        vm_emit_push_object(&pSK->vm, proc_obj);
+        vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, proc_obj);
+    }
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nbindings);
+
+    unindent(pSK);
+    return 0;
+}
+
 // Returns proc_obj. Caller must have already emitted value code.
 // Stack after: [...vals..., proc/closure]
 //-----------------------------------------------
@@ -1489,6 +1723,10 @@ static int expr(SKState* pSK)
 
         case CASE_TOKEN:
             case_expr(pSK);
+            break;
+
+        case DO:
+            do_expr(pSK);
             break;
 
         case '(':

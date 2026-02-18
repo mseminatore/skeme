@@ -32,6 +32,7 @@ Tokens tokens[] =
     { "let*",    LET_STAR },
     { "letrec",  LETREC },
     { "quote",   QUOTE },
+    { "do",      DO },
     // { "eval",    EVAL },
     { NULL, 0}
 };
