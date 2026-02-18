@@ -134,33 +134,6 @@ static int match(SKState* pSK, int token)
 	return LOOKAHEAD;
 }
 
-//------------------------
-// symbol comparison fn
-//------------------------
-static int compare_fn(const void *a, const void *b)
-{
-    Symbol_t *s1 = (Symbol_t*)a;
-    Symbol_t *s2 = (Symbol_t*)b;
-
-    return sk_strcasecmp(s1->name, s2->name);
-}
-
-//------------------------
-// print out symbols
-//------------------------
-void dump_symbols(SKState* pSK)
-{
-    if (!pSK) return;
-
-    // alpha sort symbols
-    qsort(pSK->symbols, pSK->symbol_count, sizeof(Symbol_t), compare_fn);
-
-    puts("\nSymbol table\n------------");
-    for (int i = 0; i < pSK->symbol_count; i++)
-    {
-        printf("%10s\t%04X\n", pSK->symbols[i].name, pSK->symbols[i].value);
-    }
-}
 
 //-----------------------------------------------
 // Register an upvalue for the current lambda being parsed.
@@ -257,10 +230,9 @@ static int atom(SKState* pSK)
         break;
 
     case STRING:
-        // TODO - use yylval.word and handle interned strings
-        PARSE_LOG("STRING: '%s'\n", pSK->symbols[pSK->yylval.symbol].name);
+        PARSE_LOG("STRING: '%s'\n", pSK->yylval.word);
 
-		vm_emit_string(&pSK->vm, pSK->symbols[pSK->yylval.symbol].name);
+		vm_emit_string(&pSK->vm, pSK->yylval.word);
         match(pSK, STRING);
         unindent(pSK);
         break;
@@ -756,8 +728,10 @@ static int load_expr(SKState* pSK)
         return 0;
     }
 
-    // get filename
-    const char* filename = pSK->symbols[pSK->yylval.symbol].name;
+    // get filename - must copy before match() overwrites yylval
+    char filename[BUF_SIZE];
+    strncpy(filename, pSK->yylval.word, BUF_SIZE - 1);
+    filename[BUF_SIZE - 1] = '\0';
     match(pSK, STRING);
 
     // load (parse) the file
@@ -806,7 +780,7 @@ static void quote_datum(SKState* pSK)
     }
     else if (LOOKAHEAD == STRING)
     {
-        vm_emit_string(&pSK->vm, pSK->symbols[pSK->yylval.symbol].name);
+        vm_emit_string(&pSK->vm, pSK->yylval.word);
         match(pSK, STRING);
     }
     else if (LOOKAHEAD == TOKEN_TRUE)

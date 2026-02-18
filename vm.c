@@ -409,7 +409,7 @@ void vm_emit_number(VM* pvm, int val)
 void vm_emit_string(VM* pvm, const char* str)
 {
     vm_emit(pvm, OP_STRING);
-    vm_emit(pvm, (VMCode_t)str);
+    vm_emit(pvm, (VMCode_t)sk_strdup(str));
 }
 
 void vm_emit_symbol(VM* pvm, const char* name)

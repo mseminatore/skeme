@@ -55,24 +55,14 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     memset(pSK, 0, sizeof(SKState));
     
     // allocate dynamic arrays
-    pSK->symbol_capacity = 256;
-    pSK->symbols = (Symbol_t*)calloc(pSK->symbol_capacity, sizeof(Symbol_t));
-    if (!pSK->symbols)
-    {
-        fprintf(stderr, "Failed to allocate symbol table!\n");
-        return FALSE;
-    }
-    
     pSK->file_stack_capacity = 10;
     pSK->file_stack = (FileNode*)calloc(pSK->file_stack_capacity, sizeof(FileNode));
     if (!pSK->file_stack)
     {
         fprintf(stderr, "Failed to allocate file stack!\n");
-        free(pSK->symbols);
         return FALSE;
     }
 
-    pSK->symbol_count = 0;
     pSK->file_stack_ptr = 0;  // start at 0 with sentinel entry
     pSK->err_count = 0;
     pSK->warn_count = 0;
@@ -105,7 +95,6 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     if (VM_OK != vm_init(&pSK->vm))
     {
         fprintf(stderr, "Failed to initialize VM!\n");
-        free(pSK->symbols);
         free(pSK->file_stack);
         return FALSE;
     }
@@ -117,7 +106,6 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     if (SK_TRUE != sk_init_builtins(pSK))
     {
         fprintf(stderr, "Failed to register built-in functions!\n");
-        free(pSK->symbols);
         free(pSK->file_stack);
         return FALSE;
     }
@@ -157,21 +145,6 @@ int sk_shutdown(SKState *pSK)
 
     // shutdown VM
     vm_shutdown(&pSK->vm);
-
-    // free symbol table
-    if (pSK->symbols)
-    {
-        // free individual symbol names and filenames
-        for (int i = 0; i < pSK->symbol_count; i++)
-        {
-            if (pSK->symbols[i].name)
-                free((void*)pSK->symbols[i].name);
-            if (pSK->symbols[i].filename && strcmp(pSK->symbols[i].filename, SK_NONAME_FILE) != 0)
-                free((void*)pSK->symbols[i].filename);
-        }
-        free(pSK->symbols);
-        pSK->symbols = NULL;
-    }
 
     // free file stack
     if (pSK->file_stack)

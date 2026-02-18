@@ -72,9 +72,6 @@ typedef struct {
 struct SKState
 {
     VM vm;                          // the virtual machine
-    Symbol_t* symbols;              // the symbol table. Note: dynamic array that should go away later
-    int symbol_count;               // number of symbols in table
-    int symbol_capacity;            // capacity of symbol table
     FileNode* file_stack;           // stack of input files
     int file_stack_ptr;             // current file stack pointer
     int file_stack_capacity;        // capacity of file stack
@@ -108,7 +105,6 @@ struct SKState
 // function decls
 //-----------------
 int yyparse(SKState *pSK);
-void dump_symbols(SKState* pSK);
 void yyerror(SKState* pSK, const char *s);
 void yywarning(SKState* pSK, const char *s);
 void yyinfo(SKState* pSK, const char *s);

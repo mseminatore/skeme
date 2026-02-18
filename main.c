@@ -13,7 +13,6 @@ SKState sk;
 int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
-int g_bSymbols = FALSE;
 int g_bInteractive = FALSE;
 extern int g_bProfile;
 
@@ -77,9 +76,7 @@ int getopt(SKState* pSK, int n, char *args[])
         if (args[i][1] == 'i')
             g_bInteractive = TRUE;
 
-        // flag for symbols
-        if (args[i][1] == 't')
-            g_bSymbols = TRUE;
+        // flag for symbols (removed: symbol table no longer exists)
 	}
 
 	return i;
@@ -176,9 +173,6 @@ int main(int argc, char *argv[])
     }
 
     vm_free_chunk(&sk.vm, &repl_chunk);
-
-    if (g_bSymbols)
-        dump_symbols(&sk);
 
     LOG("max stack size: %d, max call depth: %d\n", sk.vm.max_stack_size, sk.vm.max_call_depth);
 

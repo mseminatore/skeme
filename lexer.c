@@ -149,60 +149,6 @@ int pop_file_stack(SKState* pSK)
     return TRUE;
 }
 
-//------------------------
-// lookup a symbol
-//------------------------
-int lookup_symbol(SKState* pSK, const char *name)
-{
-    if (!pSK) return -1;
-
-    for (int i = 0; i < pSK->symbol_count; i++)
-    {
-        if (!sk_strcasecmp(name, pSK->symbols[i].name))
-            return i;
-    }
-
-    // symbol not found!
-    return -1;
-}
-
-//-----------------------------------------
-// add a new symbols, return symbol number
-//-----------------------------------------
-int add_symbol(SKState* pSK, const char *name, int lineno)
-{
-    if (!pSK) return -1;
-
-    // grow symbol table if needed
-    if (pSK->symbol_count >= pSK->symbol_capacity)
-    {
-        int new_capacity = pSK->symbol_capacity * 2;
-        Symbol_t* new_symbols = (Symbol_t*)realloc(pSK->symbols, new_capacity * sizeof(Symbol_t));
-        if (!new_symbols)
-        {
-            yyerror(pSK, "failed to grow symbol table!");
-            return -1;
-        }
-        pSK->symbols = new_symbols;
-        pSK->symbol_capacity = new_capacity;
-    }
-
-    // error if symbol already exists
-    if (lookup_symbol(pSK, name) > 0)
-        return -1;
-
-    pSK->symbols[pSK->symbol_count].name      = sk_strdup(name);
-    pSK->symbols[pSK->symbol_count].lineno    = (pSK->file_stack_ptr >= 0) ? CURRENT_LINENO : 0;
-    const char* current_file = (pSK->file_stack_ptr >= 0) ? CURRENT_FILE : NULL;
-    pSK->symbols[pSK->symbol_count].filename  = current_file ? sk_strdup(current_file) : sk_strdup(SK_NONAME_FILE);
-    pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
-    pSK->symbols[pSK->symbol_count].value     = -1;
-    pSK->symbols[pSK->symbol_count].refd      = 0;
-
-    pSK->symbol_count++;
-    return pSK->symbol_count - 1;
-}
-
 //-----------------------------------
 // next next char from input stream
 //-----------------------------------
@@ -380,20 +326,8 @@ int getString(SKState* pSK, int delim)
     
     *cptr = 0;
 
-    // lookup symbol and return if exists
-    int sym_num = lookup_symbol(pSK, buf);
-    if (sym_num != -1)
-    {
-        pSK->yylval.symbol = sym_num;
-        // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
-        return STRING;
-    }
-
-    sym_num = add_symbol(pSK, buf, pSK->lineno);
-
-    pSK->yylval.symbol = sym_num;
-    //strcpy(pSK->yylval.word, buf);
-    // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+    strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
+    pSK->yylval.word[BUF_SIZE - 1] = '\0';
 
     return STRING;
 }
@@ -568,20 +502,8 @@ yylex01:
             return token;
         }
         
-        // lookup symbol and return if exists
-        int sym_num = lookup_symbol(pSK, buf);
-        if (sym_num == -1)
-        {
-            sym_num = add_symbol(pSK, buf, pSK->lineno);
-            // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
-        }
-        else
-        {
-            // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
-        }
-
-        pSK->yylval.symbol = sym_num;
-        strcpy(pSK->yylval.word, buf);
+        strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
+        pSK->yylval.word[BUF_SIZE - 1] = '\0';
         return ID;
     }
 
