@@ -27,7 +27,7 @@ typedef enum {
 // constant decls
 //-----------------
 #define APP_NAME "skeme"
-#define APP_VER "0.1"
+#define APP_VER "0.5"
 
 // remove this later
 #define YYDEBUG 1
