@@ -654,36 +654,36 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
     }
 }
 
-static void vm_call(VM* pvm, VMCode_t* addr)
-{
-    // push return address onto return stack
-    vm_push_ip(pvm, pvm->ip);
+// static void vm_call(VM* pvm, VMCode_t* addr)
+// {
+//     // push return address onto return stack
+//     vm_push_ip(pvm, pvm->ip);
 
-    // set IP to function address
-    pvm->ip = addr;
-}
+//     // set IP to function address
+//     pvm->ip = addr;
+// }
 
-static void vm_return(VM* pvm)
-{
-    // set IP to return address
-    pvm->ip = vm_pop_ip(pvm);
-}
+// static void vm_return(VM* pvm)
+// {
+//     // set IP to return address
+//     pvm->ip = vm_pop_ip(pvm);
+// }
 
-static void vm_push_frame(VM* pvm)
-{
-    // push current frame pointer onto stack
-    vm_push(pvm, MAKE_NUM(pvm->fp));
+// static void vm_push_frame(VM* pvm)
+// {
+//     // push current frame pointer onto stack
+//     vm_push(pvm, MAKE_NUM(pvm->fp));
 
-    // set new frame pointer to current stack pointer
-    pvm->fp = pvm->sp;
-}
+//     // set new frame pointer to current stack pointer
+//     pvm->fp = pvm->sp;
+// }
 
-static void vm_pop_frame(VM* pvm)
-{
-    // pop old frame pointer from stack
-    Object* fp_obj = vm_pop(pvm);
-    pvm->fp = AS_NUM(fp_obj);
-}
+// static void vm_pop_frame(VM* pvm)
+// {
+//     // pop old frame pointer from stack
+//     Object* fp_obj = vm_pop(pvm);
+//     pvm->fp = AS_NUM(fp_obj);
+// }
 
 static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
 {

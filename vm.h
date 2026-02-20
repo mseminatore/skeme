@@ -336,6 +336,9 @@ typedef struct File {
     String* name;           // file name
 } Port;
 
+// forward declaration of VM structure for use in type descriptors
+struct VM;
+
 // Type descriptor for extensible object types
 typedef struct SKTypeDesc {
     const char* name;                           // type name for display, e.g. "fraction"
