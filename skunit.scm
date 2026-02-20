@@ -30,8 +30,9 @@
 )
 
 (define (test-suite str)
-    (display "Testing suite: ")
-    (display str)
+  (display "Testing suite: ")
+  (display str)
+  (newline)
 )
 
 (define (test-end)

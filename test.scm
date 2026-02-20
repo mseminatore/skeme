@@ -364,6 +364,8 @@
 ;----------------------
 ; test float arithmetic
 ;----------------------
+(test-suite "float math")
+
 (test-case "float + float" (= (+ 1.5 2.5) 4.0))
 (test-case "int + float" (= (+ 1 2.5) 3.5))
 (test-case "float - float" (= (- 5.0 2.0) 3.0))
@@ -385,6 +387,8 @@
 ;----------------------
 ; test begin expression
 ;----------------------
+(test-suite "being")
+
 (test-case "begin returns last" (= (begin 1 2 3) 3))
 (test-case "begin single expr" (= (begin 42) 42))
 (test-case "begin with exprs" (= (begin (+ 1 2) (* 3 4)) 12))
@@ -392,6 +396,8 @@
 ;----------------------
 ; test case expression
 ;----------------------
+(test-suite "case")
+
 (test-case "case match first" (= (case 1 ((1) 10) ((2) 20)) 10))
 (test-case "case match second" (= (case 2 ((1) 10) ((2) 20)) 20))
 (test-case "case else" (= (case 3 ((1) 10) ((2) 20) (else 30)) 30))
@@ -401,6 +407,8 @@
 ;----------------------
 ; test closures
 ;----------------------
+(test-suite "closures")
+
 (define (make-adder n) (lambda (x) (+ x n)))
 (define add5 (make-adder 5))
 (define add10 (make-adder 10))
@@ -531,6 +539,8 @@
 ;----------------------
 ; test numeric functions
 ;----------------------
+(test-suite "numeric fns")
+
 (test-case "abs positive" (= (abs 5) 5))
 (test-case "abs negative" (= (abs -5) 5))
 (test-case "abs zero" (= (abs 0) 0))
@@ -562,9 +572,9 @@
 (test-case "lcm" (= (lcm 4 6) 12))
 (test-case "lcm with zero" (= (lcm 0 5) 0))
 
-;----------------------
+;-------------------------
 ; test predicate functions
-;----------------------
+;-------------------------
 (test-case "procedure? native" (procedure? car))
 (test-case "procedure? lambda" (procedure? (lambda (x) x)))
 (test-case "procedure? non-proc" (not (procedure? 42)))
@@ -572,6 +582,8 @@
 ;----------------------
 ; test string functions
 ;----------------------
+(test-suite "string fns")
+
 (test-case "string-length" (= (string-length "hello") 5))
 (test-case "string-length empty" (= (string-length "") 0))
 (test-case "string-ref first" (= (char->integer (string-ref "hello" 0)) (char->integer #\h)))
@@ -584,6 +596,8 @@
 ;----------------------
 ; test list functions
 ;----------------------
+(test-suite "list fns")
+
 (test-case "list-ref first" (= (list-ref (list 10 20 30) 0) 10))
 (test-case "list-ref last" (= (list-ref (list 10 20 30) 2) 30))
 (test-case "list-tail" (equal? (list-tail (list 1 2 3 4 5) 2) (list 3 4 5)))
@@ -612,6 +626,8 @@
 ;----------------------
 ; module import system
 ;----------------------
+(test-suite "math")
+
 (import math)
 
 ; constants
