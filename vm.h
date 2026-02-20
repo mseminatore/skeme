@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// vm.h - definitions for the virtual machine for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #ifndef __VM_H
 #define __VM_H
 

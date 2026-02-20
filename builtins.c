@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// builtins.c - implementation of built-in functions for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -80,6 +86,22 @@ static int sk_gc_stress(SKState* pSK)
     yyinfo(pSK, g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
 //    printf("GC stress mode %s\n", vm.gc_stress ? "enabled" : "disabled");
 
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: gc-stress?
+//-----------------------------------------------
+static int sk_gc_stressp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* bool = MAKE_FALSE();   // default to false
+
+    if (g_bGCStress)
+        bool = MAKE_TRUE();
+
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -2367,7 +2389,7 @@ static SKFuncSet built_in_funcs[] =
     { "globals", sk_globals },
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
-
+    { "gc-stress?", sk_gc_stressp, 0 },
 	{ "symbol?", sk_symbolp, 1 },
     { NULL, NULL }
 };

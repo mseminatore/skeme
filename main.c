@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// main.c - implementation of the main entry point for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

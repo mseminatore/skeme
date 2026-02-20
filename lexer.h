@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// lexer.h - definitions for the lexer for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #ifndef __LEXER_H
 #define __LEXER_H
 

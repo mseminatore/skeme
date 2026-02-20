@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// parser.c - implementation of the parser for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

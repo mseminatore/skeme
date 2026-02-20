@@ -1,6 +1,9 @@
 //--------------------------------------------------------------
-// vm.c
+// vm.c - implementation of the virtual machine for SK
+//
+// Copyright (c) 2025 Mark Seminatore
 //--------------------------------------------------------------
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -17,7 +20,6 @@ int g_bProfile = FALSE;
 #else
     int g_bGCStress = FALSE;
 #endif
-
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))

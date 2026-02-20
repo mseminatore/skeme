@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// parser.h - definitions for the parser for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #ifndef __PARSER_H
 #define __PARSER_H
 
