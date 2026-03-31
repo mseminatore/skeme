@@ -7,15 +7,16 @@ Skeme is a lightweight Scheme-like language interpreter written in portable C.
 It features a single-pass compiler that emits bytecode for a stack-based 
 virtual machine with tail-call optimization, mark-sweep garbage collection, closures, and a REPL.
 
-> Curiosity about how garbage collection works was the primary motivation for 
-> this project. That and my general fascination with programming language 
-> implementation.
+> General curiosity about garbage collection methods was the primary motivation
+> for this project. That, and a hobby of implementing programming languages.
+> And since LISP was the first language to feature garbage collection, choosing
+> a LISP dialect seemed appropriate.
 
 Not having any prior experience implementing GC, or for that matter with 
 functionional programming, I found 
-[Crafting Interpreters] (https://craftinginterpreters.com) by Robert 
-Nystrom to be very helpful. The chapters on garbage collection and closures in
-particular were very good.
+[Crafting Interpreters](https://craftinginterpreters.com) by Robert 
+Nystrom to be very helpful. The chapters on garbage collection and closures, in
+particular, were very good.
 
 ## Features
 
