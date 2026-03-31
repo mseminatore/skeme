@@ -3,9 +3,19 @@
 [![CMake](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml/badge.svg)](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml)
 ![GitHub License](https://img.shields.io/github/license/mseminatore/skeme)
 
-Skeme is a lightweight Scheme-like language interpreter written in C. It features
-a single-pass compiler that emits bytecode for a stack-based virtual machine with
-tail-call optimization, mark-sweep garbage collection, closures, and a REPL.
+Skeme is a lightweight Scheme-like language interpreter written in portable C. 
+It features a single-pass compiler that emits bytecode for a stack-based 
+virtual machine with tail-call optimization, mark-sweep garbage collection, closures, and a REPL.
+
+> Curiosity about how garbage collection works was the primary motivation for 
+> this project. That and my general fascination with programming language 
+> implementation.
+
+Not having any prior experience implementing GC, or for that matter with 
+functionional programming, I found 
+[Crafting Interpreters] (https://craftinginterpreters.com) by Robert 
+Nystrom to be very helpful. The chapters on garbage collection and closures in
+particular were very good.
 
 ## Features
 
