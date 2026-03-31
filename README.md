@@ -20,14 +20,14 @@ particular, were very well done.
 
 This project uses the parsing methods I learned from [Jack Crenshaw](https://compilers.iecc.com/crenshaw/) a long time ago. I've learned a lot from reading many other great books including the *Dragon Book*, *The Little Schemer*, *The Unix Programming Environment*, *Writing Compilers in C*, *Flex and Bison*, *Linkers and Loaders*.
 
-While I don't use my [ParserKit](https://github.com/mseminatore/ParserKit) library for this project, the recursive descent primitives are here. The project does make use of my [hash library](https://github.com/mseminatore/hash) and [test framework](https://github.com/mseminatore/testy)
+While I don't use my [ParserKit](https://github.com/mseminatore/ParserKit) library for this project, the recursive descent primitives are here. The project does make use of my [hash library](https://github.com/mseminatore/hash) and [test framework](https://github.com/mseminatore/testy).
 
 > This language experiment went faster than some. But still, Skeme took about half a year 
 > to complete with some digressions into matrix math and neural network libraries.
 
 ## Main Features
 
-- **R5RS-inspired** — lists, lambdas, closures, tail-call optimization, `cond`/`case`
+- **Scheme R5RS-ish** — lists, lambdas, closures, tail-call optimization, `cond`/`case`
 - **Bytecode VM** — compiled to bytecode (using computed gotos on GCC/Clang, and function pointer tables on MSVC)
 - **Garbage collection** — tri-color mark-sweep GC with automatic thresholds
 - **First-class functions** — lambdas, closures with captured upvalues, higher-order functions
