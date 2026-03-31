@@ -16,7 +16,7 @@ Not having any prior experience implementing GC, or for that matter with
 functionional programming, I found 
 [Crafting Interpreters](https://craftinginterpreters.com) by Robert 
 Nystrom to be very helpful. The chapters on garbage collection and closures, in
-particular, were very good.
+particular, were very well done.
 
 ## Features
 
