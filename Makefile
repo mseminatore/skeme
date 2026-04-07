@@ -24,6 +24,9 @@ $(TARGET): $(OBJS)
 hash/testy/test_main.o: hash/testy/test_main.c hash/testy/test.h
 	cd hash/testy && $(CC) $(CFLAGS) -c test_main.c -o test_main.o
 
+tests/%.o: tests/%.c $(DEPS)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 $(TEST_TARGET): hash/libht.a hash/testy/test_main.o $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS) $(LFLAGS) $(TEST_LIBS)
 
