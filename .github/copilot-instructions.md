@@ -36,5 +36,10 @@ State is managed through `SKState` struct. VM uses open-addressing hashtable (`h
 - Naming: `SK_` prefixes for types, `g_` for globals, `vm_` for VM functions
 - Includes: Local headers first, then system
 
-Focus on VM bytecode generation and GC integration when adding features. Test new builtins in `test.scm`.</content>
+Focus on VM bytecode generation and GC integration when adding features. Test new builtins in `test.scm`.
+
+## Git Workflow
+- **Do NOT** run `git commit`, `git push`, `git add`, or any other git write commands
+- Leave all git operations (staging, committing, pushing) to the user so they can review changes first
+- Read-only git commands (`git status`, `git diff`, `git log`) are allowed for investigation purposes only</content>
 <parameter name="filePath">c:\dev\skeme\.github\copilot-instructions.md

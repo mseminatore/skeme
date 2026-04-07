@@ -517,14 +517,16 @@ yylex01:
         // be sure to null terminate the string
         *p = 0;
 
+        // always populate yylval.word with the matched lexeme
+        strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
+        pSK->yylval.word[BUF_SIZE - 1] = '\0';
+
         int token = isToken(buf);
         if (token)
         {
             return token;
         }
         
-        strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
-        pSK->yylval.word[BUF_SIZE - 1] = '\0';
         return ID;
     }
 

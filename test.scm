@@ -209,6 +209,36 @@
 (test-case "delete file" (delete-file "test.tmp"))
 
 ;----------------------
+; read tests
+;----------------------
+(define rw (open-output-file "read_test.tmp"))
+(write-line "42" rw)
+(write-line "\"hello\"" rw)
+(write-line "(1 2 3)" rw)
+(write-line "#t" rw)
+(write-line "foo" rw)
+(close-file rw)
+
+(define rr (open-input-file "read_test.tmp"))
+(test-case "read number" (= 42 (read rr)))
+(test-case "read string" (equal? "hello" (read rr)))
+(test-case "read list"   (equal? (list 1 2 3) (read rr)))
+(test-case "read bool"   (eq? #t (read rr)))
+(test-case "read symbol" (equal? "foo" (symbol->string (read rr))))
+(close-file rr)
+(delete-file "read_test.tmp")
+
+;----------------------
+; printf tests
+;----------------------
+(test-case "printf basic"     (printf ""))
+(test-case "printf ~a"        (printf "~a" 42))
+(test-case "printf ~s"        (printf "~s" "hi"))
+(test-case "printf ~%"        (printf "~%"))
+(test-case "printf ~~"        (printf "~~"))
+(test-case "printf multi-arg" (printf "~a ~a" 1 2))
+
+;----------------------
 ; conversion operations
 ;----------------------
 (test-case "number->string" (eq? "32" (number->string 32)))

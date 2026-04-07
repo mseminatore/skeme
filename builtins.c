@@ -1760,14 +1760,141 @@ static int sk_write_line(SKState* pSK)
 }
 
 //-----------------------------------------------
+// helper: read one S-expression datum using the lexer.
+// tok is the already-read lookahead token.
+// Returns a Scheme Object* (not pushed onto VM stack).
+// The caller is responsible for GC-protecting the result.
+//-----------------------------------------------
+static Object* sk_read_datum(SKState* pSK, int tok)
+{
+    switch (tok)
+    {
+        case NUMBER:
+            return MAKE_NUM(pSK->yylval.ival);
+
+        case FLOAT:
+            return vm_new_float(&pSK->vm, pSK->yylval.fval);
+
+        case STRING:
+            return vm_new_string(&pSK->vm, pSK->yylval.word);
+
+        case TOKEN_TRUE:
+            return MAKE_TRUE();
+
+        case TOKEN_FALSE:
+            return MAKE_FALSE();
+
+        case NIL:
+            return NULL;  // empty list
+
+        case CHAR:
+            return MAKE_CHAR((char)pSK->yylval.ival);
+
+        case ID:
+        case DEFINE: case LAMBDA: case IF: case ELSE: case COND:
+        case LET: case LET_STAR: case LETREC: case BEGIN: case SET:
+        case LIST: case CASE_TOKEN: case AND: case OR: case LOAD:
+        case IMPORT: case DO: case QUOTE:
+            // keywords and identifiers become symbols
+            return vm_new_symbol(&pSK->vm, pSK->yylval.word);
+
+        case '(': {
+            // read list: accumulate elements on the VM stack, then build cons chain
+            int count = 0;
+            int t;
+            while ((t = yylex(pSK)) != ')' && t != DONE)
+            {
+                Object* elem = sk_read_datum(pSK, t);
+                vm_push(&pSK->vm, elem);  // protect from GC while reading more
+                count++;
+            }
+
+            // build cons list in reverse (stack top = last element)
+            Object* list = NULL;  // nil tail
+            for (int i = 0; i < count; i++)
+            {
+                // protect current list before allocating a new pair
+                vm_push(&pSK->vm, list);
+                Pair* pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+                list = vm_pop(&pSK->vm);      // restore list after potential GC
+                Object* elem = vm_pop(&pSK->vm);  // element (still valid: non-moving GC)
+                pair->car = elem;
+                pair->cdr = list;
+                list = (Object*)pair;
+            }
+            return list;
+        }
+
+        case DONE:
+        default:
+            // Single-char tokens like +, -, *, /, <, >, etc. have their
+            // lexeme in yylval.word — treat them as symbols.
+            if (pSK->yylval.word[0] != '\0')
+                return vm_new_symbol(&pSK->vm, pSK->yylval.word);
+            return NULL;  // EOF or truly unhandled token
+    }
+}
+
+//-----------------------------------------------
 // built-in function: read
 //-----------------------------------------------
 static int sk_read(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'read' not implemented yet");
-    return SK_FALSE;
+    // get arg count
+    Object* raw_n = vm_pop(&pSK->vm);
+    int nargs = AS_NUM(raw_n);
+
+    FILE* fptr;
+    if (nargs == 0)
+    {
+        fptr = pSK->yyin ? pSK->yyin : stdin;
+    }
+    else
+    {
+        Object* port_obj = vm_pop(&pSK->vm);
+        if (!IS_PORT(port_obj))
+        {
+            yyerror(pSK, "read: expected port");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        Port* port = (Port*)port_obj;
+        if (!port->fptr)
+        {
+            yyerror(pSK, "read: port is closed");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        fptr = port->fptr;
+    }
+
+    // save lexer state
+    int saved_lookahead = pSK->lookahead;
+    YYLVAL saved_yylval = pSK->yylval;
+    const char* saved_eval_input = pSK->eval_input;
+    int saved_eval_pos = pSK->eval_pos;
+    FILE* saved_yyin = pSK->yyin;
+
+    // redirect lexer to the target file
+    pSK->yyin = fptr;
+    pSK->eval_input = NULL;
+    pSK->eval_pos = 0;
+    pSK->lookahead = 0;
+
+    int tok = yylex(pSK);
+    Object* result = sk_read_datum(pSK, tok);
+
+    // restore lexer state
+    pSK->lookahead = saved_lookahead;
+    pSK->yylval = saved_yylval;
+    pSK->eval_input = saved_eval_input;
+    pSK->eval_pos = saved_eval_pos;
+    pSK->yyin = saved_yyin;
+
+    vm_push(&pSK->vm, result);
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1832,13 +1959,76 @@ static int sk_string_append(SKState* pSK)
 
 //-----------------------------------------------
 // built-in function: printf
+// Format string uses Scheme-style directives:
+//   ~a  display value (VM_PRINT_PLAIN)
+//   ~s  write value   (VM_PRINT_READABLE)
+//   ~%  newline
+//   ~~  literal tilde
 //-----------------------------------------------
 static int sk_printf(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'printf' not implemented yet");
-    return SK_FALSE;
+    Object* raw_n = vm_pop(&pSK->vm);
+    int n = AS_NUM(raw_n);
+
+    if (n < 1)
+    {
+        yyerror(pSK, "printf: expected at least one argument (format string)");
+        return SK_FALSE;
+    }
+
+    // format string is the first (deepest) arg on stack
+    Object* fmt_obj = vm_peek(&pSK->vm, n - 1);
+    if (!IS_OBJ(fmt_obj) || OBJ_TYPE(fmt_obj) != OBJ_STRING)
+    {
+        yyerror(pSK, "printf: first argument must be a format string");
+        vm_pop_n(&pSK->vm, n);
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    FILE* out = pSK->output_stream ? pSK->output_stream : stdout;
+    const char* fmt = ((String*)fmt_obj)->value;
+    int arg_idx = n - 2;  // peek distance to next substitution arg
+
+    while (*fmt)
+    {
+        if (*fmt == '~' && *(fmt + 1))
+        {
+            fmt++;
+            switch (*fmt)
+            {
+                case 'a':
+                    if (arg_idx >= 0)
+                        vm_print_object(vm_peek(&pSK->vm, arg_idx--), VM_PRINT_PLAIN, out);
+                    break;
+                case 's':
+                    if (arg_idx >= 0)
+                        vm_print_object(vm_peek(&pSK->vm, arg_idx--), VM_PRINT_READABLE, out);
+                    break;
+                case '%':
+                    fputc('\n', out);
+                    break;
+                case '~':
+                    fputc('~', out);
+                    break;
+                default:
+                    fputc('~', out);
+                    fputc(*fmt, out);
+                    break;
+            }
+        }
+        else
+        {
+            fputc(*fmt, out);
+        }
+        fmt++;
+    }
+
+    vm_pop_n(&pSK->vm, n);
+    vm_push(&pSK->vm, MAKE_TRUE());
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -2277,7 +2467,7 @@ static SKFuncSet built_in_funcs[] =
     { "open-output-file", sk_open_output_file, 1 },
     { "close-file", sk_close_file, 1 },
     { "delete-file", sk_delete_file, 1 },
-    { "read", sk_read, 1 },
+    { "read", sk_read, SK_ARITY_ZERO_OR_ONE },
     { "read-line", sk_read_line, 1 },
     { "read-char", sk_read_char, SK_ARITY_ZERO_OR_ONE },
     { "write-char", sk_write_char, SK_ARITY_ONE_OR_MORE },
