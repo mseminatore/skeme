@@ -3,29 +3,24 @@
 [![CMake](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml/badge.svg)](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml)
 ![GitHub License](https://img.shields.io/github/license/mseminatore/skeme)
 
+## What is Skeme
+
 Skeme is a lightweight Scheme-like language interpreter written in portable C. 
 It features a single-pass compiler that emits bytecode for a stack-based 
 virtual machine with tail-call optimization, mark-sweep garbage collection, closures, and a REPL.
 
 > General curiosity about garbage collection methods was the primary motivation
-> for this project. That, and a hobby of implementing programming languages.
-> And since LISP was the first language to feature garbage collection, choosing
-> a LISP dialect seemed appropriate.
+> for this project. Since LISP was the first language to feature garbage collection, 
+> implementing a popular LISP dialect seemed like a good test case.
 
-Not having any prior experience implementing GC, or for that matter with 
-functionional programming, I found 
+Not having any prior experience implementing garbage collectors, or with 
+closures or functional programming, I found 
 [Crafting Interpreters](https://craftinginterpreters.com) by Robert 
-Nystrom to be very helpful. The chapters on garbage collection and closures, in
-particular, were very well done.
+Nystrom very helpful.
 
-This project uses the parsing methods I learned from [Jack Crenshaw](https://compilers.iecc.com/crenshaw/) a long time ago. I've learned a lot from reading many other great books including the *Dragon Book*, *The Little Schemer*, *The Unix Programming Environment*, *Writing Compilers in C*, *Flex and Bison*, *Linkers and Loaders*.
+This project uses many of the parsing methods I learned from [Jack Crenshaw](https://compilers.iecc.com/crenshaw/) a long time ago. And while I don't explicitly use my [ParserKit](https://github.com/mseminatore/ParserKit) library for this project, the same recursive descent primitives are here. The project does use my [hash library](https://github.com/mseminatore/hash) and [test framework](https://github.com/mseminatore/testy).
 
-While I don't use my [ParserKit](https://github.com/mseminatore/ParserKit) library for this project, the recursive descent primitives are here. The project does make use of my [hash library](https://github.com/mseminatore/hash) and [test framework](https://github.com/mseminatore/testy).
-
-> This language experiment went faster than some. But still, Skeme took about half a year 
-> to complete with some digressions into matrix math and neural network libraries.
-
-## Main Features
+## Main Features of Skeme
 
 - **Scheme R5RS-ish** — lists, lambdas, closures, tail-call optimization, `cond`/`case`
 - **Bytecode VM** — compiled to bytecode (using computed gotos on GCC/Clang, and function pointer tables on MSVC)
@@ -46,7 +41,7 @@ cd skeme
 git submodule update --init --recursive
 ```
 
-## Building
+## Building Skeme
 
 ### CMake (recommended)
 
@@ -105,7 +100,7 @@ Use `load` at the top of your script to pull in additional definitions:
 
 ## Standard Library
 
-The file `stdlib.scm` provides common utility functions on top of the builtins:
+The file `stdlib.scm` provides common utility functions on top of the native builtins:
 
 | Function    | Description                                 |
 |-------------|---------------------------------------------|
