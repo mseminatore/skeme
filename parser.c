@@ -356,6 +356,38 @@ static int formals(SKState* pSK, Procedure* proc)
 //  <sequence> ==> <command>* <expression>
 //  <command> ==> <expression>
 //-----------------------------------------------
+//-----------------------------------------------
+// Is the CALL/ICALL at call_offset in tail position?
+//
+// It is only if, once the call returns, control reaches the end of the
+// function body (where OP_RET is emitted) without executing anything else.
+// Unconditional branches (OP_BRA, which if/cond use to jump past the other
+// arms) are followed. Anything else after the call - a constant, a variable
+// load, another call - means the call's value is discarded or consumed, so
+// turning it into a TAILCALL would drop the caller's frame too early.
+//-----------------------------------------------
+static int call_is_in_tail_position(CodeChunk* chunk, int call_offset)
+{
+    VMCode_t op = chunk->code[call_offset];
+    long p = call_offset + (op == OP_CALL ? 3 : 2);     // CALL: op,fn,nargs  ICALL: op,nargs
+    long end = (long)chunk->count;
+    int hops = 0;
+
+    while (p < end && hops++ < 10000)
+    {
+        if (chunk->code[p] == OP_NOP)                   // harmless label marker (and/or end)
+        {
+            p++;
+            continue;
+        }
+        if (chunk->code[p] != OP_BRA || p + 1 >= end)
+            return 0;
+        p = (p + 1) + (long)chunk->code[p + 1];         // branch target = operand address + operand
+    }
+
+    return p == end;
+}
+
 static int local_body(SKState* pSK)
 {
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
@@ -380,8 +412,10 @@ static int local_body(SKState* pSK)
         expr(pSK);
     }
     
-    // TCO: Patch the last CALL to TAILCALL if there was one
-    if (pSK->last_call_offset >= 0 && pSK->last_call_chunk != NULL)
+    // TCO: Patch the last CALL to TAILCALL if there was one, and only if it is
+    // really in tail position (see call_is_in_tail_position)
+    if (pSK->last_call_offset >= 0 && pSK->last_call_chunk != NULL &&
+        call_is_in_tail_position(pSK->last_call_chunk, pSK->last_call_offset))
     {
         VMCode_t opcode = pSK->last_call_chunk->code[pSK->last_call_offset];
         if (opcode == OP_CALL)
@@ -812,19 +846,46 @@ static void quote_datum(SKState* pSK)
     }
     else if (LOOKAHEAD == QUOTE)
     {
-        // nested quote: '('a) inside a quoted list
-        match(pSK, QUOTE);
-        quote_datum(pSK);
-        // wrap in (quote x) → build a 2-element list: (symbol:quote, datum)
-        vm_emit_symbol(&pSK->vm, "quote");
-        vm_emit(&pSK->vm, OP_LIST);
-        vm_emit(&pSK->vm, 2);
+        if (strcmp(pSK->yylval.word, "'") == 0)
+        {
+            // nested apostrophe form, '('a) inside a quoted list: build (quote datum).
+            // OP_LIST takes its elements in push order, so push the symbol first.
+            match(pSK, QUOTE);
+            vm_emit_symbol(&pSK->vm, "quote");
+            quote_datum(pSK);
+            vm_emit(&pSK->vm, OP_LIST);
+            vm_emit(&pSK->vm, 2);
+        }
+        else
+        {
+            // the word quote inside quoted data is just a symbol: '(quote x)
+            vm_emit_symbol(&pSK->vm, "quote");
+            match(pSK, QUOTE);
+        }
     }
     else if (LOOKAHEAD == ID || LOOKAHEAD == '+' || LOOKAHEAD == '-' ||
              LOOKAHEAD == '*' || LOOKAHEAD == '/' || LOOKAHEAD == '<' ||
              LOOKAHEAD == '>' || LOOKAHEAD == '=')
     {
         // identifiers and operators become symbols
+        vm_emit_symbol(&pSK->vm, pSK->yylval.word);
+        match(pSK, LOOKAHEAD);
+    }
+    else if (LOOKAHEAD == FLOAT)
+    {
+        Object* flt = vm_new_float(&pSK->vm, pSK->yylval.fval);
+        vm_emit_push_object(&pSK->vm, flt);
+        match(pSK, FLOAT);
+    }
+    else if (LOOKAHEAD == DEFINE || LOOKAHEAD == LAMBDA || LOOKAHEAD == LIST ||
+             LOOKAHEAD == SET || LOOKAHEAD == IF || LOOKAHEAD == AND ||
+             LOOKAHEAD == OR || LOOKAHEAD == COND || LOOKAHEAD == ELSE ||
+             LOOKAHEAD == LOAD || LOOKAHEAD == BEGIN || LOOKAHEAD == CASE_TOKEN ||
+             LOOKAHEAD == IMPORT || LOOKAHEAD == LET || LOOKAHEAD == LET_STAR ||
+             LOOKAHEAD == LETREC || LOOKAHEAD == DO)
+    {
+        // language keywords are ordinary symbols inside quoted data,
+        // e.g. '(if a b) or '(define (f x) x)
         vm_emit_symbol(&pSK->vm, pSK->yylval.word);
         match(pSK, LOOKAHEAD);
     }
@@ -1579,23 +1640,29 @@ static int and_expr(SKState* pSK)
 
     while (LOOKAHEAD != DONE && LOOKAHEAD != ')')
     {
-        vm_emit(&pSK->vm, OP_POP);       // pop the duplicated value
-        
+        vm_emit(&pSK->vm, OP_POP);       // pop the previous value
+
         expr(pSK);
 
+        // The last term needs no test: its value is the value of the whole
+        // expression. Emitting nothing after it also keeps a call in this
+        // position in tail position.
+        if (LOOKAHEAD == DONE || LOOKAHEAD == ')')
+            break;
+
         vm_emit(&pSK->vm, OP_DUP);       // duplicate the value for testing
-		vm_emit(&pSK->vm, OP_BNT);       // if any term is false, branch to end
+        vm_emit(&pSK->vm, OP_BNT);       // if any term is false, branch to end
 
         addr_list[terms++] = vm_emit(&pSK->vm, 0);      // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
         {
             yyerror(pSK, "too many terms in 'and' expression");
             break;
-		}
+        }
     }
 
-	// return last expr value
-	vm_emit(&pSK->vm, OP_BRA);
+    // return last expr value
+    vm_emit(&pSK->vm, OP_BRA);
     int end_addr = vm_emit(&pSK->vm, 0);     // reserve space for end address
 
     // backpatch branch addresses
@@ -1620,8 +1687,8 @@ static int or_expr(SKState* pSK)
 {
     PARSE_LOG("or_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
     int addr_list[MAX_REL_CLAUSES];
-
     int terms = 0;
+    int last_value_left = 0;
 
     match(pSK, OR);
 
@@ -1629,12 +1696,21 @@ static int or_expr(SKState* pSK)
 
     while (LOOKAHEAD != DONE && LOOKAHEAD != ')')
     {
-        vm_emit(&pSK->vm, OP_POP);       // pop the duplicated value
-        
+        vm_emit(&pSK->vm, OP_POP);       // pop the previous value
+
         expr(pSK);
-        
+
+        // The last term needs no test: its value is the value of the whole
+        // expression. Emitting nothing after it also keeps a call in this
+        // position in tail position.
+        if (LOOKAHEAD == DONE || LOOKAHEAD == ')')
+        {
+            last_value_left = 1;
+            break;
+        }
+
         vm_emit(&pSK->vm, OP_DUP);       // duplicate the value for testing
-		vm_emit(&pSK->vm, OP_BNF);       // if any term is not false, branch to end
+        vm_emit(&pSK->vm, OP_BNF);       // if any term is not false, branch to end
 
         addr_list[terms++] = vm_emit(&pSK->vm, 0);  // reserve space for branch address
         if (terms >= MAX_REL_CLAUSES)
@@ -1644,8 +1720,11 @@ static int or_expr(SKState* pSK)
         }
     }
 
-    vm_emit(&pSK->vm, OP_POP);      // discard the duplicated value
-    vm_emit(&pSK->vm, OP_FALSE);
+    if (!last_value_left)
+    {
+        vm_emit(&pSK->vm, OP_POP);      // (or) with no terms: discard the dummy
+        vm_emit(&pSK->vm, OP_FALSE);    // and yield #f
+    }
 
     // backpatch branch addresses
     for (int i = 0; i < terms; i++)

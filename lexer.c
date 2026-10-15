@@ -398,6 +398,7 @@ yylex01:
 
         // Quote syntax: '( starts a quoted list, 'identifier quotes a symbol
         ungetch(pSK, c);
+        strcpy(pSK->yylval.word, "'");     // marks the apostrophe form, as opposed to the word quote
         return QUOTE;
     }
 

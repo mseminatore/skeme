@@ -135,6 +135,9 @@ static int sk_eqp(SKState *pSK)
 
     if (obj1 == obj2)
         bool = MAKE_TRUE();
+    else if (obj1 && obj2 && IS_SYMBOL(obj1) && IS_SYMBOL(obj2) &&
+             strcmp(((String*)obj1)->value, ((String*)obj2)->value) == 0)
+        bool = MAKE_TRUE();   // symbols are not interned, so compare by name
 
     vm_push(&pSK->vm, bool);
     return SK_TRUE;
@@ -157,6 +160,14 @@ static int sk_equalp(SKState* pSK)
         bool = MAKE_TRUE();
         vm_push(&pSK->vm, bool);
 		return SK_TRUE;
+    }
+
+    // symbols are not interned, so compare them by name
+    if (obj1 && obj2 && IS_SYMBOL(obj1) && IS_SYMBOL(obj2) &&
+        strcmp(((String*)obj1)->value, ((String*)obj2)->value) == 0)
+    {
+        vm_push(&pSK->vm, MAKE_TRUE());
+        return SK_TRUE;
     }
 
 	// check for string equality

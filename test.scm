@@ -757,6 +757,59 @@
                  (fact 1 (* fact i)))
                 ((> i 5) fact))))
 
+;----------------------
+; regression tests: symbol equality, quoted data, and call/return handling
+;----------------------
+(test-suite "regressions")
+
+; symbols are compared by name
+(test-case "eq? same symbol" (eq? 'a 'a))
+(test-case "eq? different symbols" (not (eq? 'a 'b)))
+(test-case "equal? lists of symbols" (equal? '(a b) '(a b)))
+
+; language keywords and floats are ordinary data inside quote
+(test-case "quoted keyword is a symbol" (equal? (car '(if a b)) (string->symbol "if")))
+(test-case "quoted define form" (equal? (length '(define (f x) (if x 1 2))) 3))
+(test-case "quoted float" (= (car (cdr '(a 4.5))) 4.5))
+
+; a nested quote form keeps its order: (quote b), not (b quote)
+(test-case "nested quote word" (equal? (car (cdr '(a (quote b)))) '(quote b)))
+(test-case "nested quote apostrophe" (equal? (car (cdr '(a 'b))) '(quote b)))
+
+; a call followed by more expressions is not a tail call
+(define (reg-id x) x)
+(define (reg-f y) (reg-id y) 7)
+(test-case "call then constant" (= (reg-f 3) 7))
+(test-case "call then constant in expression" (= (+ 1 (reg-f 3)) 8))
+
+(define (reg-let-f y) (let ((e 1)) (reg-id y) e))
+(test-case "call then variable in let" (= (reg-let-f 3) 1))
+
+(define (reg-pair) (let ((e (cons 1 2))) (set-cdr! e 5) e))
+(test-case "set-cdr! on let variable" (= (cdr (reg-pair)) 5))
+
+(define (reg-no x) #f)
+(define (reg-if x) (if (reg-no x) 1 2))
+(test-case "call in if condition" (= (reg-if 0) 2))
+
+(define (reg-and) (and (reg-id 9) 5))
+(test-case "and: call in non-final position" (= (reg-and) 5))
+
+; display pushes nothing, so repeated calls must not unbalance the stack
+(define (reg-d x) (display "") 1)
+(test-case "display in non-final position" (= (+ (reg-d 1) (+ (reg-d 2) (reg-d 3))) 3))
+
+; and / or values and tail calls through them
+(test-case "and returns last value" (= (and 1 2 3) 3))
+(test-case "and stops at false" (not (and 1 #f 3)))
+(test-case "or returns first true" (= (or #f #f 3) 3))
+(test-case "or of all false" (not (or #f #f)))
+
+(define (reg-and-loop i) (and #t (if (< i 100000) (reg-and-loop (+ i 1)) i)))
+(test-case "tail call through and" (= (reg-and-loop 0) 100000))
+(define (reg-or-loop i) (or #f (if (< i 100000) (reg-or-loop (+ i 1)) i)))
+(test-case "tail call through or" (= (reg-or-loop 0) 100000))
+
 ; report test results
 ;----------------------
 (test-end)

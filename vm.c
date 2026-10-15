@@ -819,8 +819,12 @@ static VMExecResult op_load(VM* pvm) {
 }
 static VMExecResult op_ret(VM* pvm) {
     Object* ret_val = vm_pop(pvm);
-    int arity = AS_NUM(vm_peek(pvm, 0));
-    int saved_fp = AS_NUM(vm_peek(pvm, 1));
+    // Read the frame header relative to fp, not the top of the stack. The values
+    // of non-final body expressions (and natives such as display, which push
+    // nothing) can leave a different number of temporaries above the frame, so
+    // the top of the stack is not reliably the arity slot.
+    int arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+    int saved_fp = AS_NUM(pvm->stack[pvm->fp - 2]);
     VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
     pvm->sp = pvm->fp - 3 - arity;
     pvm->fp = saved_fp;

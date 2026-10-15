@@ -36,7 +36,11 @@ typedef enum {
 // uncomment to enable VM debug logging
  //#define VM_DEBUG_LOG
 
+// Number of stack slots. Override at build time for deeper recursion, e.g.
+//   make CFLAGS="-I. -I./hash/testy -O2 -DVM_STACK_SIZE=65536"
+#ifndef VM_STACK_SIZE
 #define VM_STACK_SIZE 1024
+#endif
 #define VM_FREE_LIST 128
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
