@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// main.c - implementation of the main entry point for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,8 +19,8 @@ SKState sk;
 int g_bDebug = FALSE;
 const char * g_szOutputFilename = "a.out";
 int yydebug = FALSE;
-int g_bSymbols = FALSE;
 int g_bInteractive = FALSE;
+extern int g_bProfile;
 
 CodeChunk repl_chunk;
 
@@ -23,13 +29,14 @@ CodeChunk repl_chunk;
 //--------------------------------
 void usage()
 {
-    printf("\nUsage: %s [-d] [-i] [-t] <inputfile>\n", APP_NAME);
-    printf("  -d : enable parser debug output\n");
-    printf("  -h : display usage\n");
-    printf("  -i : take input from stdin\n");
-    printf("  -p : parser logging\n");
-    printf("  -t : generate symbol table\n");
-    printf("  -v : enable verbose output\n");
+    printf("\nUsage: %s [-d] [-i] [-t] [-profile] <inputfile>\n", APP_NAME);
+    printf("  -d       : enable parser debug output\n");
+    printf("  -h       : display usage\n");
+    printf("  -i       : take input from stdin\n");
+    printf("  -p       : parser logging\n");
+    printf("  -profile : enable VM profiling\n");
+    printf("  -t       : generate symbol table\n");
+    printf("  -v       : enable verbose output\n");
     exit(0);
 }
 
@@ -42,6 +49,12 @@ int getopt(SKState* pSK, int n, char *args[])
     
 	for (i = 1; args[i] && args[i][0] == '-'; i++)
 	{
+        // multi-char flags
+        if (strcmp(args[i], "-profile") == 0) {
+            g_bProfile = TRUE;
+            continue;
+        }
+
         // flag for enabling verbose logging
 		if (args[i][1] == 'v')
 			g_bDebug = TRUE;
@@ -69,9 +82,7 @@ int getopt(SKState* pSK, int n, char *args[])
         if (args[i][1] == 'i')
             g_bInteractive = TRUE;
 
-        // flag for symbols
-        if (args[i][1] == 't')
-            g_bSymbols = TRUE;
+        // flag for symbols (removed: symbol table no longer exists)
 	}
 
 	return i;
@@ -169,10 +180,9 @@ int main(int argc, char *argv[])
 
     vm_free_chunk(&sk.vm, &repl_chunk);
 
-    if (g_bSymbols)
-        dump_symbols(&sk);
-
     LOG("max stack size: %d, max call depth: %d\n", sk.vm.max_stack_size, sk.vm.max_call_depth);
+
+    vm_print_profile(&sk.vm);
 
     LOG("Shutting down...");
     sk_shutdown(&sk);

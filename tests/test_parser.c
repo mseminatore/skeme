@@ -20,16 +20,12 @@ void test_parser(int argc, char *argv[]) {
         int result = sk_init(&sk, 0, NULL);
         // sk_init returns SK_TRUE (non-zero) on success
         TEST(result != 0);
-        TEST(sk.symbols != NULL);
-        TEST(sk.symbol_count >= 0);
-        TEST(sk.symbol_capacity > 0);
         TEST(sk.file_stack != NULL);
         TEST(sk.file_stack_capacity > 0);
         TEST(sk.err_count == 0);
         TEST(sk.warn_count == 0);
         
         sk_shutdown(&sk);
-        TEST(sk.symbols == NULL);
         TEST(sk.file_stack == NULL);
     }
     

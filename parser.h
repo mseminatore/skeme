@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// parser.h - definitions for the parser for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #ifndef __PARSER_H
 #define __PARSER_H
 
@@ -27,7 +33,7 @@ typedef enum {
 // constant decls
 //-----------------
 #define APP_NAME "skeme"
-#define APP_VER "0.1"
+#define APP_VER "0.5"
 
 // remove this later
 #define YYDEBUG 1
@@ -64,16 +70,14 @@ typedef struct
 typedef struct {
     char name[64];       // variable name (for dedup)
     int scope_depth;     // how many scopes out (1 = immediate parent)
-    int local_index;     // slot index in the enclosing scope
+    int local_index;     // slot index in the enclosing scope's locals or upvalues
+    int is_upvalue;      // if true, local_index refers to parent's upvalue (not local)
 } ParseUpvalue;
 
 // skeme state structure
 struct SKState
 {
     VM vm;                          // the virtual machine
-    Symbol_t* symbols;              // the symbol table. Note: dynamic array that should go away later
-    int symbol_count;               // number of symbols in table
-    int symbol_capacity;            // capacity of symbol table
     FileNode* file_stack;           // stack of input files
     int file_stack_ptr;             // current file stack pointer
     int file_stack_capacity;        // capacity of file stack
@@ -84,6 +88,10 @@ struct SKState
     FILE* error_stream;             // error output stream
     FILE* output_stream;            // general output stream
     FILE *yyin;                     // current input file pointer
+
+    // String input for eval (when non-NULL, getch reads from this)
+    const char* eval_input;         // string buffer for eval
+    int eval_pos;                   // current position in eval_input
 
     int indent_level;               // current parse indent level
     int expr_level;                 // current expression nesting level
@@ -107,7 +115,6 @@ struct SKState
 // function decls
 //-----------------
 int yyparse(SKState *pSK);
-void dump_symbols(SKState* pSK);
 void yyerror(SKState* pSK, const char *s);
 void yywarning(SKState* pSK, const char *s);
 void yyinfo(SKState* pSK, const char *s);

@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// lexer.c - implementation of the lexer for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -27,8 +33,12 @@ Tokens tokens[] =
     {"load",    LOAD },
     { "begin",   BEGIN },
     { "case",    CASE_TOKEN },
-    // { "let",     LET },
-    // { "quote",   QUOTE },
+    { "import",  IMPORT },
+    { "let",     LET },
+    { "let*",    LET_STAR },
+    { "letrec",  LETREC },
+    { "quote",   QUOTE },
+    { "do",      DO },
     // { "eval",    EVAL },
     { NULL, 0}
 };
@@ -146,65 +156,17 @@ int pop_file_stack(SKState* pSK)
     return TRUE;
 }
 
-//------------------------
-// lookup a symbol
-//------------------------
-int lookup_symbol(SKState* pSK, const char *name)
-{
-    if (!pSK) return -1;
-
-    for (int i = 0; i < pSK->symbol_count; i++)
-    {
-        if (!sk_strcasecmp(name, pSK->symbols[i].name))
-            return i;
-    }
-
-    // symbol not found!
-    return -1;
-}
-
-//-----------------------------------------
-// add a new symbols, return symbol number
-//-----------------------------------------
-int add_symbol(SKState* pSK, const char *name, int lineno)
-{
-    if (!pSK) return -1;
-
-    // grow symbol table if needed
-    if (pSK->symbol_count >= pSK->symbol_capacity)
-    {
-        int new_capacity = pSK->symbol_capacity * 2;
-        Symbol_t* new_symbols = (Symbol_t*)realloc(pSK->symbols, new_capacity * sizeof(Symbol_t));
-        if (!new_symbols)
-        {
-            yyerror(pSK, "failed to grow symbol table!");
-            return -1;
-        }
-        pSK->symbols = new_symbols;
-        pSK->symbol_capacity = new_capacity;
-    }
-
-    // error if symbol already exists
-    if (lookup_symbol(pSK, name) > 0)
-        return -1;
-
-    pSK->symbols[pSK->symbol_count].name      = sk_strdup(name);
-    pSK->symbols[pSK->symbol_count].lineno    = (pSK->file_stack_ptr >= 0) ? CURRENT_LINENO : 0;
-    const char* current_file = (pSK->file_stack_ptr >= 0) ? CURRENT_FILE : NULL;
-    pSK->symbols[pSK->symbol_count].filename  = current_file ? sk_strdup(current_file) : sk_strdup(SK_NONAME_FILE);
-    pSK->symbols[pSK->symbol_count].type      = ST_UNDEF;
-    pSK->symbols[pSK->symbol_count].value     = -1;
-    pSK->symbols[pSK->symbol_count].refd      = 0;
-
-    pSK->symbol_count++;
-    return pSK->symbol_count - 1;
-}
-
 //-----------------------------------
 // next next char from input stream
 //-----------------------------------
 int getch(SKState* pSK)
 {
+    if (pSK->eval_input) {
+        char c = pSK->eval_input[pSK->eval_pos];
+        if (c == '\0') return EOF;
+        pSK->eval_pos++;
+        return (unsigned char)c;
+    }
     return fgetc(pSK->yyin);
 }
 
@@ -213,6 +175,10 @@ int getch(SKState* pSK)
 //-----------------------------------
 int ungetch(SKState* pSK, int c)
 {
+    if (pSK->eval_input) {
+        if (pSK->eval_pos > 0) pSK->eval_pos--;
+        return c;
+    }
     return ungetc(c, pSK->yyin);
 }
 
@@ -377,20 +343,8 @@ int getString(SKState* pSK, int delim)
     
     *cptr = 0;
 
-    // lookup symbol and return if exists
-    int sym_num = lookup_symbol(pSK, buf);
-    if (sym_num != -1)
-    {
-        pSK->yylval.symbol = sym_num;
-        // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
-        return STRING;
-    }
-
-    sym_num = add_symbol(pSK, buf, pSK->lineno);
-
-    pSK->yylval.symbol = sym_num;
-    //strcpy(pSK->yylval.word, buf);
-    // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
+    strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
+    pSK->yylval.word[BUF_SIZE - 1] = '\0';
 
     return STRING;
 }
@@ -409,6 +363,10 @@ yylex01:
     // see if input stack is empty
     if (c == EOF)
     {
+        // In eval/string mode, just return DONE — don't touch file stack
+        if (pSK->eval_input)
+            return DONE;
+
         if (pop_file_stack(pSK))
         {
             goto yylex01;
@@ -424,22 +382,23 @@ yylex01:
         goto yylex01;
     }
 
-    // look for char literals
+    // look for char literals and quote syntax
     if (c == '\'')
     {
         c = getch(pSK);
         if (c == '(' && follow(pSK, ')', TRUE, FALSE))
         {
-            return NIL;
+            return NIL;     // '() is empty list
         }
         else if (follow(pSK, '\'', TRUE, FALSE))
         {
             pSK->yylval.ival = backslash(pSK, c);
-            return CHAR;
+            return CHAR;    // 'x' is character literal
         }
 
+        // Quote syntax: '( starts a quoted list, 'identifier quotes a symbol
         ungetch(pSK, c);
-        return getString(pSK, '\'');
+        return QUOTE;
     }
 
     // look for empty lists
@@ -550,7 +509,7 @@ yylex01:
 
         do {
             *p++ = c;
-        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || isalnum(c)));
+        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || c == '*' || isalnum(c)));
         
         // put back the last character!
         ungetch(pSK, c);
@@ -558,26 +517,16 @@ yylex01:
         // be sure to null terminate the string
         *p = 0;
 
+        // always populate yylval.word with the matched lexeme
+        strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
+        pSK->yylval.word[BUF_SIZE - 1] = '\0';
+
         int token = isToken(buf);
         if (token)
         {
             return token;
         }
         
-        // lookup symbol and return if exists
-        int sym_num = lookup_symbol(pSK, buf);
-        if (sym_num == -1)
-        {
-            sym_num = add_symbol(pSK, buf, pSK->lineno);
-            // LOG("New symbol: '%s' (index = %d)\n", buf, sym_num);
-        }
-        else
-        {
-            // LOG("Existing symbol ref'd: '%s' (index = %d)\n", buf, sym_num);
-        }
-
-        pSK->yylval.symbol = sym_num;
-        strcpy(pSK->yylval.word, buf);
         return ID;
     }
 

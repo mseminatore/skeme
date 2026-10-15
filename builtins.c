@@ -1,7 +1,14 @@
+//---------------------------------------------------------
+// builtins.c - implementation of built-in functions for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 #include <assert.h>
 #include <ctype.h>
 #include "sk.h"
@@ -79,6 +86,22 @@ static int sk_gc_stress(SKState* pSK)
     yyinfo(pSK, g_bGCStress ? "GC stress testing enabled" : "GC stress testing disabled");
 //    printf("GC stress mode %s\n", vm.gc_stress ? "enabled" : "disabled");
 
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: gc-stress?
+//-----------------------------------------------
+static int sk_gc_stressp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* bool = MAKE_FALSE();   // default to false
+
+    if (g_bGCStress)
+        bool = MAKE_TRUE();
+
+    vm_push(&pSK->vm, bool);
     return SK_TRUE;
 }
 
@@ -423,6 +446,8 @@ static int sk_exit(SKState* pSK)
 
     printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
 
+    vm_print_profile(&pSK->vm);
+
     exit(exit_code);
     return SK_TRUE;
 }
@@ -507,6 +532,49 @@ static int sk_stringp(SKState* pSK)
         bool = MAKE_TRUE();
 
     vm_push(&pSK->vm, bool);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: symbol?
+//-----------------------------------------------
+static int sk_symbolp(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, IS_SYMBOL(obj) ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: symbol->string
+//-----------------------------------------------
+static int sk_symbol_to_string(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_SYMBOL(obj)) {
+        yyerror(pSK, "symbol->string: expected a symbol");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, vm_new_string(&pSK->vm, ((String*)obj)->value));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string->symbol
+//-----------------------------------------------
+static int sk_string_to_symbol(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "string->symbol: expected a string");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, vm_new_symbol(&pSK->vm, ((String*)obj)->value));
     return SK_TRUE;
 }
 
@@ -1369,8 +1437,22 @@ static int sk_eval(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'eval' not implemented yet");
-    return SK_FALSE;
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "eval: expected a string argument");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    int sp_before = pSK->vm.sp;
+    const char* code = ((String*)obj)->value;
+    sk_eval_string(pSK, code);
+
+    // If eval produced no result (e.g. define), push false as void
+    if (pSK->vm.sp == sp_before)
+        vm_push(&pSK->vm, MAKE_FALSE());
+
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1678,14 +1760,141 @@ static int sk_write_line(SKState* pSK)
 }
 
 //-----------------------------------------------
+// helper: read one S-expression datum using the lexer.
+// tok is the already-read lookahead token.
+// Returns a Scheme Object* (not pushed onto VM stack).
+// The caller is responsible for GC-protecting the result.
+//-----------------------------------------------
+static Object* sk_read_datum(SKState* pSK, int tok)
+{
+    switch (tok)
+    {
+        case NUMBER:
+            return MAKE_NUM(pSK->yylval.ival);
+
+        case FLOAT:
+            return vm_new_float(&pSK->vm, pSK->yylval.fval);
+
+        case STRING:
+            return vm_new_string(&pSK->vm, pSK->yylval.word);
+
+        case TOKEN_TRUE:
+            return MAKE_TRUE();
+
+        case TOKEN_FALSE:
+            return MAKE_FALSE();
+
+        case NIL:
+            return NULL;  // empty list
+
+        case CHAR:
+            return MAKE_CHAR((char)pSK->yylval.ival);
+
+        case ID:
+        case DEFINE: case LAMBDA: case IF: case ELSE: case COND:
+        case LET: case LET_STAR: case LETREC: case BEGIN: case SET:
+        case LIST: case CASE_TOKEN: case AND: case OR: case LOAD:
+        case IMPORT: case DO: case QUOTE:
+            // keywords and identifiers become symbols
+            return vm_new_symbol(&pSK->vm, pSK->yylval.word);
+
+        case '(': {
+            // read list: accumulate elements on the VM stack, then build cons chain
+            int count = 0;
+            int t;
+            while ((t = yylex(pSK)) != ')' && t != DONE)
+            {
+                Object* elem = sk_read_datum(pSK, t);
+                vm_push(&pSK->vm, elem);  // protect from GC while reading more
+                count++;
+            }
+
+            // build cons list in reverse (stack top = last element)
+            Object* list = NULL;  // nil tail
+            for (int i = 0; i < count; i++)
+            {
+                // protect current list before allocating a new pair
+                vm_push(&pSK->vm, list);
+                Pair* pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+                list = vm_pop(&pSK->vm);      // restore list after potential GC
+                Object* elem = vm_pop(&pSK->vm);  // element (still valid: non-moving GC)
+                pair->car = elem;
+                pair->cdr = list;
+                list = (Object*)pair;
+            }
+            return list;
+        }
+
+        case DONE:
+        default:
+            // Single-char tokens like +, -, *, /, <, >, etc. have their
+            // lexeme in yylval.word — treat them as symbols.
+            if (pSK->yylval.word[0] != '\0')
+                return vm_new_symbol(&pSK->vm, pSK->yylval.word);
+            return NULL;  // EOF or truly unhandled token
+    }
+}
+
+//-----------------------------------------------
 // built-in function: read
 //-----------------------------------------------
 static int sk_read(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'read' not implemented yet");
-    return SK_FALSE;
+    // get arg count
+    Object* raw_n = vm_pop(&pSK->vm);
+    int nargs = AS_NUM(raw_n);
+
+    FILE* fptr;
+    if (nargs == 0)
+    {
+        fptr = pSK->yyin ? pSK->yyin : stdin;
+    }
+    else
+    {
+        Object* port_obj = vm_pop(&pSK->vm);
+        if (!IS_PORT(port_obj))
+        {
+            yyerror(pSK, "read: expected port");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        Port* port = (Port*)port_obj;
+        if (!port->fptr)
+        {
+            yyerror(pSK, "read: port is closed");
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+        fptr = port->fptr;
+    }
+
+    // save lexer state
+    int saved_lookahead = pSK->lookahead;
+    YYLVAL saved_yylval = pSK->yylval;
+    const char* saved_eval_input = pSK->eval_input;
+    int saved_eval_pos = pSK->eval_pos;
+    FILE* saved_yyin = pSK->yyin;
+
+    // redirect lexer to the target file
+    pSK->yyin = fptr;
+    pSK->eval_input = NULL;
+    pSK->eval_pos = 0;
+    pSK->lookahead = 0;
+
+    int tok = yylex(pSK);
+    Object* result = sk_read_datum(pSK, tok);
+
+    // restore lexer state
+    pSK->lookahead = saved_lookahead;
+    pSK->yylval = saved_yylval;
+    pSK->eval_input = saved_eval_input;
+    pSK->eval_pos = saved_eval_pos;
+    pSK->yyin = saved_yyin;
+
+    vm_push(&pSK->vm, result);
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1750,13 +1959,76 @@ static int sk_string_append(SKState* pSK)
 
 //-----------------------------------------------
 // built-in function: printf
+// Format string uses Scheme-style directives:
+//   ~a  display value (VM_PRINT_PLAIN)
+//   ~s  write value   (VM_PRINT_READABLE)
+//   ~%  newline
+//   ~~  literal tilde
 //-----------------------------------------------
 static int sk_printf(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    yyerror(pSK, "built-in function 'printf' not implemented yet");
-    return SK_FALSE;
+    Object* raw_n = vm_pop(&pSK->vm);
+    int n = AS_NUM(raw_n);
+
+    if (n < 1)
+    {
+        yyerror(pSK, "printf: expected at least one argument (format string)");
+        return SK_FALSE;
+    }
+
+    // format string is the first (deepest) arg on stack
+    Object* fmt_obj = vm_peek(&pSK->vm, n - 1);
+    if (!IS_OBJ(fmt_obj) || OBJ_TYPE(fmt_obj) != OBJ_STRING)
+    {
+        yyerror(pSK, "printf: first argument must be a format string");
+        vm_pop_n(&pSK->vm, n);
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    FILE* out = pSK->output_stream ? pSK->output_stream : stdout;
+    const char* fmt = ((String*)fmt_obj)->value;
+    int arg_idx = n - 2;  // peek distance to next substitution arg
+
+    while (*fmt)
+    {
+        if (*fmt == '~' && *(fmt + 1))
+        {
+            fmt++;
+            switch (*fmt)
+            {
+                case 'a':
+                    if (arg_idx >= 0)
+                        vm_print_object(vm_peek(&pSK->vm, arg_idx--), VM_PRINT_PLAIN, out);
+                    break;
+                case 's':
+                    if (arg_idx >= 0)
+                        vm_print_object(vm_peek(&pSK->vm, arg_idx--), VM_PRINT_READABLE, out);
+                    break;
+                case '%':
+                    fputc('\n', out);
+                    break;
+                case '~':
+                    fputc('~', out);
+                    break;
+                default:
+                    fputc('~', out);
+                    fputc(*fmt, out);
+                    break;
+            }
+        }
+        else
+        {
+            fputc(*fmt, out);
+        }
+        fmt++;
+    }
+
+    vm_pop_n(&pSK->vm, n);
+    vm_push(&pSK->vm, MAKE_TRUE());
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
@@ -1910,6 +2182,276 @@ static int sk_reverse(SKState* pSK)
 }
 
 //-----------------------------------------------
+// built-in function: abs
+//-----------------------------------------------
+static int sk_abs(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (IS_FLOAT(obj)) {
+        double v = AS_DOUBLE(obj);
+        vm_push(&pSK->vm, vm_new_float(&pSK->vm, (float)(v < 0 ? -v : v)));
+    } else if (IS_NUM(obj)) {
+        int v = AS_NUM(obj);
+        vm_push(&pSK->vm, MAKE_NUM(v < 0 ? -v : v));
+    } else {
+        yyerror(pSK, "argument to 'abs' must be a number");
+        return SK_FALSE;
+    }
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: quotient
+//-----------------------------------------------
+static int sk_quotient(SKState* pSK)
+{
+    Object* b = vm_pop(&pSK->vm);
+    Object* a = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(a) || !IS_NUMERIC(b)) {
+        yyerror(pSK, "arguments to 'quotient' must be numbers");
+        return SK_FALSE;
+    }
+    int bv = IS_FLOAT(b) ? (int)AS_DOUBLE(b) : AS_NUM(b);
+    if (bv == 0) { yyerror(pSK, "division by zero"); return SK_FALSE; }
+    int av = IS_FLOAT(a) ? (int)AS_DOUBLE(a) : AS_NUM(a);
+    vm_push(&pSK->vm, MAKE_NUM(av / bv));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: remainder
+//-----------------------------------------------
+static int sk_remainder(SKState* pSK)
+{
+    Object* b = vm_pop(&pSK->vm);
+    Object* a = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(a) || !IS_NUMERIC(b)) {
+        yyerror(pSK, "arguments to 'remainder' must be numbers");
+        return SK_FALSE;
+    }
+    int bv = IS_FLOAT(b) ? (int)AS_DOUBLE(b) : AS_NUM(b);
+    if (bv == 0) { yyerror(pSK, "division by zero"); return SK_FALSE; }
+    int av = IS_FLOAT(a) ? (int)AS_DOUBLE(a) : AS_NUM(a);
+    vm_push(&pSK->vm, MAKE_NUM(av % bv));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: expt (exponentiation)
+//-----------------------------------------------
+static int sk_expt(SKState* pSK)
+{
+    Object* b = vm_pop(&pSK->vm);
+    Object* a = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(a) || !IS_NUMERIC(b)) {
+        yyerror(pSK, "arguments to 'expt' must be numbers");
+        return SK_FALSE;
+    }
+    if (IS_NUM(a) && IS_NUM(b) && AS_NUM(b) >= 0) {
+        // Integer fast path for non-negative exponent
+        int base = AS_NUM(a), exp = AS_NUM(b), result = 1;
+        for (int i = 0; i < exp; i++) result *= base;
+        vm_push(&pSK->vm, MAKE_NUM(result));
+    } else {
+        double result = pow(AS_DOUBLE(a), AS_DOUBLE(b));
+        vm_push(&pSK->vm, vm_new_float(&pSK->vm, (float)result));
+    }
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: sqrt
+//-----------------------------------------------
+static int sk_sqrt(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'sqrt' must be a number");
+        return SK_FALSE;
+    }
+    double result = sqrt(AS_DOUBLE(obj));
+    // Return integer if result is exact
+    if (IS_NUM(obj) && result == (int)result)
+        vm_push(&pSK->vm, MAKE_NUM((int)result));
+    else
+        vm_push(&pSK->vm, vm_new_float(&pSK->vm, (float)result));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: floor
+//-----------------------------------------------
+static int sk_floor(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'floor' must be a number");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_NUM((int)floor(AS_DOUBLE(obj))));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: ceiling
+//-----------------------------------------------
+static int sk_ceiling(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'ceiling' must be a number");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_NUM((int)ceil(AS_DOUBLE(obj))));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: truncate
+//-----------------------------------------------
+static int sk_truncate(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'truncate' must be a number");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_NUM((int)AS_DOUBLE(obj)));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: round
+//-----------------------------------------------
+static int sk_round(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'round' must be a number");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_NUM((int)round(AS_DOUBLE(obj))));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: positive?
+//-----------------------------------------------
+static int sk_positivep(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'positive?' must be a number");
+        return SK_FALSE;
+    }
+    vm_pushBoolean(&pSK->vm, AS_DOUBLE(obj) > 0);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: negative?
+//-----------------------------------------------
+static int sk_negativep(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'negative?' must be a number");
+        return SK_FALSE;
+    }
+    vm_pushBoolean(&pSK->vm, AS_DOUBLE(obj) < 0);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: procedure?
+//-----------------------------------------------
+static int sk_procedurep(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    vm_pushBoolean(&pSK->vm, IS_FUNCTION(obj) || IS_CLOSURE(obj));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string-length
+//-----------------------------------------------
+static int sk_string_length(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "argument to 'string-length' must be a string");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_NUM((int)strlen(((String*)obj)->value)));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string-ref
+//-----------------------------------------------
+static int sk_string_ref(SKState* pSK)
+{
+    Object* idx_obj = vm_pop(&pSK->vm);
+    Object* str_obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(str_obj) || !IS_NUM(idx_obj)) {
+        yyerror(pSK, "string-ref requires a string and an integer index");
+        return SK_FALSE;
+    }
+    String* s = (String*)str_obj;
+    int idx = AS_NUM(idx_obj);
+    int len = (int)strlen(s->value);
+    if (idx < 0 || idx >= len) {
+        yyerror(pSK, "string-ref: index out of range");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_CHAR(s->value[idx]));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: substring
+//-----------------------------------------------
+static int sk_substring(SKState* pSK)
+{
+    Object* end_obj = vm_pop(&pSK->vm);
+    Object* start_obj = vm_pop(&pSK->vm);
+    Object* str_obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(str_obj) || !IS_NUM(start_obj) || !IS_NUM(end_obj)) {
+        yyerror(pSK, "substring requires a string and two integer indices");
+        return SK_FALSE;
+    }
+    String* s = (String*)str_obj;
+    int start = AS_NUM(start_obj);
+    int end = AS_NUM(end_obj);
+    int len = (int)strlen(s->value);
+    if (start < 0 || end < start || end > len) {
+        yyerror(pSK, "substring: index out of range");
+        return SK_FALSE;
+    }
+    char buf[LARGE_BUFFER];
+    int sub_len = end - start;
+    if (sub_len >= LARGE_BUFFER) sub_len = LARGE_BUFFER - 1;
+    memcpy(buf, s->value + start, sub_len);
+    buf[sub_len] = '\0';
+    vm_push_string(&pSK->vm, buf);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: string-copy
+//-----------------------------------------------
+static int sk_string_copy(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "argument to 'string-copy' must be a string");
+        return SK_FALSE;
+    }
+    vm_push_string(&pSK->vm, ((String*)obj)->value);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -1925,7 +2467,7 @@ static SKFuncSet built_in_funcs[] =
     { "open-output-file", sk_open_output_file, 1 },
     { "close-file", sk_close_file, 1 },
     { "delete-file", sk_delete_file, 1 },
-    { "read", sk_read, 1 },
+    { "read", sk_read, SK_ARITY_ZERO_OR_ONE },
     { "read-line", sk_read_line, 1 },
     { "read-char", sk_read_char, SK_ARITY_ZERO_OR_ONE },
     { "write-char", sk_write_char, SK_ARITY_ONE_OR_MORE },
@@ -1995,8 +2537,8 @@ static SKFuncSet built_in_funcs[] =
     { "integer->char", sk_integer_to_char, 1 },
     { "float->string", sk_float_to_string, 1 },
     { "string->float", sk_string_to_float, 1 },
-    // { "string->symbol", sk_string_to_symbol, 1 },
-    // { "symbol->string", sk_symbol_to_string, 1 },
+    { "string->symbol", sk_string_to_symbol, 1 },
+    { "symbol->string", sk_symbol_to_string, 1 },
 
     // comparison operators
     { "<", sk_less, 2 },
@@ -2011,6 +2553,24 @@ static SKFuncSet built_in_funcs[] =
 	{ "/", sk_divide, SK_ARITY_TWO_OR_MORE },
     { "=", sk_equalnum, SK_ARITY_TWO_OR_MORE },
     { "modulo", sk_modulo, 2},
+    { "abs", sk_abs, 1 },
+    { "quotient", sk_quotient, 2 },
+    { "remainder", sk_remainder, 2 },
+    { "expt", sk_expt, 2 },
+    { "sqrt", sk_sqrt, 1 },
+    { "floor", sk_floor, 1 },
+    { "ceiling", sk_ceiling, 1 },
+    { "truncate", sk_truncate, 1 },
+    { "round", sk_round, 1 },
+    { "positive?", sk_positivep, 1 },
+    { "negative?", sk_negativep, 1 },
+    { "procedure?", sk_procedurep, 1 },
+
+    // string functions
+    { "string-length", sk_string_length, 1 },
+    { "string-ref", sk_string_ref, 2 },
+    { "substring", sk_substring, 3 },
+    { "string-copy", sk_string_copy, 1 },
 
 	// debugging functions
     { "disasm", sk_disasm, 1 },
@@ -2019,9 +2579,8 @@ static SKFuncSet built_in_funcs[] =
     { "globals", sk_globals },
 	{ "typeof", sk_typeof, 1 },
     { "gc-stress", sk_gc_stress, 0 },
-
-	// { "symbol?", sk_symbolp },
-	// { "eval", sk_eval },
+    { "gc-stress?", sk_gc_stressp, 0 },
+	{ "symbol?", sk_symbolp, 1 },
     { NULL, NULL }
 };
 

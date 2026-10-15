@@ -1,8 +1,15 @@
+//---------------------------------------------------------
+// vm.h - definitions for the virtual machine for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #ifndef __VM_H
 #define __VM_H
 
 #include <stdio.h>
 #include <stdint.h> // Add this include at the top of the file, before typedefs
+#include <assert.h>
 #include "hash/hash.h"
 #include "platform.h"
 
@@ -75,6 +82,7 @@ typedef enum {
 extern int g_bGCLog;
 extern int g_bVMLog;
 extern int g_bGCStress;
+extern int g_bProfile;
 
 
 //-----------------------------
@@ -157,6 +165,7 @@ static inline float sk_decode_float(intptr_t bits) {
 
 // object classification - heap types
 #define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
+#define IS_SYMBOL(obj)      (OBJ_TYPE(obj) == OBJ_SYMBOL)
 #define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
 #define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
 #define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
@@ -200,6 +209,7 @@ enum
     OBJ_ENVIRONMENT,
     OBJ_FLOAT,
     OBJ_PORT,
+    OBJ_SYMBOL,
 
 	// mark the last object type
     OBJ_LAST
@@ -226,6 +236,7 @@ enum {
     OP_RET,         // return from a function
     OP_CALL,        // call a function
     OP_ICALL,       // call an indirect function
+    OP_XCALL,       // call with fn under args: stack [fn, arg1..argN]
     OP_TAILCALL,    // tail call (reuses current frame) - function in bytecode
     OP_TAILCALL_I,  // indirect tail call - function on stack
     OP_BRA,         // branch always
@@ -239,6 +250,18 @@ enum {
     OP_GET_LOCAL,   // get a local variable
     OP_SET_LOCAL,   // set a local variable
     OP_PRINT_TOS,   // print the top of the stack
+    // specialized arithmetic opcodes
+    OP_ADD,         // (+ a b) inline
+    OP_SUB,         // (- a b) inline
+    OP_MUL,         // (* a b) inline
+    OP_LT,          // (< a b) inline
+    OP_LE,          // (<= a b) inline
+    OP_EQ_NUM,      // (= a b) inline numeric equality
+    // small-constant opcodes
+    OP_NUM_0,       // push 0
+    OP_NUM_1,       // push 1
+    OP_NUM_2,       // push 2
+    OP_SYMBOL,      // push a symbol value onto the stack
     OP_LAST         // last opcode
 };
     
@@ -286,6 +309,7 @@ typedef struct Procedure {
     String *name;       // function name
     UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
     int upvalue_count;      // number of upvalues
+    uint64_t call_count;    // profiling: number of times called
 } Procedure;
 
 // native function object
@@ -317,6 +341,9 @@ typedef struct File {
     FILE* fptr;             // file handle
     String* name;           // file name
 } Port;
+
+// forward declaration of VM structure for use in type descriptors
+struct VM;
 
 // Type descriptor for extensible object types
 typedef struct SKTypeDesc {
@@ -361,6 +388,13 @@ typedef struct VM {
     int num_custom_types;           // Number of registered custom types
     int custom_types_capacity;      // Capacity of custom_types array
 
+    // Profiling counters (active when g_bProfile is set)
+    uint64_t opcode_counts[OP_LAST]; // per-opcode execution counts
+    uint64_t total_opcodes;          // total instructions executed
+    double gc_time_ms;               // cumulative GC time in milliseconds
+    double native_call_time_ms;      // cumulative native function call time
+    double exec_time_ms;             // total vm_exec time
+
 #ifdef VM_USE_FREE_LIST
     int freeObjects;      // Number of free objects in the free list
     Object *freeList[VM_FREE_LIST];    // Free list for object reuse
@@ -373,13 +407,32 @@ int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
 void vm_print_object(Object* obj, int flags, FILE *stream);
 
-// stack management
-void vm_push(VM* pvm, Object* obj);
-Object* vm_pop(VM* pvm);
-Object* vm_peek(VM* pvm, int distance);
+// stack management - inlined for performance
+// Debug builds get bounds checks via assert(); release (NDEBUG) gets zero overhead
+static inline void vm_push(VM* pvm, Object* obj) {
+    assert(pvm->sp < VM_STACK_SIZE && "Stack overflow");
+    pvm->stack[pvm->sp++] = obj;
+    if (pvm->sp > (int)pvm->max_stack_size)
+        pvm->max_stack_size = pvm->sp;
+}
+static inline Object* vm_pop(VM* pvm) {
+    assert(pvm->sp > 0 && "Stack underflow");
+    return pvm->stack[--pvm->sp];
+}
+static inline Object* vm_peek(VM* pvm, int distance) {
+    assert(pvm->sp - 1 - distance >= 0 && "Stack underflow on peek");
+    return pvm->stack[pvm->sp - 1 - distance];
+}
+static inline Object* vm_fp_peek(VM* pvm, int distance) {
+    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_peek");
+    return pvm->stack[pvm->fp - 1 - distance];
+}
+static inline void vm_fp_set(VM* pvm, int distance, Object* value) {
+    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_set");
+    pvm->stack[pvm->fp - 1 - distance] = value;
+}
 void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
 void vm_pop_n(VM* pvm, int n);
-Object* vm_fp_peek(VM* pvm, int distance);
 int vm_clear_stack(VM* pvm);
 void vm_push_ip(VM* pvm, VMCode_t* ip);
 VMCode_t* vm_pop_ip(VM* pvm);
@@ -394,6 +447,7 @@ Object* vm_newBoolean(VM* pvm, int val);
 void vm_pushBoolean(VM* pvm, int val);
 void vm_freeObjects(VM* pvm);
 Object* vm_new_string(VM* pvm, const char* str);
+Object* vm_new_symbol(VM* pvm, const char* name);
 Object* vm_new_proc(VM* pvm);
 Object* vm_new_float(VM* pvm, float value);
 float vm_get_float(Object* obj);
@@ -405,6 +459,7 @@ int vm_create_default_ports(VM* pvm);
 int vm_emit(VM* pvm, VMCode_t opcode);
 void vm_emit_number(VM* pvm, int val);
 void vm_emit_string(VM* pvm, const char *str);
+void vm_emit_symbol(VM* pvm, const char *name);
 void vm_emit_push_object(VM* pvm, Object* obj);
 void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
 CodeChunk* vm_get_current_chunk();
@@ -417,6 +472,9 @@ VMCode_t* vm_get_chunk_ip();
 void vm_exec(VM* pvm, VMCode_t *addr);
 void vm_clear_code(VM* pvm);
 int vm_reset(VM* pvm);
+
+// profiling
+void vm_print_profile(VM* pvm);
 
 // local/global variable management
 int vm_define_global(VM* pvm, Object* key, Object* value);

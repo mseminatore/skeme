@@ -1,3 +1,9 @@
+//---------------------------------------------------------
+// parser.c - implementation of the parser for SK
+//
+// Copyright (c) 2025 Mark Seminatore
+//----------------------------------------------------------
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -5,12 +11,14 @@
 #include <assert.h>
 #include <ctype.h>
 #include "parser.h"
+#include "modules.h"
 #include "term_colors.h"
 
 #define LOOKAHEAD   (pSK->lookahead)
 
 // forward declarations
 static int expr(SKState* pSK);
+static void quote_datum(SKState* pSK);
 
 #define PARSE_LOG(...) (void)(pSK && pSK->parse_log_enabled && indent(pSK) && fprintf(stderr, __VA_ARGS__))
 
@@ -132,33 +140,6 @@ static int match(SKState* pSK, int token)
 	return LOOKAHEAD;
 }
 
-//------------------------
-// symbol comparison fn
-//------------------------
-static int compare_fn(const void *a, const void *b)
-{
-    Symbol_t *s1 = (Symbol_t*)a;
-    Symbol_t *s2 = (Symbol_t*)b;
-
-    return sk_strcasecmp(s1->name, s2->name);
-}
-
-//------------------------
-// print out symbols
-//------------------------
-void dump_symbols(SKState* pSK)
-{
-    if (!pSK) return;
-
-    // alpha sort symbols
-    qsort(pSK->symbols, pSK->symbol_count, sizeof(Symbol_t), compare_fn);
-
-    puts("\nSymbol table\n------------");
-    for (int i = 0; i < pSK->symbol_count; i++)
-    {
-        printf("%10s\t%04X\n", pSK->symbols[i].name, pSK->symbols[i].value);
-    }
-}
 
 //-----------------------------------------------
 // Register an upvalue for the current lambda being parsed.
@@ -182,6 +163,7 @@ static int register_upvalue(SKState* pSK, const char* name, int scope_depth, int
     pSK->upvalues[idx].name[sizeof(pSK->upvalues[idx].name) - 1] = '\0';
     pSK->upvalues[idx].scope_depth = scope_depth;
     pSK->upvalues[idx].local_index = local_index;
+    pSK->upvalues[idx].is_upvalue = 0;  // default: capture from parent's locals
 
     return idx;
 }
@@ -220,7 +202,14 @@ static int atom(SKState* pSK)
         // handle number
         PARSE_LOG("NUMBER: %d\n", pSK->yylval.ival);
 
-		vm_emit_number(&pSK->vm, pSK->yylval.ival);
+        if (pSK->yylval.ival == 0)
+            vm_emit(&pSK->vm, OP_NUM_0);
+        else if (pSK->yylval.ival == 1)
+            vm_emit(&pSK->vm, OP_NUM_1);
+        else if (pSK->yylval.ival == 2)
+            vm_emit(&pSK->vm, OP_NUM_2);
+        else
+            vm_emit_number(&pSK->vm, pSK->yylval.ival);
         match(pSK, NUMBER);
         unindent(pSK);
         break;
@@ -247,10 +236,9 @@ static int atom(SKState* pSK)
         break;
 
     case STRING:
-        // TODO - use yylval.word and handle interned strings
-        PARSE_LOG("STRING: '%s'\n", pSK->symbols[pSK->yylval.symbol].name);
+        PARSE_LOG("STRING: '%s'\n", pSK->yylval.word);
 
-		vm_emit_string(&pSK->vm, pSK->symbols[pSK->yylval.symbol].name);
+		vm_emit_string(&pSK->vm, pSK->yylval.word);
         match(pSK, STRING);
         unindent(pSK);
         break;
@@ -260,6 +248,13 @@ static int atom(SKState* pSK)
 
         vm_emit_push_object(&pSK->vm, NULL);
         match(pSK, NIL);
+        unindent(pSK);
+        break;
+
+    case QUOTE:
+        // 'datum shorthand — QUOTE token comes from lexer when ' is seen
+        match(pSK, QUOTE);
+        quote_datum(pSK);
         unindent(pSK);
         break;
 
@@ -285,16 +280,16 @@ static int atom(SKState* pSK)
             else if (scope_depth == 0 && IS_NUM(obj))
             {
                 // Local variable in current scope
-                vm_emit_number(&pSK->vm, AS_NUM(obj));
                 vm_emit(&pSK->vm, OP_GET_LOCAL);
+                vm_emit(&pSK->vm, (VMCode_t)AS_NUM(obj));
             }
             else if (scope_depth > 0 && IS_NUM(obj))
             {
                 // Variable from enclosing scope — capture as upvalue
                 int uv_idx = register_upvalue(pSK, var_name, scope_depth, AS_NUM(obj));
                 if (uv_idx >= 0) {
-                    vm_emit_number(&pSK->vm, uv_idx);
                     vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                    vm_emit(&pSK->vm, (VMCode_t)uv_idx);
                 }
             }
             else
@@ -425,7 +420,20 @@ static int definition(SKState* pSK)
     {
 		// function definition
 		match(pSK, '(');
-        
+
+        // Check if we're inside a local scope (nested define)
+        int is_local = (pSK->vm.current_scope != NULL);
+
+        // Save upvalue state for nested lambdas (like lambda() does)
+        ParseUpvalue saved_upvalues[MAX_UPVALUES];
+        int saved_upvalue_count = pSK->upvalue_count;
+        if (is_local)
+        {
+            if (saved_upvalue_count > 0)
+                memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+            pSK->upvalue_count = 0;
+        }
+
         vm_new_environment(&pSK->vm);   // create new environment for function scope
 
         // function name
@@ -439,8 +447,22 @@ static int definition(SKState* pSK)
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
-		if (!vm_define_global(&pSK->vm, proc_name, proc_obj)) // TODO - add to current scope instead of global
-            yyerror(pSK, "failed to add global var");
+        // Store as GC root in globals
+        if (!is_local)
+        {
+            // Top-level: the proc IS the final value, store under its real name
+            vm_define_global(&pSK->vm, proc_name, proc_obj);
+        }
+        else
+        {
+            // Nested: store under a unique internal name for GC safety only
+            // The real name will be bound via OP_STORE at runtime
+            static int inner_def_id = 0;
+            char gc_name[48];
+            snprintf(gc_name, sizeof(gc_name), "<define-%d>", inner_def_id++);
+            Object* gc_key = vm_new_string(&pSK->vm, gc_name);
+            vm_define_global(&pSK->vm, gc_key, proc_obj);
+        }
 
         match(pSK, ID);
 		
@@ -457,6 +479,66 @@ static int definition(SKState* pSK)
         vm_set_current_chunk(&pSK->vm, prev_chunk);
 
         vm_free_environment(&pSK->vm); // pop function environment off chain
+
+        if (is_local)
+        {
+            // Capture upvalue info before restoring outer state
+            int num_upvalues = pSK->upvalue_count;
+            ParseUpvalue captured[MAX_UPVALUES];
+            if (num_upvalues > 0)
+                memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+            // Restore outer lambda's upvalue state
+            pSK->upvalue_count = saved_upvalue_count;
+            if (saved_upvalue_count > 0)
+                memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+            // Propagate deep captures upward (same as lambda)
+            for (int i = 0; i < num_upvalues; i++)
+            {
+                if (captured[i].scope_depth > 1)
+                {
+                    int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                        captured[i].scope_depth - 1, captured[i].local_index);
+                    captured[i].local_index = parent_uv_idx;
+                    captured[i].is_upvalue = 1;
+                }
+            }
+
+            if (num_upvalues > 0)
+            {
+                // Emit closure creation and store to global under its real name
+                vm_emit_push_object(&pSK->vm, proc_name);
+
+                for (int i = 0; i < num_upvalues; i++)
+                {
+                    if (captured[i].is_upvalue)
+                    {
+                        vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+                    }
+                    else
+                    {
+                        vm_emit(&pSK->vm, OP_GET_LOCAL);
+                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+                    }
+                }
+
+                vm_emit_push_object(&pSK->vm, proc_obj);
+                vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+                vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+
+                // Store the closure to global under its real name
+                vm_emit(&pSK->vm, OP_STORE);
+            }
+            else
+            {
+                // No upvalues — store plain procedure to global under its real name
+                vm_emit_push_object(&pSK->vm, proc_name);
+                vm_emit_push_object(&pSK->vm, proc_obj);
+                vm_emit(&pSK->vm, OP_STORE);
+            }
+        }
 	}
     else
     {
@@ -552,24 +634,49 @@ static int lambda(SKState* pSK)
     if (saved_upvalue_count > 0)
         memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
 
+    // Propagate deep captures: if an inner lambda captured a variable at depth > 1,
+    // the parent (us) must also capture it as an upvalue so we can pass it along.
+    for (int i = 0; i < num_upvalues; i++)
+    {
+        if (captured[i].scope_depth > 1)
+        {
+            // Register this variable as an upvalue in the OUTER (parent) lambda
+            int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                captured[i].scope_depth - 1, captured[i].local_index);
+            // Update captured entry: at closure creation time, get from parent's upvalue
+            captured[i].local_index = parent_uv_idx;
+            captured[i].is_upvalue = 1;
+        }
+    }
+
     if (num_upvalues > 0)
     {
         // Emit closure creation in the OUTER context.
         // OP_MAKE_CLOSURE expects stack (bottom→top): [upval0, ..., upvalN-1, proc, count]
 
-        // First, push captured values from enclosing scope's locals
+        // Push captured values from enclosing scope
         for (int i = 0; i < num_upvalues; i++)
         {
-            vm_emit_number(&pSK->vm, captured[i].local_index);
-            vm_emit(&pSK->vm, OP_GET_LOCAL);
+            if (captured[i].is_upvalue)
+            {
+                // Variable was captured from grandparent+ — read from parent's upvalues
+                vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+            }
+            else
+            {
+                // Variable is in immediate parent's locals
+                vm_emit(&pSK->vm, OP_GET_LOCAL);
+                vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+            }
         }
 
         // Then push the procedure object
         vm_emit_push_object(&pSK->vm, proc_obj);
 
-        // Then push the upvalue count and make the closure
-        vm_emit_number(&pSK->vm, num_upvalues);
+        // Then emit the closure with upvalue count as immediate
         vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
     }
     else
     {
@@ -604,8 +711,8 @@ static int parse_list(SKState* pSK)
         nargs++;
     }
 
-    vm_emit_number(&pSK->vm, nargs);
     vm_emit(&pSK->vm, OP_LIST);
+    vm_emit(&pSK->vm, (VMCode_t)nargs);
 
     unindent(pSK);
     return 0;
@@ -627,12 +734,523 @@ static int load_expr(SKState* pSK)
         return 0;
     }
 
-    // get filename
-    const char* filename = pSK->symbols[pSK->yylval.symbol].name;
+    // get filename - must copy before match() overwrites yylval
+    char filename[BUF_SIZE];
+    strncpy(filename, pSK->yylval.word, BUF_SIZE - 1);
+    filename[BUF_SIZE - 1] = '\0';
     match(pSK, STRING);
 
     // load (parse) the file
     push_filename_stack(pSK, filename);
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// quote_datum - recursively emit code to construct a quoted value
+// Numbers, strings, bools, chars are self-evaluating.
+// Identifiers become symbols. Lists become OP_LIST constructions.
+//-----------------------------------------------
+static void quote_datum(SKState* pSK)
+{
+    PARSE_LOG("quote_datum(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    if (LOOKAHEAD == '(')
+    {
+        match(pSK, '(');
+
+        // empty list?
+        if (LOOKAHEAD == ')')
+        {
+            match(pSK, ')');
+            vm_emit_push_object(&pSK->vm, NULL);  // nil = empty list
+            return;
+        }
+
+        // non-empty list: recursively quote each element
+        int count = 0;
+        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        {
+            quote_datum(pSK);
+            count++;
+        }
+        match(pSK, ')');
+        vm_emit(&pSK->vm, OP_LIST);
+        vm_emit(&pSK->vm, (VMCode_t)count);
+    }
+    else if (LOOKAHEAD == NUMBER)
+    {
+        vm_emit_number(&pSK->vm, pSK->yylval.ival);
+        match(pSK, NUMBER);
+    }
+    else if (LOOKAHEAD == STRING)
+    {
+        vm_emit_string(&pSK->vm, pSK->yylval.word);
+        match(pSK, STRING);
+    }
+    else if (LOOKAHEAD == TOKEN_TRUE)
+    {
+        vm_emit(&pSK->vm, OP_TRUE);
+        match(pSK, TOKEN_TRUE);
+    }
+    else if (LOOKAHEAD == TOKEN_FALSE)
+    {
+        vm_emit(&pSK->vm, OP_FALSE);
+        match(pSK, TOKEN_FALSE);
+    }
+    else if (LOOKAHEAD == CHAR)
+    {
+        vm_emit(&pSK->vm, OP_PUSH);
+        vm_emit(&pSK->vm, (VMCode_t)MAKE_CHAR(pSK->yylval.ival));
+        match(pSK, CHAR);
+    }
+    else if (LOOKAHEAD == NIL)
+    {
+        vm_emit_push_object(&pSK->vm, NULL);
+        match(pSK, NIL);
+    }
+    else if (LOOKAHEAD == QUOTE)
+    {
+        // nested quote: '('a) inside a quoted list
+        match(pSK, QUOTE);
+        quote_datum(pSK);
+        // wrap in (quote x) → build a 2-element list: (symbol:quote, datum)
+        vm_emit_symbol(&pSK->vm, "quote");
+        vm_emit(&pSK->vm, OP_LIST);
+        vm_emit(&pSK->vm, 2);
+    }
+    else if (LOOKAHEAD == ID || LOOKAHEAD == '+' || LOOKAHEAD == '-' ||
+             LOOKAHEAD == '*' || LOOKAHEAD == '/' || LOOKAHEAD == '<' ||
+             LOOKAHEAD == '>' || LOOKAHEAD == '=')
+    {
+        // identifiers and operators become symbols
+        vm_emit_symbol(&pSK->vm, pSK->yylval.word);
+        match(pSK, LOOKAHEAD);
+    }
+    else
+    {
+        yyerror(pSK, "unexpected token in quoted expression");
+        match(pSK, LOOKAHEAD);  // consume to avoid infinite loop
+    }
+}
+
+//-----------------------------------------------
+// quote_expr := '(' 'quote' datum ')'
+// Also handles 'datum (shorthand) when called directly
+//-----------------------------------------------
+static int quote_expr(SKState* pSK)
+{
+    PARSE_LOG("quote_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, QUOTE);
+    quote_datum(pSK);
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// import_expr := '(' 'import' ID ')'
+//-----------------------------------------------
+static int import_expr(SKState* pSK)
+{
+    PARSE_LOG("import_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, IMPORT);
+
+    if (LOOKAHEAD != ID)
+    {
+        yyerror(pSK, "expected module name in 'import' expression");
+        unindent(pSK);
+        return 0;
+    }
+
+    const char* module_name = pSK->yylval.word;
+
+    if (sk_import_module(pSK, module_name) != 0)
+        yyerror(pSK, "failed to import module");
+
+    match(pSK, ID);
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// do_expr := '(' 'do' ((var init step) ...) (test result ...) body ... ')'
+// Implemented as: emit inits, create lambda frame, loop with BRA/BNT
+//-----------------------------------------------
+#define MAX_DO_BINDINGS 16
+static int do_expr(SKState* pSK)
+{
+    PARSE_LOG("do_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, DO);
+
+    // Parse bindings: ((var init step) ...)
+    char bind_names[MAX_DO_BINDINGS][64];
+    char step_strs[MAX_DO_BINDINGS][BUF_SIZE];
+    int nbindings = 0;
+
+    match(pSK, '(');
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        match(pSK, '(');
+
+        // var name
+        strncpy(bind_names[nbindings], pSK->yylval.word, 63);
+        bind_names[nbindings][63] = '\0';
+        match(pSK, ID);
+
+        // init expression — emit into outer chunk (init values)
+        expr(pSK);
+
+        // step expression — save as text for later re-parse
+        step_strs[nbindings][0] = '\0';
+        if (LOOKAHEAD != ')')
+        {
+            int depth = 0;
+            int pos = 0;
+            if (LOOKAHEAD == '(')
+            {
+                depth = 1;
+                step_strs[nbindings][pos++] = '(';
+                match(pSK, '(');
+
+                while (depth > 0 && LOOKAHEAD != DONE && pos < BUF_SIZE - 2)
+                {
+                    if (LOOKAHEAD == '(') {
+                        step_strs[nbindings][pos++] = '(';
+                        depth++;
+                        match(pSK, '(');
+                    } else if (LOOKAHEAD == ')') {
+                        step_strs[nbindings][pos++] = ')';
+                        depth--;
+                        if (depth > 0) match(pSK, ')');
+                    } else {
+                        if (LOOKAHEAD == NUMBER)
+                            pos += snprintf(step_strs[nbindings] + pos, BUF_SIZE - pos, "%d", pSK->yylval.ival);
+                        else {
+                            int len = (int)strlen(pSK->yylval.word);
+                            if (pos + len + 1 < BUF_SIZE) {
+                                memcpy(step_strs[nbindings] + pos, pSK->yylval.word, len);
+                                pos += len;
+                            }
+                        }
+                        step_strs[nbindings][pos++] = ' ';
+                        match(pSK, LOOKAHEAD);
+                    }
+                }
+                match(pSK, ')');
+            }
+            else
+            {
+                if (LOOKAHEAD == NUMBER)
+                    pos += snprintf(step_strs[nbindings] + pos, BUF_SIZE - pos, "%d", pSK->yylval.ival);
+                else {
+                    int len = (int)strlen(pSK->yylval.word);
+                    memcpy(step_strs[nbindings] + pos, pSK->yylval.word, len);
+                    pos += len;
+                }
+                match(pSK, LOOKAHEAD);
+            }
+            step_strs[nbindings][pos] = '\0';
+        }
+
+        nbindings++;
+        match(pSK, ')');
+    }
+    match(pSK, ')');
+
+    // Create lambda for loop body (inlined, not using let_create_lambda)
+    ParseUpvalue saved_upvalues[MAX_UPVALUES];
+    int saved_upvalue_count = pSK->upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+    pSK->upvalue_count = 0;
+
+    vm_new_environment(&pSK->vm);
+
+    Object* proc_obj = vm_new_proc(&pSK->vm);
+    vm_push(&pSK->vm, proc_obj);
+
+    Procedure* proc = AS_OBJ(Procedure, proc_obj);
+    static int do_id = 0;
+    char do_name[32];
+    snprintf(do_name, sizeof(do_name), "<do-%d>", do_id++);
+    proc->name = (String*)vm_new_string(&pSK->vm, do_name);
+    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
+
+    CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
+
+    proc->arity = nbindings;
+    for (int i = 0; i < nbindings; i++)
+        vm_set_var(&pSK->vm, bind_names[i], MAKE_NUM(i + 1));
+
+    if (pSK->vm.current_scope)
+    {
+        Environment* env = pSK->vm.current_scope;
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+            ht_add(env->bindings, env_key, MAKE_NUM(nbindings - AS_NUM(env_value) + 3));
+    }
+
+    // Parse test clause: (test result ...)
+    match(pSK, '(');
+
+    CodeChunk* loop_chunk = vm_get_current_chunk();
+    int loop_start = (int)loop_chunk->count;
+
+    expr(pSK);
+    vm_emit(&pSK->vm, OP_BNT);
+    int branch_to_body = vm_emit(&pSK->vm, 0);
+
+    if (LOOKAHEAD != ')')
+    {
+        expr(pSK);
+        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        {
+            vm_emit(&pSK->vm, OP_POP);
+            expr(pSK);
+        }
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, NULL);
+    }
+    match(pSK, ')');
+
+    vm_emit(&pSK->vm, OP_RET);
+
+    loop_chunk->code[branch_to_body] = loop_chunk->count - branch_to_body;
+
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        expr(pSK);
+        vm_emit(&pSK->vm, OP_POP);
+    }
+
+    // Compile step expressions: evaluate all first, then assign all (R5RS parallel update)
+    // First pass: compile all step value expressions (push results onto stack)
+    int has_step[MAX_DO_BINDINGS];
+    for (int i = 0; i < nbindings; i++)
+    {
+        has_step[i] = (step_strs[i][0] != '\0');
+        if (has_step[i])
+        {
+            const char* saved_eval = pSK->eval_input;
+            int saved_eval_pos = pSK->eval_pos;
+            int saved_lookahead = pSK->lookahead;
+            int saved_expr_level = pSK->expr_level;
+
+            pSK->eval_input = step_strs[i];
+            pSK->eval_pos = 0;
+            pSK->expr_level = 1;
+            pSK->lookahead = yylex(pSK);
+            expr(pSK);
+
+            pSK->eval_input = saved_eval;
+            pSK->eval_pos = saved_eval_pos;
+            pSK->lookahead = saved_lookahead;
+            pSK->expr_level = saved_expr_level;
+        }
+    }
+    // Second pass: assign in reverse order (last pushed = last binding)
+    for (int i = nbindings - 1; i >= 0; i--)
+    {
+        if (has_step[i])
+        {
+            vm_emit(&pSK->vm, OP_SET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)(nbindings - i + 2));
+        }
+    }
+
+    // Jump back to loop start
+    vm_emit(&pSK->vm, OP_BRA);
+    int bra_offset_pos = (int)loop_chunk->count;  // position where offset will be stored
+    vm_emit(&pSK->vm, (VMCode_t)(loop_start - bra_offset_pos));
+
+    vm_set_current_chunk(&pSK->vm, prev_chunk);
+    vm_free_environment(&pSK->vm);
+
+    // Handle closure capture
+    int num_upvalues = pSK->upvalue_count;
+    ParseUpvalue captured[MAX_UPVALUES];
+    if (num_upvalues > 0)
+        memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+    // Restore outer upvalues
+    pSK->upvalue_count = saved_upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+    if (num_upvalues > 0)
+    {
+        for (int i = 0; i < num_upvalues; i++)
+        {
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+        }
+        vm_emit_push_object(&pSK->vm, proc_obj);
+        vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, proc_obj);
+    }
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nbindings);
+
+    unindent(pSK);
+    return 0;
+}
+
+// Returns proc_obj. Caller must have already emitted value code.
+// Stack after: [...vals..., proc/closure]
+//-----------------------------------------------
+static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindings)
+{
+    ParseUpvalue saved_upvalues[MAX_UPVALUES];
+    int saved_upvalue_count = pSK->upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+    pSK->upvalue_count = 0;
+
+    vm_new_environment(&pSK->vm);
+
+    Object* proc_obj = vm_new_proc(&pSK->vm);
+    vm_push(&pSK->vm, proc_obj);
+
+    Procedure* proc = AS_OBJ(Procedure, proc_obj);
+    static int let_id = 0;
+    char let_name[32];
+    snprintf(let_name, sizeof(let_name), "<let-%d>", let_id++);
+    proc->name = (String*)vm_new_string(&pSK->vm, let_name);
+    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
+
+    CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
+
+    // Register parameter names
+    proc->arity = nbindings;
+    for (int i = 0; i < nbindings; i++)
+        vm_set_var(&pSK->vm, bind_names[i], MAKE_NUM(i + 1));
+
+    // Fix up frame offsets
+    if (pSK->vm.current_scope)
+    {
+        Environment* env = pSK->vm.current_scope;
+        size_t env_index = 0;
+        ht_key_t env_key;
+        ht_value_t env_value;
+        while (ht_next(env->bindings, &env_index, &env_key, &env_value))
+            ht_add(env->bindings, env_key, MAKE_NUM(nbindings - AS_NUM(env_value) + 3));
+    }
+
+    // Parse body
+    local_body(pSK);
+
+    vm_emit(&pSK->vm, OP_RET);
+    vm_set_current_chunk(&pSK->vm, prev_chunk);
+    vm_free_environment(&pSK->vm);
+
+    // Handle closure capture
+    int num_upvalues = pSK->upvalue_count;
+    ParseUpvalue captured[MAX_UPVALUES];
+    if (num_upvalues > 0)
+        memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
+
+    pSK->upvalue_count = saved_upvalue_count;
+    if (saved_upvalue_count > 0)
+        memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
+
+    for (int i = 0; i < num_upvalues; i++)
+    {
+        if (captured[i].scope_depth > 1)
+        {
+            int parent_uv_idx = register_upvalue(pSK, captured[i].name,
+                captured[i].scope_depth - 1, captured[i].local_index);
+            captured[i].local_index = parent_uv_idx;
+            captured[i].is_upvalue = 1;
+        }
+    }
+
+    if (num_upvalues > 0)
+    {
+        for (int i = 0; i < num_upvalues; i++)
+        {
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
+        }
+        vm_emit_push_object(&pSK->vm, proc_obj);
+        vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
+        vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
+    }
+    else
+    {
+        vm_emit_push_object(&pSK->vm, proc_obj);
+    }
+
+    return proc_obj;
+}
+
+//-----------------------------------------------
+// Parse let bindings: ((var val) ...) — emits values, collects names
+//-----------------------------------------------
+#define MAX_LET_BINDINGS 32
+
+static int let_parse_bindings(SKState* pSK, char bind_names[][64])
+{
+    match(pSK, '(');
+
+    int nbindings = 0;
+    while (LOOKAHEAD == '(')
+    {
+        match(pSK, '(');
+        if (nbindings >= MAX_LET_BINDINGS)
+            yyerror(pSK, "too many let bindings");
+
+        strncpy(bind_names[nbindings], pSK->yylval.word, 63);
+        bind_names[nbindings][63] = '\0';
+        nbindings++;
+
+        match(pSK, ID);
+        expr(pSK);      // emit value code into current chunk
+        match(pSK, ')');
+    }
+
+    match(pSK, ')');
+    return nbindings;
+}
+
+//-----------------------------------------------
+// let_expr: (let ((var val) ...) body ...)
+// Desugars to ((lambda (var ...) body ...) val ...)
+//-----------------------------------------------
+static int let_expr(SKState* pSK, int token)
+{
+    PARSE_LOG("let_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, token);
+
+    char bind_names[MAX_LET_BINDINGS][64];
+    int nbindings = let_parse_bindings(pSK, bind_names);
+
+    // Create lambda, parse body, handle closures
+    // Stack: [val1, ..., valN, proc/closure]
+    let_create_lambda(pSK, bind_names, nbindings);
+
+    // Call: fn on top, values underneath → ICALL
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nbindings);
 
     unindent(pSK);
     return 0;
@@ -646,8 +1264,19 @@ static int set(SKState* pSK)
     PARSE_LOG("set(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, SET);
+
+    // Check if var is local (with scope depth)
+    int scope_depth = -1;
+    Object* obj = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
+
     // handle variable and check for undefined symbol
     Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
+    char var_name[64];
+    strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
+    var_name[sizeof(var_name) - 1] = '\0';
+
+    match(pSK, ID);
+
     if (!key)
     {
         yyerror(pSK, "entity undefined");
@@ -655,17 +1284,34 @@ static int set(SKState* pSK)
         return 0;
     }
 
-    match(pSK, ID);
-
-    if (key)
+    if (scope_depth == 0 && IS_NUM(obj))
     {
+        // Local variable in current scope
+        expr(pSK);
+        vm_emit(&pSK->vm, OP_SET_LOCAL);
+        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(obj));
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+    }
+    else if (scope_depth > 0 && IS_NUM(obj))
+    {
+        // Variable from enclosing scope — set via upvalue
+        int uv_idx = register_upvalue(pSK, var_name, scope_depth, AS_NUM(obj));
+        expr(pSK);
+        if (uv_idx >= 0) {
+            vm_emit(&pSK->vm, OP_SET_UPVALUE);
+            vm_emit(&pSK->vm, (VMCode_t)uv_idx);
+        }
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+    }
+    else
+    {
+        // Global variable
         vm_emit_push_object(&pSK->vm, key);
         expr(pSK);
         vm_emit(&pSK->vm, OP_STORE);
+        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
     }
-    else
-        yyerror(pSK, "entity undefined");
-    
+
     unindent(pSK);
     return 0;
 }
@@ -850,9 +1496,9 @@ static int case_expr(SKState* pSK)
             {
                 vm_emit(&pSK->vm, OP_DUP);       // duplicate key for comparison
                 expr(pSK);                        // push datum value
-                vm_emit_number(&pSK->vm, 2);      // nargs = 2
                 vm_emit(&pSK->vm, OP_CALL);
                 vm_emit(&pSK->vm, (VMCode_t)eqv_fn);
+                vm_emit(&pSK->vm, (VMCode_t)2);   // nargs = 2
 
                 // If match, branch to body
                 vm_emit(&pSK->vm, OP_BNF);        // branch if NOT false (i.e. true)
@@ -914,9 +1560,7 @@ static int expr_tail(SKState* pSK)
         count++;
     }
 
-	// push number of arguments onto stack
-    vm_emit_number(&pSK->vm, count);
-
+	// return number of arguments (caller will emit as immediate operand)
     return count;
 }
 
@@ -1046,8 +1690,21 @@ static int expr(SKState* pSK)
             set(pSK);
             break;
 
+        case LET:
+        case LET_STAR:
+            let_expr(pSK, LOOKAHEAD);
+            break;
+
         case LOAD:
             load_expr(pSK);
+            break;
+
+        case IMPORT:
+            import_expr(pSK);
+            break;
+
+        case QUOTE:
+            quote_expr(pSK);
             break;
 
         case IF:
@@ -1072,6 +1729,30 @@ static int expr(SKState* pSK)
 
         case CASE_TOKEN:
             case_expr(pSK);
+            break;
+
+        case DO:
+            do_expr(pSK);
+            break;
+
+        case '(':
+            {
+                // Subexpression in function position: ((expr) args...)
+                // Evaluate the head expression (pushes callable onto stack)
+                expr(pSK);
+
+                // Parse arguments (pushed on top of fn)
+                int count = expr_tail(pSK);
+
+                // Record offset for potential tail call patching
+                CodeChunk* chunk = vm_get_current_chunk();
+                pSK->last_call_offset = (int)chunk->count;
+                pSK->last_call_chunk = chunk;
+
+                // Expression call — fn is under args on stack
+                vm_emit(&pSK->vm, OP_XCALL);
+                vm_emit(&pSK->vm, (VMCode_t)count);
+            }
             break;
 
         case '+':        case '-':
@@ -1105,22 +1786,61 @@ static int expr(SKState* pSK)
 
                     if (IS_FUNCTION(proc))
                     {
-                        expr_tail(pSK); // parse function arguments (if any)
+                        int count = expr_tail(pSK); // parse function arguments (if any)
 
-                        // Record offset for potential tail call patching
-                        CodeChunk* chunk = vm_get_current_chunk();
-                        pSK->last_call_offset = (int)chunk->count;
-                        pSK->last_call_chunk = chunk;
+                        // Check for specialized arithmetic opcodes (2-arg calls to known builtins)
+                        if (count == 2 && IS_NATIVE_FN(proc))
+                        {
+                            NativeFunction* nf = (NativeFunction*)proc;
+                            const char* fname = nf->name->value;
+                            int spec_op = -1;
+                            if (fname[0] == '+' && fname[1] == '\0') spec_op = OP_ADD;
+                            else if (fname[0] == '-' && fname[1] == '\0') spec_op = OP_SUB;
+                            else if (fname[0] == '*' && fname[1] == '\0') spec_op = OP_MUL;
+                            else if (fname[0] == '<' && fname[1] == '=' && fname[2] == '\0') spec_op = OP_LE;
+                            else if (fname[0] == '<' && fname[1] == '\0') spec_op = OP_LT;
+                            else if (fname[0] == '=' && fname[1] == '\0') spec_op = OP_EQ_NUM;
+
+                            if (spec_op >= 0)
+                            {
+                                // No call frame needed — emit single opcode
+                                // Record offset so tail-call patching skips this (no-op patch)
+                                CodeChunk* chunk = vm_get_current_chunk();
+                                pSK->last_call_offset = (int)chunk->count;
+                                pSK->last_call_chunk = chunk;
+
+                                vm_emit(&pSK->vm, (VMCode_t)spec_op);
+                            }
+                            else
+                            {
+                                // Regular CALL for non-specialized native functions
+                                CodeChunk* chunk = vm_get_current_chunk();
+                                pSK->last_call_offset = (int)chunk->count;
+                                pSK->last_call_chunk = chunk;
+
+                                vm_emit(&pSK->vm, OP_CALL);
+                                vm_emit(&pSK->vm, (VMCode_t)proc);
+                                vm_emit(&pSK->vm, (VMCode_t)count);
+                            }
+                        }
+                        else
+                        {
+                            // Record offset for potential tail call patching
+                            CodeChunk* chunk = vm_get_current_chunk();
+                            pSK->last_call_offset = (int)chunk->count;
+                            pSK->last_call_chunk = chunk;
                         
-                        vm_emit(&pSK->vm, OP_CALL);
-                        vm_emit(&pSK->vm, (VMCode_t)proc);
+                            vm_emit(&pSK->vm, OP_CALL);
+                            vm_emit(&pSK->vm, (VMCode_t)proc);
+                            vm_emit(&pSK->vm, (VMCode_t)count);
+                        }
                     }
                     else if (local_fn)
                     {
-                        expr_tail(pSK); // parse function arguments (if any)
+                        int count = expr_tail(pSK); // parse function arguments (if any)
 
-                        vm_emit_number(&pSK->vm, AS_NUM(proc));
                         vm_emit(&pSK->vm, OP_GET_LOCAL);
+                        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(proc));
                         
                         // Record offset for potential tail call patching
                         CodeChunk* chunk = vm_get_current_chunk();
@@ -1128,12 +1848,13 @@ static int expr(SKState* pSK)
                         pSK->last_call_chunk = chunk;
                         
                         vm_emit(&pSK->vm, OP_ICALL);
+                        vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                     else
                     {
                         // Not a known function at parse time - emit runtime lookup
                         // This handles forward references like (define f (lambda ...)) ... (f args)
-                        expr_tail(pSK); // parse function arguments
+                        int count = expr_tail(pSK); // parse function arguments
                         
                         vm_emit_push_object(&pSK->vm, key);  // push the name
                         vm_emit(&pSK->vm, OP_LOAD);           // look up at runtime
@@ -1144,6 +1865,7 @@ static int expr(SKState* pSK)
                         pSK->last_call_chunk = chunk;
                         
                         vm_emit(&pSK->vm, OP_ICALL);
+                        vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                 }
                 else
@@ -1175,7 +1897,7 @@ int yyparse(SKState *pSK)
 {
     //PARSE_LOG("yyparse(): lookahead = %d '%c'\n", lookahead, (char)lookahead);
 
-    if (pSK->yyin == NULL)
+    if (pSK->yyin == NULL && pSK->eval_input == NULL)
         return 0;
 
     // prime the pump

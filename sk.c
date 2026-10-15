@@ -3,6 +3,7 @@
 //
 // Copyright (c) 2025 Mark Seminatore
 //-------------------------------------
+
 #include "term_colors.h"
 #include "sk.h"
 
@@ -55,24 +56,14 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     memset(pSK, 0, sizeof(SKState));
     
     // allocate dynamic arrays
-    pSK->symbol_capacity = 256;
-    pSK->symbols = (Symbol_t*)calloc(pSK->symbol_capacity, sizeof(Symbol_t));
-    if (!pSK->symbols)
-    {
-        fprintf(stderr, "Failed to allocate symbol table!\n");
-        return FALSE;
-    }
-    
     pSK->file_stack_capacity = 10;
     pSK->file_stack = (FileNode*)calloc(pSK->file_stack_capacity, sizeof(FileNode));
     if (!pSK->file_stack)
     {
         fprintf(stderr, "Failed to allocate file stack!\n");
-        free(pSK->symbols);
         return FALSE;
     }
 
-    pSK->symbol_count = 0;
     pSK->file_stack_ptr = 0;  // start at 0 with sentinel entry
     pSK->err_count = 0;
     pSK->warn_count = 0;
@@ -105,7 +96,6 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     if (VM_OK != vm_init(&pSK->vm))
     {
         fprintf(stderr, "Failed to initialize VM!\n");
-        free(pSK->symbols);
         free(pSK->file_stack);
         return FALSE;
     }
@@ -117,7 +107,6 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     if (SK_TRUE != sk_init_builtins(pSK))
     {
         fprintf(stderr, "Failed to register built-in functions!\n");
-        free(pSK->symbols);
         free(pSK->file_stack);
         return FALSE;
     }
@@ -158,21 +147,6 @@ int sk_shutdown(SKState *pSK)
     // shutdown VM
     vm_shutdown(&pSK->vm);
 
-    // free symbol table
-    if (pSK->symbols)
-    {
-        // free individual symbol names and filenames
-        for (int i = 0; i < pSK->symbol_count; i++)
-        {
-            if (pSK->symbols[i].name)
-                free((void*)pSK->symbols[i].name);
-            if (pSK->symbols[i].filename && strcmp(pSK->symbols[i].filename, SK_NONAME_FILE) != 0)
-                free((void*)pSK->symbols[i].filename);
-        }
-        free(pSK->symbols);
-        pSK->symbols = NULL;
-    }
-
     // free file stack
     if (pSK->file_stack)
     {
@@ -196,6 +170,55 @@ int sk_parse(SKState *pSK)
     int result = yyparse(pSK);
     vm_emit(&pSK->vm, OP_HALT);
     return result;
+}
+
+//-----------------------------------------------
+// eval a string: parse + compile + execute
+//-----------------------------------------------
+int sk_eval_string(SKState *pSK, const char *code)
+{
+    if (!pSK || !code) return SK_FALSE;
+
+    // Save parser state
+    int saved_lookahead = pSK->lookahead;
+    int saved_expr_level = pSK->expr_level;
+    int saved_indent = pSK->indent_level;
+    const char* saved_eval_input = pSK->eval_input;
+    int saved_eval_pos = pSK->eval_pos;
+
+    // Save current code chunk and create a temporary one for eval
+    CodeChunk eval_chunk;
+    vm_init_chunk(&eval_chunk);
+    CodeChunk* saved_chunk = vm_set_current_chunk(&pSK->vm, &eval_chunk);
+
+    // Set up string input — suppress OP_PRINT_TOS by starting at expr_level 1
+    pSK->eval_input = code;
+    pSK->eval_pos = 0;
+    pSK->expr_level = 1;
+    pSK->indent_level = 0;
+    pSK->bDone = 0;
+
+    // Parse the string
+    yyparse(pSK);
+    vm_emit(&pSK->vm, OP_HALT);
+
+    // Execute the compiled code - save/restore VM ip
+    vm_set_current_chunk(&pSK->vm, saved_chunk);
+    VMCode_t* saved_ip = pSK->vm.ip;
+    vm_exec(&pSK->vm, eval_chunk.code);
+    pSK->vm.ip = saved_ip;
+
+    // Restore parser state
+    pSK->lookahead = saved_lookahead;
+    pSK->expr_level = saved_expr_level;
+    pSK->indent_level = saved_indent;
+    pSK->eval_input = saved_eval_input;
+    pSK->eval_pos = saved_eval_pos;
+
+    // Free temporary chunk
+    vm_free_chunk(&pSK->vm, &eval_chunk);
+
+    return SK_TRUE;
 }
 
 //-----------------------------------------------
