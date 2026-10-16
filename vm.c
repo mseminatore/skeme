@@ -667,10 +667,6 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("MAKE_LIST_TAIL count=%zd\n", *ip++);
             break;
 
-        case OP_CHECK_STACK:
-            printf("CHECK_STACK need=%zd\n", *ip++);
-            break;
-
         // case OP_PROC:
         //     printf("PROC\n");
         //     break;
@@ -1028,13 +1024,13 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
 
         if (g_bProfile) proc->call_count++;
 
-        if (!vm_bind_args(pvm, fn_obj, proc, nargs) || !vm_ensure_frame(pvm, proc))
+        if (!vm_bind_args(pvm, fn_obj, proc, nargs))
             return;
 
-        vm_push_fast(pvm, MAKE_RETADDR(pvm->ip));   // push return address
+        vm_push_ip(pvm, pvm->ip);               // push return address
         pvm->ip = proc->chunk.code;             // set IP to function code
-        vm_push_fast(pvm, MAKE_NUM(pvm->fp));   // push old frame pointer
-        vm_push_fast(pvm, fn_obj);              // push callee (arity and closure for RET)
+        vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
+        vm_push(pvm, fn_obj);                   // push callee (arity and closure for RET)
         pvm->fp = pvm->sp;
         pvm->current_closure = closure;         // set current closure for upvalue access
     }
@@ -1045,13 +1041,13 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
 
         if (g_bProfile) proc->call_count++;
 
-        if (!vm_bind_args(pvm, fn_obj, proc, nargs) || !vm_ensure_frame(pvm, proc))
+        if (!vm_bind_args(pvm, fn_obj, proc, nargs))
             return;
 
-        vm_push_fast(pvm, MAKE_RETADDR(pvm->ip));   // push return address onto stack
+        vm_push_ip(pvm, pvm->ip);               // push return address onto stack
         pvm->ip = proc->chunk.code;             // set IP to function code
-        vm_push_fast(pvm, MAKE_NUM(pvm->fp));   // push old frame pointer
-        vm_push_fast(pvm, fn_obj);              // push callee (arity for RET to use)
+        vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
+        vm_push(pvm, fn_obj);                   // push callee (arity for RET to use)
         pvm->fp = pvm->sp;                      // fp points past callee slot
         pvm->current_closure = NULL;            // not in a closure
     }
@@ -1074,20 +1070,20 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
 //---------------------------------------------------------------
 typedef VMExecResult (*OpHandler)(VM*);
 
-static VMExecResult op_push(VM* pvm) { vm_push_fast(pvm, (Object*)*pvm->ip++); return VM_CONTINUE; }
+static VMExecResult op_push(VM* pvm) { vm_push(pvm, (Object*)*pvm->ip++); return VM_CONTINUE; }
 static VMExecResult op_pop(VM* pvm) { vm_pop(pvm); return VM_CONTINUE; }
 static VMExecResult op_push_ip(VM* pvm) { vm_push_ip(pvm, pvm->ip); return VM_CONTINUE; }
 static VMExecResult op_pop_ip(VM* pvm) { pvm->ip = vm_pop_ip(pvm); return VM_CONTINUE; }
-static VMExecResult op_push_fp(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(pvm->fp)); return VM_CONTINUE; }
+static VMExecResult op_push_fp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->fp)); return VM_CONTINUE; }
 static VMExecResult op_pop_fp(VM* pvm) { Object* v = vm_pop(pvm); pvm->fp = AS_NUM(v); return VM_CONTINUE; }
-static VMExecResult op_push_sp(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(pvm->sp)); return VM_CONTINUE; }
+static VMExecResult op_push_sp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->sp)); return VM_CONTINUE; }
 static VMExecResult op_pop_sp(VM* pvm) { Object* v = vm_pop(pvm); pvm->sp = AS_NUM(v); return VM_CONTINUE; }
-static VMExecResult op_num(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(*pvm->ip++)); return VM_CONTINUE; }
-static VMExecResult op_string(VM* pvm) { vm_push_fast(pvm, vm_new_string(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
-static VMExecResult op_symbol(VM* pvm) { vm_push_fast(pvm, vm_new_symbol(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
-static VMExecResult op_true(VM* pvm) { vm_push_fast(pvm, MAKE_TRUE()); return VM_CONTINUE; }
-static VMExecResult op_false(VM* pvm) { vm_push_fast(pvm, MAKE_FALSE()); return VM_CONTINUE; }
-static VMExecResult op_dup(VM* pvm) { vm_push_fast(pvm, vm_peek(pvm, 0)); return VM_CONTINUE; }
+static VMExecResult op_num(VM* pvm) { vm_push(pvm, MAKE_NUM(*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_string(VM* pvm) { vm_push(pvm, vm_new_string(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_symbol(VM* pvm) { vm_push(pvm, vm_new_symbol(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
+static VMExecResult op_true(VM* pvm) { vm_pushBoolean(pvm, TRUE); return VM_CONTINUE; }
+static VMExecResult op_false(VM* pvm) { vm_pushBoolean(pvm, FALSE); return VM_CONTINUE; }
+static VMExecResult op_dup(VM* pvm) { vm_push(pvm, vm_peek(pvm, 0)); return VM_CONTINUE; }
 static VMExecResult op_nop(VM* pvm) { (void)pvm; return VM_CONTINUE; }
 static VMExecResult op_halt(VM* pvm) { (void)pvm; return VM_HALT; }
 static VMExecResult op_set_local(VM* pvm) {
@@ -1126,7 +1122,7 @@ static VMExecResult op_load_global(VM* pvm) {
     pvm->ip += 3;
 
     if ((size_t)operands[2] == pvm->globals_version) {
-        vm_push_fast(pvm, (Object*)operands[1]);
+        vm_push(pvm, (Object*)operands[1]);
         return VM_CONTINUE;
     }
 
@@ -1191,7 +1187,7 @@ static VMExecResult op_bnf(VM* pvm) {
     return VM_CONTINUE;
 }
 static VMExecResult op_get_local(VM* pvm) {
-    vm_push_fast(pvm, vm_fp_peek(pvm, (int)*pvm->ip++));
+    vm_push(pvm, vm_fp_peek(pvm, (int)*pvm->ip++));
     return VM_CONTINUE;
 }
 // cons the top n stack values, in push order, onto 'tail'
@@ -1258,14 +1254,14 @@ static VMExecResult op_make_closure(VM* pvm) {
 }
 static VMExecResult op_capture_local(VM* pvm) {
     int slot = pvm->fp - 1 - (int)*pvm->ip++;   // same addressing as OP_GET_LOCAL
-    vm_push_fast(pvm, (Object*)vm_capture_slot(pvm, slot));
+    vm_push(pvm, (Object*)vm_capture_slot(pvm, slot));
     return VM_CONTINUE;
 }
 static VMExecResult op_capture_upvalue(VM* pvm) {
     int idx = (int)*pvm->ip++;
     if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
         yyerror(pvm->sk_state, "OP_CAPTURE_UPVALUE: invalid upvalue index"); vm_push(pvm, NULL);
-    } else { vm_push_fast(pvm, (Object*)pvm->current_closure->upvalues[idx]); }  // shared, not copied
+    } else { vm_push(pvm, (Object*)pvm->current_closure->upvalues[idx]); }  // shared, not copied
     return VM_CONTINUE;
 }
 static VMExecResult op_get_upvalue(VM* pvm) {
@@ -1274,7 +1270,7 @@ static VMExecResult op_get_upvalue(VM* pvm) {
         yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index"); vm_push(pvm, NULL);
     } else {
         Upvalue* up = pvm->current_closure->upvalues[idx];
-        vm_push_fast(pvm, up->slot >= 0 ? pvm->stack[up->slot] : up->closed);
+        vm_push(pvm, up->slot >= 0 ? pvm->stack[up->slot] : up->closed);
     }
     return VM_CONTINUE;
 }
@@ -1331,9 +1327,6 @@ static VMExecResult vm_tail_call(VM* pvm, Object* fn_obj, int nargs, const char*
         pvm->stack[pvm->sp++] = saved_fp;
         pvm->stack[pvm->sp++] = fn_obj;
         pvm->fp = pvm->sp;
-
-        if (!vm_ensure_frame(pvm, proc))        // (counts the header again: conservative)
-            return VM_ERROR;
 
         if (g_bProfile) proc->call_count++;
         pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
@@ -1430,11 +1423,11 @@ static VMExecResult op_lt(VM* pvm) {
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
-        vm_push_fast(pvm, AS_NUM(a) < AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_NUM(a) < AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
     else if (!vm_check_numeric(pvm, a, b, "<"))
         return VM_ERROR;
     else
-        vm_push_fast(pvm, AS_DOUBLE(a) < AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_DOUBLE(a) < AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
     return VM_CONTINUE;
 }
 static VMExecResult op_le(VM* pvm) {
@@ -1442,11 +1435,11 @@ static VMExecResult op_le(VM* pvm) {
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
-        vm_push_fast(pvm, AS_NUM(a) <= AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_NUM(a) <= AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
     else if (!vm_check_numeric(pvm, a, b, "<="))
         return VM_ERROR;
     else
-        vm_push_fast(pvm, AS_DOUBLE(a) <= AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_DOUBLE(a) <= AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
     return VM_CONTINUE;
 }
 static VMExecResult op_eq_num(VM* pvm) {
@@ -1454,32 +1447,18 @@ static VMExecResult op_eq_num(VM* pvm) {
     Object* b = pvm->stack[--pvm->sp];
     Object* a = pvm->stack[--pvm->sp];
     if (IS_NUM(a) && IS_NUM(b))
-        vm_push_fast(pvm, AS_NUM(a) == AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_NUM(a) == AS_NUM(b) ? MAKE_TRUE() : MAKE_FALSE());
     else if (!vm_check_numeric(pvm, a, b, "="))
         return VM_ERROR;
     else
-        vm_push_fast(pvm, AS_DOUBLE(a) == AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
+        vm_push(pvm, AS_DOUBLE(a) == AS_DOUBLE(b) ? MAKE_TRUE() : MAKE_FALSE());
     return VM_CONTINUE;
 }
 
 // Small-constant opcodes
-static VMExecResult op_num_0(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(0)); return VM_CONTINUE; }
-static VMExecResult op_num_1(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(1)); return VM_CONTINUE; }
-static VMExecResult op_num_2(VM* pvm) { vm_push_fast(pvm, MAKE_NUM(2)); return VM_CONTINUE; }
-
-// OP_CHECK_STACK n: top-level code pushes unchecked too, so each top-level
-// form starts by checking for room for the most it can push (see yyparse)
-static VMExecResult op_check_stack(VM* pvm) {
-    int need = pvm->sp + (int)*pvm->ip++;
-    if (need > VM_STACK_SIZE) {
-        vm_stack_overflow(pvm);
-        return VM_ERROR;
-    }
-    if (need > (int)pvm->max_stack_size)
-        pvm->max_stack_size = need;
-    return VM_CONTINUE;
-}
-
+static VMExecResult op_num_0(VM* pvm) { vm_push(pvm, MAKE_NUM(0)); return VM_CONTINUE; }
+static VMExecResult op_num_1(VM* pvm) { vm_push(pvm, MAKE_NUM(1)); return VM_CONTINUE; }
+static VMExecResult op_num_2(VM* pvm) { vm_push(pvm, MAKE_NUM(2)); return VM_CONTINUE; }
 // Function pointer dispatch table indexed by opcode
 static const OpHandler op_dispatch[OP_LAST] = {
     op_halt, op_push, op_pop, op_push_ip, op_pop_ip,
@@ -1492,7 +1471,7 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_add, op_sub, op_mul, op_lt, op_le, op_eq_num,
     op_num_0, op_num_1, op_num_2,
     op_symbol, op_tailcall_x, op_load_global, op_discard_tos,
-    op_capture_local, op_capture_upvalue, op_list_tail, op_check_stack,
+    op_capture_local, op_capture_upvalue, op_list_tail,
 };
 
 //---------------------------------------------------------------
@@ -1581,7 +1560,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        if (!vm_bind_args(pvm, fn, proc, nargs) || !vm_ensure_frame(pvm, proc))
+        if (!vm_bind_args(pvm, fn, proc, nargs))
         {
             pvm->sp = saved_sp;
             pvm->ip = saved_ip;
@@ -1634,7 +1613,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        if (!vm_bind_args(pvm, fn, proc, nargs) || !vm_ensure_frame(pvm, proc))
+        if (!vm_bind_args(pvm, fn, proc, nargs))
         {
             pvm->sp = saved_sp;
             pvm->ip = saved_ip;
@@ -2533,7 +2512,7 @@ static int op_operand_words(VMCode_t op)
     case OP_BRA: case OP_BNT: case OP_BNF:
     case OP_MAKE_CLOSURE: case OP_GET_UPVALUE: case OP_SET_UPVALUE:
     case OP_CAPTURE_LOCAL: case OP_CAPTURE_UPVALUE:
-    case OP_LIST: case OP_LIST_TAIL: case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_CHECK_STACK:
+    case OP_LIST: case OP_LIST_TAIL: case OP_GET_LOCAL: case OP_SET_LOCAL:
         return 1;
     case OP_CALL: case OP_TAILCALL:     // procedure, argument count
         return 2;
@@ -2542,145 +2521,6 @@ static int op_operand_words(VMCode_t op)
     default:
         return 0;
     }
-}
-
-//--------------------------------------------------------------
-// The most stack slots code can use above the depth it starts at, like
-// Lua's maxstacksize. It follows every path from the start, using each
-// instruction's stack effect, so a call (vm_ensure_frame) or a top-level
-// form (OP_CHECK_STACK) checks for room once instead of on every push. Natives push with the checked vm_push, and a
-// callee checks its own frame, so neither counts here. 'count' bounds the
-// code, or is 0 when unknown (then the paths' ends bound it). Branches only
-// go forward.
-//--------------------------------------------------------------
-static size_t branch_target(const VMCode_t* code, size_t p)
-{
-    // the offset is relative to the operand (see op_bra); 0 if not forward
-    long offset = (long)code[p + 1];
-    return offset > 0 ? p + 1 + (size_t)offset : 0;
-}
-
-int vm_max_depth(const VMCode_t* code, size_t count)
-{
-    size_t cap = count ? count : 256;
-    int* depth_at = (int*)malloc(sizeof(int) * cap);    // depth on entry, -1 if not reached
-    size_t* work = (size_t*)malloc(sizeof(size_t) * 16);    // branch targets to walk
-    size_t nwork = 0, work_cap = 16;
-    if (!depth_at || !work) exit(1);
-    for (size_t i = 0; i < cap; i++)
-        depth_at[i] = -1;
-
-    int max = 0;
-    depth_at[0] = 0;
-    work[nwork++] = 0;
-
-    while (nwork > 0)
-    {
-        size_t p = work[--nwork];
-        int d = depth_at[p];
-
-        for (;;)
-        {
-            VMCode_t op = code[p];
-            if (op >= OP_LAST)
-                break;      // not an instruction: the code is not what we expect
-            int words = op_operand_words(op);
-            long n = words ? (long)code[p + words] : 0;    // the count operand, which comes last
-            int ends = 0;
-            size_t target = 0;  // a branch target, if nonzero
-
-            switch (op)
-            {
-            case OP_PUSH: case OP_NUM: case OP_STRING: case OP_SYMBOL:
-            case OP_TRUE: case OP_FALSE: case OP_DUP:
-            case OP_NUM_0: case OP_NUM_1: case OP_NUM_2:
-            case OP_GET_LOCAL: case OP_GET_UPVALUE: case OP_LOAD_GLOBAL:
-            case OP_CAPTURE_LOCAL: case OP_CAPTURE_UPVALUE:
-            case OP_PUSH_FP: case OP_PUSH_SP: case OP_PUSH_IP:
-                d += 1; break;
-            case OP_POP: case OP_SET_LOCAL: case OP_SET_UPVALUE:
-            case OP_DISCARD_TOS: case OP_PRINT_TOS: case OP_POP_FP: case OP_POP_IP:
-            case OP_ADD: case OP_SUB: case OP_MUL: case OP_LT: case OP_LE: case OP_EQ_NUM:
-                d -= 1; break;
-            case OP_STORE:
-                d -= 2; break;
-            case OP_LIST:                           // n values -> list
-            case OP_CALL:                           // n arguments -> result
-                d += 1 - (int)n; break;
-            case OP_LIST_TAIL:                      // n values and a tail -> list
-            case OP_MAKE_CLOSURE:                   // n upvalues and a procedure -> closure
-            case OP_ICALL: case OP_XCALL:           // n arguments and a procedure -> result
-                d -= (int)n; break;
-            case OP_TAILCALL:                       // where there is no frame to reuse
-            case OP_TAILCALL_I: case OP_TAILCALL_X: // these are ordinary calls, so go on
-                d += (op == OP_TAILCALL ? 1 : 0) - (int)n; break;
-            case OP_BRA:
-                target = branch_target(code, p); ends = 1; break;
-            case OP_BNT: case OP_BNF:
-                d -= 1; target = branch_target(code, p); break;
-            case OP_RET: case OP_HALT:
-                ends = 1; break;
-            default:                                // LOAD, NOP, POP_SP
-                break;
-            }
-            if (d < 0) d = 0;
-            if (d > max) max = d;
-
-            size_t next = p + 1 + words;
-            size_t succ[2] = { target, ends ? 0 : next };
-            for (int s = 0; s < 2; s++)
-            {
-                size_t q = succ[s];
-                if (q == 0 || q <= p || (count && q >= count))
-                    continue;   // none, or backward (not emitted), or past the end
-                if (q >= cap)
-                {
-                    size_t new_cap = cap;
-                    while (new_cap <= q) new_cap *= 2;
-                    depth_at = (int*)realloc(depth_at, sizeof(int) * new_cap);
-                    if (!depth_at) exit(1);
-                    for (size_t i = cap; i < new_cap; i++) depth_at[i] = -1;
-                    cap = new_cap;
-                }
-                if (depth_at[q] >= d)
-                    continue;   // reached already, as deep
-                depth_at[q] = d;
-                if (nwork == work_cap)
-                {
-                    work_cap *= 2;
-                    work = (size_t*)realloc(work, sizeof(size_t) * work_cap);
-                    if (!work) exit(1);
-                }
-                work[nwork++] = q;
-            }
-            break;      // continue from the work list (it holds 'next' too)
-        }
-    }
-
-    free(depth_at);
-    free(work);
-    return max;
-}
-
-//--------------------------------------------------------------
-// The slow path of vm_ensure_frame: compute the procedure's max_stack on
-// its first call, report an overflow, and (when profiling) record the
-// deepest the stack can reach, for the max_stack_size statistic.
-//--------------------------------------------------------------
-int vm_frame_check(VM* pvm, Procedure* proc)
-{
-    if (proc->max_stack == VM_MAX_STACK_UNKNOWN)
-        proc->max_stack = vm_max_depth(proc->chunk.code, proc->chunk.count);
-
-    int need = pvm->sp + 3 + proc->max_stack;
-    if (need > VM_STACK_SIZE)
-    {
-        vm_stack_overflow(pvm);
-        return FALSE;
-    }
-    if (need > (int)pvm->max_stack_size)
-        pvm->max_stack_size = need;
-    return TRUE;
 }
 
 //--------------------------------------------------------------
@@ -2765,7 +2605,6 @@ Object* vm_new_proc(VM* pvm)
     proc->arity = 0;
     proc->upvalues = NULL;
     proc->upvalue_count = 0;
-    proc->max_stack = VM_MAX_STACK_UNKNOWN;     // computed when first called (vm_ensure_frame)
 
 	vm_init_chunk(&proc->chunk);
 

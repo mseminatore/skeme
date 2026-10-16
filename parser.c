@@ -2541,20 +2541,12 @@ int yyparse(SKState *pSK)
         // script or a loaded file
         pSK->echo_form = (pSK->eval_input == NULL && pSK->yyin == stdin);
 
-        // The VM does not check each push: the form starts by checking for
-        // room for the most it can push, filled in once it is compiled
-        vm_emit(&pSK->vm, OP_CHECK_STACK);
-        vm_emit(&pSK->vm, 0);
-        size_t form_code = chunk->count;
-
         pSK->define_name = NULL;
         expr(pSK);
 
         int dropped = (pSK->err_count != errors_before);
         if (dropped)
             discard_form(pSK, chunk, form_start, saved_expr_level, saved_scope);
-        else
-            chunk->code[form_code - 1] = (VMCode_t)vm_max_depth(chunk->code + form_code, chunk->count - form_code);
         finish_define(pSK, dropped);
     }
 

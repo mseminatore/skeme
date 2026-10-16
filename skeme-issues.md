@@ -144,7 +144,7 @@ On `fib(32)`, about 15 of those points are the overflow check in `vm_push`, meas
 
 To get the push check off the hot path, do what Lua does: have the compiler compute each function's maximum stack depth, and check for that much room once per call instead of on every push.
 
-**Update (#17):** done. The gain was much smaller than the measurement above suggested, about 2% on `fib(34)`; see #17.
+**Update (#17):** tried and reverted. On the current VM it gained only about 2% on `fib(34)`, within noise, so the per-push check stays; see #17.
 
 ---
 
@@ -571,7 +571,7 @@ Tests: 11 new in `test.scm` under "arithmetic with one or zero arguments" and "n
 
 ---
 
-## 17. ✅ Macro traps, bytecode GC roots, REPL echo, eval error locations, native arity, stack checks
+## 17. ✅ Macro traps, bytecode GC roots, REPL echo, eval error locations, native arity
 
 **Labels:** bug, performance
 **Status:** Fixed (working tree, not yet committed). Covers the remaining open items except #8, plus problems reported by reviewers.
@@ -606,14 +606,10 @@ They reported the lexer's position in whatever file was on top of the input stac
 ### Inline arithmetic did not check its operands
 Two-argument `+ - * < <= =` compile to opcodes whose slow path treated any non-number as 0, so `(+ 1 "x")` was `1`. They now abort with "arguments to '+' must be numbers", like the builtins.
 
-### Stack checks per call instead of per push (from #3)
-`vm_push` checked for overflow on every push. Following Lua:
-* `vm_max_depth` computes the most stack slots code can use, following every path with each instruction's stack effect (branches only go forward). A procedure computes it on its first call and caches it in `Procedure.max_stack`.
-* `vm_ensure_frame` checks once per call (normal, tail and from C) for room for the frame header plus that depth: one inline add and compare. The opcode handlers then push with `vm_push_fast`, which only `assert`s, so a Debug build catches any underestimate. Natives and other C code keep the checked `vm_push`, since their pushes are not in the bytecode, and so do the few handlers that push a temporary GC root.
-* Top-level code is checked per form: `yyparse` starts each form with a new `OP_CHECK_STACK n`, filled in once the form is compiled. A form too big for the stack fails alone; earlier forms still run.
-* `max_stack_size` is now an upper bound, and calls update it only when profiling (`-p`).
+### Stack checks per call instead of per push (from #3): tried, reverted
+A Lua-style version was implemented (commit `bdff48d`) and then reverted. It computed each procedure's maximum stack depth from its bytecode, checked once per call (and once per top-level form, with a new `OP_CHECK_STACK`), and let the opcode handlers push unchecked.
 
-The gain was small: `fib(34)` about 2% faster (2487 vs 2533 ms, min of 9 interleaved runs; noise is about ±3%), and `bench.scm` the same. The ~15% measured in #3 was against an older VM. This is a modest win for a real increase in complexity; it is easy to revert if you prefer the simpler per-push check.
+It gained only about 2% on `fib(34)` (2487 vs 2533 ms, min of 9 interleaved runs, with noise of about ±3%), and nothing on `bench.scm`; the ~15% measured in #3 was against an older VM. That did not justify a stack-effect table every new opcode must keep in sync, where an underestimate would corrupt memory in Release builds. `vm_push` keeps its per-push check. The overflow tests written for it stay: deep recursion with wide frames, and a single top-level form too big for the stack.
 
 ### Verification
 New C tests in `tests/test_error.c` (295 total): native arity messages, `<eval>` locations, inline arithmetic type errors, a "Compiled Code Roots" suite (nothing left on the stack after compiling a lambda, a procedure reachable only from another's code survives a collection, procedures compiled by `eval` are collected), and stack overflow with wide frames and with one oversized top-level form. One new `test.scm` test (416 total) for `string-append` with zero or one strings. Everything passes in Debug, Release and the GC-stress build, plus `ctest` in Debug and Release.

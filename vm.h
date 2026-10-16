@@ -336,7 +336,6 @@ enum {
     OP_CAPTURE_LOCAL,   // push the (shared) upvalue for local slot idx, for OP_MAKE_CLOSURE
     OP_CAPTURE_UPVALUE, // push the current closure's upvalue idx, for OP_MAKE_CLOSURE
     OP_LIST_TAIL,   // like OP_LIST n, but the list ends in the value on top (a dotted list)
-    OP_CHECK_STACK, // n: abort unless the stack has room for n more values (a top-level form)
     OP_LAST         // last opcode
 };
     
@@ -392,8 +391,6 @@ typedef struct Procedure {
     UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
     int upvalue_count;      // number of upvalues
     uint64_t call_count;    // profiling: number of times called
-    int max_stack;          // most stack slots its code uses above the frame, or
-                            // VM_MAX_STACK_UNKNOWN until first called (vm_ensure_frame)
 } Procedure;
 
 // native arities other than a fixed count; the VM checks each call
@@ -478,7 +475,7 @@ typedef struct VM {
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
-	size_t max_stack_size;          // Maximum stack size reached (an upper bound; calls update it only when profiling)
+	size_t max_stack_size;          // Maximum stack size reached
 	size_t max_call_depth;          // Maximum call depth reached
 
     HashTable *global_table;        // Hash table for global variables
@@ -547,34 +544,15 @@ void vm_abort(VM* pvm, const char* msg);
 
 void vm_stack_overflow(VM* pvm);
 
-// A checked push, for natives and other C code. The bytecode does not
-// check each push: a call checks once that its frame has room for the
-// most the procedure's code can push (vm_ensure_frame), and the op_
-// handlers then use vm_push_fast.
 static inline void vm_push(VM* pvm, Object* obj) {
-    // the common case first; the rare overflow is out of line
+    // the common case first; the rare overflow is out of line (pushes are hot)
     if (pvm->sp < VM_STACK_SIZE) {
         pvm->stack[pvm->sp++] = obj;
+        if (pvm->sp > (int)pvm->max_stack_size)
+            pvm->max_stack_size = pvm->sp;
     } else
         vm_stack_overflow(pvm);
 }
-// An unchecked push, for the op_ handlers: their frame was checked on entry
-static inline void vm_push_fast(VM* pvm, Object* obj) {
-    assert(pvm->sp < VM_STACK_SIZE && "stack depth analysis underestimated (vm_max_depth)");
-    pvm->stack[pvm->sp++] = obj;
-}
-// On entering a procedure: is there room for its frame header (return
-// address, saved fp, callee) and the most its code can push? Then its
-// instructions can push unchecked. One add and compare per call; the first
-// call (max_stack not yet computed) and profiling take vm_frame_check.
-#define VM_MAX_STACK_UNKNOWN (VM_STACK_SIZE + 1)
-int vm_frame_check(VM* pvm, Procedure* proc);
-static inline int vm_ensure_frame(VM* pvm, Procedure* proc) {
-    if (pvm->sp + 3 + proc->max_stack <= VM_STACK_SIZE && !g_bProfile)
-        return 1;
-    return vm_frame_check(pvm, proc);
-}
-int vm_max_depth(const VMCode_t* code, size_t count);
 static inline Object* vm_pop(VM* pvm) {
     if (pvm->sp <= 0) { vm_abort(pvm, "stack underflow"); return MAKE_UNSPEC(); }
     return pvm->stack[--pvm->sp];
