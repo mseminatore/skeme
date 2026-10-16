@@ -43,6 +43,14 @@ typedef enum {
 #ifndef VM_STACK_SIZE
 #define VM_STACK_SIZE 65536
 #endif
+
+// How deeply natives may call back into Scheme (map, call/cc, apply from C).
+// Each level nests C calls, so this guards the C stack: with the default 1MB
+// stack, a Debug build crashed somewhere between 700 and 1500 levels and a
+// Release build between 1500 and 2000.
+#ifndef VM_MAX_NATIVE_DEPTH
+#define VM_MAX_NATIVE_DEPTH 500
+#endif
 #define VM_FREE_LIST 128
 #define VM_INITIAL_GC_THRESHOLD 256
 #define VM_GC_HEAP_GROWTH_FACTOR 2
@@ -191,6 +199,7 @@ static inline float sk_decode_float(intptr_t bits) {
 #define IS_ENVIRONMENT(obj) (OBJ_TYPE(obj) == OBJ_ENVIRONMENT)
 #define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
 #define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
+#define IS_CONTINUATION(obj) (OBJ_TYPE(obj) == OBJ_CONTINUATION)
 
 // Numeric classification (integer or float)
 #define IS_NUMERIC(obj)     (IS_NUM(obj) || IS_FLOAT(obj))
@@ -228,6 +237,7 @@ enum
     OBJ_FLOAT,
     OBJ_PORT,
     OBJ_SYMBOL,
+    OBJ_CONTINUATION,
 
 	// mark the last object type
     OBJ_LAST
@@ -285,6 +295,7 @@ enum {
     OP_DISCARD_TOS, // discard a top-level expr result without printing it (script input)
     OP_CAPTURE_LOCAL,   // push the (shared) upvalue for local slot idx, for OP_MAKE_CLOSURE
     OP_CAPTURE_UPVALUE, // push the current closure's upvalue idx, for OP_MAKE_CLOSURE
+    OP_LIST_TAIL,   // like OP_LIST n, but the list ends in the value on top (a dotted list)
     OP_LAST         // last opcode
 };
     
@@ -327,7 +338,8 @@ typedef struct {
 // procedure object
 typedef struct Procedure {
     Object base;        // base object
-	int arity;          // number of arguments
+	int arity;          // number of parameters (a rest parameter counts as one)
+    int has_rest;       // 1 if the last parameter receives the remaining arguments as a list
 	CodeChunk chunk;    // code chunk
     String *name;       // function name
     UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
@@ -362,6 +374,14 @@ typedef struct Upvalue {
     Object* closed;             // the value, once closed
     struct Upvalue* next_open;  // VM's open upvalue list, highest slot first
 } Upvalue;
+
+// An escape continuation, made by call/cc. Calling it returns its value
+// from that call/cc, but only while the call/cc is still running (its
+// "dynamic extent"); afterwards it is invalid. See sk_call_cc.
+typedef struct Continuation {
+    Object base;
+    int valid;              // 1 while its call/cc has not returned
+} Continuation;
 
 typedef struct Closure {
     Object base;            // base object
@@ -408,6 +428,7 @@ typedef struct VM {
 
     HashTable *global_table;        // Hash table for global variables
 	HashTable* interned_strings;    // Hash table for interned strings
+    HashTable* interned_symbols;    // Hash table for interned symbols (one object per name)
 
     Environment *current_scope;     // Current environment/scope
     Closure* current_closure;       // Currently executing closure (for upvalue access)
@@ -415,6 +436,11 @@ typedef struct VM {
     int exec_depth;                 // nesting of vm_exec / vm_call_function
     size_t globals_version;         // bumped on every global write; invalidates OP_LOAD_GLOBAL caches
     struct Upvalue* open_upvalues;  // upvalues still pointing into the stack, highest slot first
+    Object* pending_call;           // procedure a native asked the VM to call (vm_request_call)
+    int pending_nargs;              // its argument count; the arguments are on the stack
+    Object* call_root;              // callee kept alive while a call allocates (rest lists)
+    Object* escape_to;              // continuation being escaped to (see vm_escape), or NULL
+    Object* escape_value;           // the value it returns
     
     int grayCount;
     int grayCapacity;
@@ -528,6 +554,9 @@ void vm_print_profile(VM* pvm);
 int vm_define_global(VM* pvm, Object* key, Object* value);
 int vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
+void vm_request_call(VM* pvm, Object* fn, int nargs);
+void vm_build_list(VM* pvm, int n, Object* tail);   // cons the top n stack values onto tail
+void vm_escape(VM* pvm, Object* k, Object* value);   // call an escape continuation
 int vm_has_global(VM *pvm, Object *key);
 Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);

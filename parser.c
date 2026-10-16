@@ -295,6 +295,11 @@ static int atom(SKState* pSK)
         unindent(pSK);
         break;
 
+    // operators used as values, e.g. (map + a b) or (apply * xs), name the
+    // native procedures of the same name; so does list, e.g. (apply list xs)
+    case '+': case '-': case '*': case '/':
+    case '<': case '>': case '=':
+    case LIST:
     case ID:
         {
             PARSE_LOG("ID: '%s'\n", pSK->yylval.word);
@@ -306,7 +311,7 @@ static int atom(SKState* pSK)
             char var_name[BUF_SIZE];
             strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
             var_name[sizeof(var_name) - 1] = '\0';
-            match(pSK, ID);
+            match(pSK, LOOKAHEAD);
 
             if (scope_depth == 0 && IS_NUM(obj))
             {
@@ -347,15 +352,31 @@ static int atom(SKState* pSK)
 //-----------------------------------------------
 //  <formals> ==> (<variable>*) | <variable>
 //-----------------------------------------------
-static int formals(SKState* pSK, Procedure* proc)
+//-----------------------------------------------
+// Parameters: a b c, optionally followed by . rest, which receives the
+// remaining arguments as a list. With rest_only the parameter list is a
+// single identifier, as in (lambda args ...), which receives them all.
+//-----------------------------------------------
+static int formals(SKState* pSK, Procedure* proc, int rest_only)
 {
 	PARSE_LOG("formals(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     int arity = 0;
-    while (LOOKAHEAD == ID)
+    int has_rest = 0;
+    while (!rest_only && LOOKAHEAD == ID)
     {
         arity++;
 		vm_set_var(&pSK->vm, pSK->yylval.word, MAKE_NUM(arity));   // add parameter to function scope
+        match(pSK, ID);
+    }
+
+    if (rest_only || LOOKAHEAD == '.')
+    {
+        if (!rest_only)
+            match(pSK, '.');
+        arity++;
+        has_rest = 1;
+        vm_set_var(&pSK->vm, pSK->yylval.word, MAKE_NUM(arity));   // the rest parameter
         match(pSK, ID);
     }
 
@@ -376,8 +397,11 @@ static int formals(SKState* pSK, Procedure* proc)
     }
 
     if (proc)
+    {
         proc->arity = arity;
-	
+        proc->has_rest = has_rest;
+    }
+
     unindent(pSK);
     return 0;
 }
@@ -554,7 +578,7 @@ static int definition(SKState* pSK)
         match(pSK, ID);
 		
         // parameters
-        formals(pSK, proc);
+        formals(pSK, proc, 0);
 
         match(pSK, ')');
         
@@ -692,22 +716,27 @@ static int lambda(SKState* pSK)
     if (LOOKAHEAD == '(')
     {
         match(pSK, '(');
-    
+
         // parameters
-        formals(pSK, proc);
+        formals(pSK, proc, 0);
 
         match(pSK, ')');
     }
+    else if (LOOKAHEAD == ID)
+    {
+        // (lambda args ...): args is the list of all the arguments
+        formals(pSK, proc, 1);
+    }
     else
     {
-        if (LOOKAHEAD == ID)
-        {
-            // single parameter
-            proc->arity = 1;
-            match(pSK, ID);
-        }
+        // (lambda () ...): "()" lexes as one token. No parameters to parse;
+        // the next token already belongs to the body.
+        if (LOOKAHEAD == NIL)
+            match(pSK, NIL);
         else
-            proc->arity = 0;
+            yyerror(pSK, "lambda: expected a parameter list");
+        proc->arity = 0;
+        proc->has_rest = 0;
     }
      
     // function body
@@ -866,11 +895,25 @@ static void quote_datum(SKState* pSK)
 
         // non-empty list: recursively quote each element
         int count = 0;
-        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        while (LOOKAHEAD != ')' && LOOKAHEAD != '.' && LOOKAHEAD != DONE)
         {
             quote_datum(pSK);
             count++;
         }
+
+        if (LOOKAHEAD == '.')
+        {
+            // dotted list (a b . c): one more datum is the final cdr
+            match(pSK, '.');
+            if (count == 0)
+                yyerror(pSK, "nothing before '.' in quoted list");
+            quote_datum(pSK);
+            match(pSK, ')');
+            vm_emit(&pSK->vm, OP_LIST_TAIL);
+            vm_emit(&pSK->vm, (VMCode_t)count);
+            return;
+        }
+
         match(pSK, ')');
         vm_emit(&pSK->vm, OP_LIST);
         vm_emit(&pSK->vm, (VMCode_t)count);
@@ -1541,6 +1584,87 @@ static int letrec_expr(SKState* pSK)
     return 0;
 }
 
+//-----------------------------------------------
+// Named let: (let name ((var init) ...) body ...) binds name, within the
+// body, to a procedure of the vars whose body is the let body, and calls it
+// with the inits. It compiles like
+//   ((lambda (<arg0> ... name)                 ; inits, and name unspecified
+//      (set! name (lambda (var ...) body ...))
+//      (name <arg0> ...))
+//    init ... <unspecified>)
+// <argN> cannot be written in source (identifiers do not start with '<'),
+// so the body cannot see them. The prologue of the outer lambda does the
+// set! and the first call, so it needs the binding names: named_let_info
+// passes them, read as soon as the prologue starts.
+//-----------------------------------------------
+typedef struct NamedLet
+{
+    char loop_name[64];
+    char names[MAX_LET_BINDINGS][64];
+    int nbindings;
+} NamedLet;
+
+static NamedLet* named_let_info;
+
+static void named_let_prologue(SKState* pSK)
+{
+    NamedLet* nl = named_let_info;
+
+    // the loop procedure, from the let body; it captures name itself
+    let_create_lambda(pSK, nl->names, nl->nbindings, NULL);
+    int scope_depth = -1;
+    Object* name_slot = vm_get_local_var_ex(&pSK->vm, nl->loop_name, &scope_depth);
+    vm_emit(&pSK->vm, OP_SET_LOCAL);
+    vm_emit(&pSK->vm, (VMCode_t)AS_NUM(name_slot));
+
+    // the first call: (name <arg0> ...)
+    for (int i = 0; i < nl->nbindings; i++)
+    {
+        char arg_name[64];
+        snprintf(arg_name, sizeof(arg_name), "<arg%d>", i);
+        Object* slot = vm_get_local_var_ex(&pSK->vm, arg_name, &scope_depth);
+        vm_emit(&pSK->vm, OP_GET_LOCAL);
+        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(slot));
+    }
+    vm_emit(&pSK->vm, OP_GET_LOCAL);
+    vm_emit(&pSK->vm, (VMCode_t)AS_NUM(name_slot));
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nl->nbindings);
+}
+
+static int named_let_expr(SKState* pSK)
+{
+    NamedLet nl;
+    strncpy(nl.loop_name, pSK->yylval.word, 63);
+    nl.loop_name[63] = '\0';
+    match(pSK, ID);
+
+    nl.nbindings = let_parse_bindings(pSK, nl.names);   // emits the inits
+    vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());         // name, set in the prologue
+
+    // parameters of the outer lambda: <arg0> ... name
+    char params[MAX_LET_BINDINGS + 1][64];
+    for (int i = 0; i < nl.nbindings; i++)
+        snprintf(params[i], sizeof(params[i]), "<arg%d>", i);
+    strcpy(params[nl.nbindings], nl.loop_name);
+
+    named_let_info = &nl;
+    let_create_lambda(pSK, params, nl.nbindings + 1, named_let_prologue);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)(nl.nbindings + 1));
+
+    unindent(pSK);
+    return 0;
+}
+
 static int let_expr(SKState* pSK, int token)
 {
     PARSE_LOG("let_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
@@ -1549,6 +1673,9 @@ static int let_expr(SKState* pSK, int token)
         return let_star_expr(pSK);
 
     match(pSK, token);
+
+    if (token == LET && LOOKAHEAD == ID)
+        return named_let_expr(pSK);
 
     char bind_names[MAX_LET_BINDINGS][64];
     int nbindings = let_parse_bindings(pSK, bind_names);

@@ -540,9 +540,12 @@ yylex01:
     {
         char buf[BUF_SIZE], *p = buf;
 
+        // after the first character, an identifier can contain any R5RS
+        // "subsequent" character, e.g. call/cc, string=?, list->string
         do {
-            *p++ = c;
-        } while ((c=getch(pSK)) != EOF && (c == '_' || c == '?' || c == '-' || c == '!' || c == '>' || c == '<' || c == '*' || isalnum(c)));
+            if (p < buf + BUF_SIZE - 1)
+                *p++ = c;
+        } while ((c=getch(pSK)) != EOF && (isalnum(c) || (c != 0 && strchr("_?-!><*/=+.:%&^~$@", c))));
         
         // put back the last character!
         ungetch(pSK, c);

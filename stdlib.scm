@@ -22,16 +22,6 @@
 (define (cddr x) (cdr (cdr x)))
 
 ;----------------------
-; define apply
-;----------------------
-(define (apply fn lst)
-  (cond
-    ((null? lst) '())
-    (else (cons (fn (car lst)) (apply fn (cdr lst))))
-  )
-)
-
-;----------------------
 ; define filter
 ;----------------------
 (define (filter fn lst)

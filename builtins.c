@@ -134,10 +134,7 @@ static int sk_eqp(SKState *pSK)
     Object* obj1 = vm_pop(&pSK->vm);
 
     if (obj1 == obj2)
-        bool = MAKE_TRUE();
-    else if (obj1 && obj2 && IS_SYMBOL(obj1) && IS_SYMBOL(obj2) &&
-             strcmp(((String*)obj1)->value, ((String*)obj2)->value) == 0)
-        bool = MAKE_TRUE();   // symbols are not interned, so compare by name
+        bool = MAKE_TRUE();     // symbols are interned, so this covers them
 
     vm_push(&pSK->vm, bool);
     return SK_TRUE;
@@ -154,20 +151,12 @@ static int sk_equalp(SKState* pSK)
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
 
-	// check for pointer equality first, covers nil, boolean, interned string and number too
+	// check for pointer equality first, covers nil, boolean, interned string, symbol and number too
     if (obj1 == obj2)
     {
         bool = MAKE_TRUE();
         vm_push(&pSK->vm, bool);
 		return SK_TRUE;
-    }
-
-    // symbols are not interned, so compare them by name
-    if (obj1 && obj2 && IS_SYMBOL(obj1) && IS_SYMBOL(obj2) &&
-        strcmp(((String*)obj1)->value, ((String*)obj2)->value) == 0)
-    {
-        vm_push(&pSK->vm, MAKE_TRUE());
-        return SK_TRUE;
     }
 
 	// check for string equality
@@ -1305,6 +1294,111 @@ static int sk_mem_allocated(SKState* pSK)
 //-----------------------------------------------
 // built-in function: map
 //-----------------------------------------------
+//-----------------------------------------------
+// built-in function: call-with-current-continuation, call/cc
+// (call/cc f) calls f with an escape continuation k. Calling (k v) while
+// f is still running makes call/cc return v at once, from however deep
+// inside f (including from a map callback or a nested call/cc). Once
+// call/cc has returned, k is invalid: these continuations escape, they
+// cannot be re-entered.
+//
+// f runs in a nested VM loop (vm_call_function), so an escape is an unwind
+// back to here: vm_escape stops the loops in between like an abort, and
+// this call/cc recognizes its own k and returns the value.
+//-----------------------------------------------
+static int sk_call_cc(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    VM* pvm = &pSK->vm;
+
+    Object* f = vm_peek(pvm, 0);    // stays on the stack while k is allocated
+    Continuation* k = (Continuation*)vm_newObject(pvm, sizeof(Continuation), OBJ_CONTINUATION);
+    k->valid = 1;
+    vm_push(pvm, (Object*)k);       // keep k reachable while f runs
+
+    Object* arg = (Object*)k;
+    Object* result = vm_call_function(pvm, f, 1, &arg);
+    k->valid = 0;
+
+    if (pvm->escape_to == (Object*)k)
+    {
+        // (k v) was called: the unwind stops here and call/cc returns v
+        result = pvm->escape_value;
+        pvm->escape_to = NULL;
+        pvm->escape_value = NULL;
+        pvm->abort_exec = 0;
+    }
+
+    vm_pop_n(pvm, 2);               // k, f
+    if (pvm->abort_exec)
+        return SK_FALSE;            // an error, or an escape to an outer call/cc: keep unwinding
+
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: list
+// The (list ...) form compiles to OP_LIST; this native is what the name
+// list means as a value, e.g. (apply list xs) or (map list a b).
+//-----------------------------------------------
+static int sk_list(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+
+    Object* raw_n = vm_pop(&pSK->vm);   // AS_NUM evaluates its argument twice
+    vm_build_list(&pSK->vm, AS_NUM(raw_n), NULL);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: apply
+// (apply f a ... lst) calls f with the arguments a ... followed by the
+// elements of lst. The VM makes the call (vm_request_call), so f's result
+// is apply's, and an apply in tail position is a tail call.
+//-----------------------------------------------
+static int sk_apply(SKState* pSK)
+{
+    if (!pSK) return SK_FALSE;
+    VM* pvm = &pSK->vm;
+
+    // stack: [f, a ..., lst, nargs]
+    Object* raw_n = vm_pop(pvm);    // AS_NUM evaluates its argument twice
+    int nargs = AS_NUM(raw_n);
+    Object* lst = vm_peek(pvm, 0);
+
+    int len = 0;
+    for (Object* p = lst; p != NULL; p = ((Pair*)p)->cdr)
+    {
+        if (!IS_PAIR(p))
+        {
+            yyerror(pSK, "apply: the last argument must be a list");
+            vm_pop_n(pvm, nargs);
+            vm_push(pvm, MAKE_UNSPEC());
+            return SK_FALSE;
+        }
+        len++;
+    }
+
+    Object* fn = vm_peek(pvm, nargs - 1);
+
+    // replace lst with its elements (pushing does not allocate, so the
+    // popped list stays intact meanwhile)
+    vm_pop(pvm);
+    for (Object* p = lst; p != NULL; p = ((Pair*)p)->cdr)
+        vm_push(pvm, ((Pair*)p)->car);
+    if (pvm->abort_exec)
+        return SK_FALSE;            // stack overflow while spreading the list
+
+    // take f out from under its arguments; the pending call keeps it alive
+    int total = nargs - 2 + len;
+    memmove(&pvm->stack[pvm->sp - total - 1], &pvm->stack[pvm->sp - total], sizeof(Object*) * total);
+    pvm->sp--;
+
+    vm_request_call(pvm, fn, total);
+    return SK_TRUE;
+}
+
 static int sk_map(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
@@ -1823,15 +1917,28 @@ static Object* sk_read_datum(SKState* pSK, int tok)
             // read list: accumulate elements on the VM stack, then build cons chain
             int count = 0;
             int t;
+            Object* tail = NULL;    // nil, or the datum after '.' in a dotted list
             while ((t = yylex(pSK)) != ')' && t != DONE)
             {
+                if (t == '.' && count > 0)
+                {
+                    // (a b . c): the datum after the dot is the final cdr
+                    tail = sk_read_datum(pSK, yylex(pSK));
+                    vm_push(&pSK->vm, tail);    // protect while lexing the ')'
+                    t = yylex(pSK);
+                    tail = vm_pop(&pSK->vm);
+                    if (t != ')')
+                        yyerror(pSK, "read: expected ')' after the datum following '.'");
+                    break;
+                }
+
                 Object* elem = sk_read_datum(pSK, t);
                 vm_push(&pSK->vm, elem);  // protect from GC while reading more
                 count++;
             }
 
             // build cons list in reverse (stack top = last element)
-            Object* list = NULL;  // nil tail
+            Object* list = tail;    // the loop below roots it before allocating
             for (int i = 0; i < count; i++)
             {
                 // protect current list before allocating a new pair
@@ -2389,7 +2496,7 @@ static int sk_negativep(SKState* pSK)
 static int sk_procedurep(SKState* pSK)
 {
     Object* obj = vm_pop(&pSK->vm);
-    vm_pushBoolean(&pSK->vm, IS_FUNCTION(obj) || IS_CLOSURE(obj));
+    vm_pushBoolean(&pSK->vm, IS_FUNCTION(obj) || IS_CLOSURE(obj) || IS_CONTINUATION(obj));
     return SK_TRUE;
 }
 
@@ -2537,6 +2644,10 @@ static SKFuncSet built_in_funcs[] =
 
     // higher-order functions
     { "map", sk_map, SK_ARITY_TWO_OR_MORE },
+    { "apply", sk_apply, SK_ARITY_TWO_OR_MORE },
+    { "list", sk_list, SK_ARITY_ANY },
+    { "call/cc", sk_call_cc, 1 },
+    { "call-with-current-continuation", sk_call_cc, 1 },
     { "eval", sk_eval, 1 },
 
     // system/environment functions

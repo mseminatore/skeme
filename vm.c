@@ -161,6 +161,10 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
             fprintf(stream, "#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
+        case OBJ_CONTINUATION:
+            fprintf(stream, "#<continuation>");
+            break;
+
         case OBJ_PORT:
         {
             char* str = "<null>";
@@ -257,6 +261,11 @@ int vm_init(VM* pvm) {
     pvm->exec_depth = 0;
     pvm->globals_version = 1;   // OP_LOAD_GLOBAL caches start at 0, i.e. empty
     pvm->open_upvalues = NULL;
+    pvm->pending_call = NULL;
+    pvm->pending_nargs = 0;
+    pvm->call_root = NULL;
+    pvm->escape_to = NULL;
+    pvm->escape_value = NULL;
     pvm->head = NULL;
     pvm->numObjects = 0;
     pvm->objectsCollected = 0;
@@ -277,6 +286,12 @@ int vm_init(VM* pvm) {
     pvm->interned_strings = ht_create();
     ht_set_hash_func(pvm->interned_strings, HT_HASH_STRING);
     ht_set_compare_func(pvm->interned_strings, compare_fn);
+
+    // init interned symbols table (separate: a string and a symbol with the
+    // same name are different objects)
+    pvm->interned_symbols = ht_create();
+    ht_set_hash_func(pvm->interned_symbols, HT_HASH_STRING);
+    ht_set_compare_func(pvm->interned_symbols, compare_fn);
 
     // initialize current scope to NULL (ie. global scope)
     pvm->current_scope = NULL;
@@ -326,6 +341,9 @@ int vm_shutdown(VM* pvm)
 
     ht_free(pvm->interned_strings);
 	pvm->interned_strings = NULL;
+
+    ht_free(pvm->interned_symbols);
+    pvm->interned_symbols = NULL;
 
     // Free extensible type registry
     if (pvm->custom_types) {
@@ -621,6 +639,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("MAKE_LIST count=%zd\n", *ip++);
             break;
 
+        case OP_LIST_TAIL:
+            printf("MAKE_LIST_TAIL count=%zd\n", *ip++);
+            break;
+
         // case OP_PROC:
         //     printf("PROC\n");
         //     break;
@@ -757,6 +779,7 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 //---------------------------------------------------------------
 static void vm_exec_leave(VM* pvm);
 
+
 //---------------------------------------------------------------
 // The upvalue for stack slot 'slot', shared by every closure that captures
 // it: reuse the open one if there is one, else create it.
@@ -824,6 +847,140 @@ static void vm_native_result(VM* pvm, int result_sp)
         vm_push(pvm, MAKE_UNSPEC());
 }
 
+//---------------------------------------------------------------
+// Match the nargs arguments on top of the stack to proc's parameters. For
+// a variadic procedure the arguments past the required ones become one
+// list, the last parameter, so afterwards proc->arity values are on the
+// stack. A wrong argument count is an error that aborts the run.
+//---------------------------------------------------------------
+static int vm_bind_args(VM* pvm, Object* fn_obj, Procedure* proc, int nargs)
+{
+    int required = proc->has_rest ? proc->arity - 1 : proc->arity;
+
+    if (nargs < required || (!proc->has_rest && nargs > required))
+    {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "'%s' called with %d argument%s, expects %s%d",
+            proc->name ? proc->name->value : "procedure", nargs, nargs == 1 ? "" : "s",
+            proc->has_rest ? "at least " : "", required);
+        vm_abort(pvm, msg);
+        return FALSE;
+    }
+
+    if (proc->has_rest)
+    {
+        // building the rest list allocates, and the callee may no longer be
+        // on the stack (ICALL popped it), so keep it alive meanwhile
+        pvm->call_root = fn_obj;
+        vm_build_list(pvm, nargs - required, NULL);     // the rest parameter
+        pvm->call_root = NULL;
+    }
+
+    return TRUE;
+}
+
+//---------------------------------------------------------------
+// Call the escape continuation k with value: unwind, like an abort but
+// without an error, to the call/cc that made k, which then returns value.
+// That call/cc must still be running; a continuation is not re-entrant.
+//---------------------------------------------------------------
+void vm_escape(VM* pvm, Object* k, Object* value)
+{
+    if (!((Continuation*)k)->valid)
+    {
+        vm_abort(pvm, "continuation called after its call/cc returned (only escaping continuations are supported)");
+        return;
+    }
+
+    pvm->escape_to = k;
+    pvm->escape_value = value;
+    pvm->abort_exec = 1;            // every loop and call path stops as for an abort...
+    pvm->ip = vm_halt_code;         // ...and the next dispatch halts (see vm_abort)
+}
+
+// a call to a continuation: one argument is the value (none gives unspecified)
+static void vm_call_continuation(VM* pvm, Object* k, int nargs)
+{
+    if (nargs > 1)
+    {
+        vm_abort(pvm, "continuation called with more than one value");
+        return;
+    }
+    Object* value = nargs == 1 ? vm_pop(pvm) : MAKE_UNSPEC();
+    vm_escape(pvm, k, value);
+}
+
+//---------------------------------------------------------------
+// A native asks the VM to call fn with the nargs values on top of the
+// stack, and to make fn's result its own (apply does this). The native
+// pushes the arguments, calls this and returns without a result.
+//---------------------------------------------------------------
+void vm_request_call(VM* pvm, Object* fn, int nargs)
+{
+    pvm->pending_call = fn;
+    pvm->pending_nargs = nargs;
+}
+
+//---------------------------------------------------------------
+// Run a native with its nargs arguments on the stack. Normally the result
+// is then on the stack and this returns NULL. If the native requested a
+// call (vm_request_call), this returns the procedure to call, with its
+// *next_nargs arguments on the stack, for the caller to call normally or
+// as a tail call.
+//---------------------------------------------------------------
+static Object* vm_run_native(VM* pvm, NativeFunction* native, int nargs, int* next_nargs)
+{
+    VM_LOG("CALL NATIVE FN '%s'\n", native->name->value);
+    SKFunc func = (SKFunc)native->func;
+
+    if (!func) {
+        fprintf(stderr, "NULL function pointer in NATIVE call!\n");
+        vm_pop_n(pvm, nargs);
+        vm_push(pvm, MAKE_UNSPEC());
+        return NULL;
+    }
+
+    int arity = native->arity;
+    if (arity >= 0)
+    {
+        if (nargs != arity)
+        {
+            yyerror(pvm->sk_state, "incorrect number of arguments to native function");
+
+            // clear args from stack, leaving a result in their place
+            vm_pop_n(pvm, nargs);
+            vm_push(pvm, MAKE_UNSPEC());
+            return NULL;
+        }
+    }
+    else
+    {
+        // Variable arity - push nargs for the native function to read
+        vm_push(pvm, MAKE_NUM(nargs));
+    }
+
+    int result_sp = pvm->sp - (arity >= 0 ? nargs : nargs + 1) + 1;
+
+    if (g_bProfile) {
+        double t0 = profile_get_ms();
+        func(pvm->sk_state);
+        pvm->native_call_time_ms += profile_get_ms() - t0;
+    } else {
+        func(pvm->sk_state);
+    }
+
+    if (pvm->pending_call)
+    {
+        Object* next = pvm->pending_call;
+        *next_nargs = pvm->pending_nargs;
+        pvm->pending_call = NULL;
+        return next;
+    }
+
+    vm_native_result(pvm, result_sp);
+    return NULL;
+}
+
 static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
 {
     if (IS_CLOSURE(fn_obj))
@@ -834,13 +991,8 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
 
         if (g_bProfile) proc->call_count++;
 
-        if (proc->arity != nargs)
-        {
-            yyerror(pvm->sk_state, "incorrect number of arguments to closure");
-            vm_pop_n(pvm, nargs);
-            pvm->ip++;
+        if (!vm_bind_args(pvm, fn_obj, proc, nargs))
             return;
-        }
 
         vm_push_ip(pvm, pvm->ip);               // push return address
         pvm->ip = proc->chunk.code;             // set IP to function code
@@ -856,14 +1008,8 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
 
         if (g_bProfile) proc->call_count++;
 
-        if (proc->arity != nargs)
-        {
-            yyerror(pvm->sk_state, "incorrect number of arguments to function");
-
-            vm_pop_n(pvm, nargs);   // clear args from stack
-            pvm->ip++;              // skip to the start of next instruction
+        if (!vm_bind_args(pvm, fn_obj, proc, nargs))
             return;
-        }
 
         vm_push_ip(pvm, pvm->ip);               // push return address onto stack
         pvm->ip = proc->chunk.code;             // set IP to function code
@@ -874,49 +1020,15 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
     }
     else if (IS_NATIVE_FN(fn_obj))
     {
-        NativeFunction* proc = (NativeFunction*)fn_obj;
-        VM_LOG("CALL NATIVE FN '%s'\n", proc->name->value);
-        SKFunc func = (SKFunc)proc->func;
-
-        if (func)
-        {
-            int arity = proc->arity;
-            if (arity >= 0)
-            {
-                if (nargs != arity)
-                {
-                    yyerror(pvm->sk_state, "incorrect number of arguments to native function");
-
-                    // clear args from stack, leaving a result in their place
-                    vm_pop_n(pvm, nargs);
-                    vm_push(pvm, MAKE_UNSPEC());
-                    return;
-                }
-            }
-            else
-            {
-                // Variable arity - push nargs for the native function to read
-                vm_push(pvm, MAKE_NUM(nargs));
-            }
-
-            int result_sp = pvm->sp - (arity >= 0 ? nargs : nargs + 1) + 1;
-
-            if (g_bProfile) {
-                double t0 = profile_get_ms();
-                func(pvm->sk_state);
-                pvm->native_call_time_ms += profile_get_ms() - t0;
-            } else {
-                func(pvm->sk_state);
-            }
-
-            vm_native_result(pvm, result_sp);
-        }
-        else {
-            fprintf(stderr, "NULL function pointer in NATIVE call!\n");
-        }
+        int next_nargs;
+        Object* next = vm_run_native(pvm, (NativeFunction*)fn_obj, nargs, &next_nargs);
+        if (next)
+            vm_call_procedure(pvm, next, next_nargs, "NATIVE-REQUESTED CALL");
     }
+    else if (IS_CONTINUATION(fn_obj))
+        vm_call_continuation(pvm, fn_obj, nargs);
     else
-        yyerror(pvm->sk_state, "procedure expected!");
+        vm_abort(pvm, "not a procedure");
 }
 
 //---------------------------------------------------------------
@@ -930,9 +1042,9 @@ static VMExecResult op_pop(VM* pvm) { vm_pop(pvm); return VM_CONTINUE; }
 static VMExecResult op_push_ip(VM* pvm) { vm_push_ip(pvm, pvm->ip); return VM_CONTINUE; }
 static VMExecResult op_pop_ip(VM* pvm) { pvm->ip = vm_pop_ip(pvm); return VM_CONTINUE; }
 static VMExecResult op_push_fp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->fp)); return VM_CONTINUE; }
-static VMExecResult op_pop_fp(VM* pvm) { pvm->fp = AS_NUM(vm_pop(pvm)); return VM_CONTINUE; }
+static VMExecResult op_pop_fp(VM* pvm) { Object* v = vm_pop(pvm); pvm->fp = AS_NUM(v); return VM_CONTINUE; }
 static VMExecResult op_push_sp(VM* pvm) { vm_push(pvm, MAKE_NUM(pvm->sp)); return VM_CONTINUE; }
-static VMExecResult op_pop_sp(VM* pvm) { pvm->sp = AS_NUM(vm_pop(pvm)); return VM_CONTINUE; }
+static VMExecResult op_pop_sp(VM* pvm) { Object* v = vm_pop(pvm); pvm->sp = AS_NUM(v); return VM_CONTINUE; }
 static VMExecResult op_num(VM* pvm) { vm_push(pvm, MAKE_NUM(*pvm->ip++)); return VM_CONTINUE; }
 static VMExecResult op_string(VM* pvm) { vm_push(pvm, vm_new_string(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
 static VMExecResult op_symbol(VM* pvm) { vm_push(pvm, vm_new_symbol(pvm, (const char*)*pvm->ip++)); return VM_CONTINUE; }
@@ -1045,18 +1157,29 @@ static VMExecResult op_get_local(VM* pvm) {
     vm_push(pvm, vm_fp_peek(pvm, (int)*pvm->ip++));
     return VM_CONTINUE;
 }
-static VMExecResult op_list(VM* pvm) {
-    Pair* alist = NULL; Pair* pair = NULL;
-    int n = (int)*pvm->ip++;
+// cons the top n stack values, in push order, onto 'tail'
+void vm_build_list(VM* pvm, int n, Object* tail) {
+    Object* pair = tail;
     for (int i = 0; i < n; i++) {
-        vm_push(pvm, (Object*)pair);
-        alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+        vm_push(pvm, pair);             // keep the list built so far alive
+        Pair* alist = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
         vm_pop(pvm);
         alist->car = vm_pop(pvm);
-        alist->cdr = (Object*)pair;
-        pair = alist;
+        alist->cdr = pair;
+        pair = (Object*)alist;
     }
-    vm_push(pvm, (Object*)alist);
+    vm_push(pvm, pair);
+}
+static VMExecResult op_list(VM* pvm) {
+    int n = (int)*pvm->ip++;
+    vm_build_list(pvm, n, NULL);
+    return VM_CONTINUE;
+}
+// OP_LIST_TAIL n: stack [e1, ..., en, tail] -> (e1 ... en . tail)
+static VMExecResult op_list_tail(VM* pvm) {
+    int n = (int)*pvm->ip++;
+    Object* tail = vm_pop(pvm);
+    vm_build_list(pvm, n, tail);
     return VM_CONTINUE;
 }
 static VMExecResult op_discard_tos(VM* pvm) {
@@ -1146,13 +1269,16 @@ static VMExecResult vm_tail_call(VM* pvm, Object* fn_obj, int nargs, const char*
 {
     if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
         Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
-        if (proc->arity != nargs) { yyerror(pvm->sk_state, "tail call: wrong number of arguments"); return VM_ERROR; }
 
         if (pvm->fp < 3) {
             // no frame to replace (not inside a function): an ordinary call
             vm_call_procedure(pvm, fn_obj, nargs, call_type);
-            return VM_CONTINUE;
+            return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;
         }
+
+        if (!vm_bind_args(pvm, fn_obj, proc, nargs))
+            return VM_ERROR;
+        nargs = proc->arity;        // a rest list is now one argument
 
         int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
         Object* ret_addr = pvm->stack[pvm->fp - 3];     // read the header first: with more
@@ -1173,9 +1299,15 @@ static VMExecResult vm_tail_call(VM* pvm, Object* fn_obj, int nargs, const char*
         pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
         pvm->ip = proc->chunk.code;
     } else if (IS_NATIVE_FN(fn_obj)) {
-        vm_call_procedure(pvm, fn_obj, nargs, call_type);
+        // a call the native requests (apply) is in tail position too
+        int next_nargs;
+        Object* next = vm_run_native(pvm, (NativeFunction*)fn_obj, nargs, &next_nargs);
+        if (next && !pvm->abort_exec)
+            return vm_tail_call(pvm, next, next_nargs, call_type);
+    } else if (IS_CONTINUATION(fn_obj)) {
+        vm_call_continuation(pvm, fn_obj, nargs);
     } else {
-        yyerror(pvm->sk_state, "tail call: not a procedure");
+        vm_abort(pvm, "not a procedure");
         return VM_ERROR;
     }
     return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;  // see vm_abort
@@ -1285,7 +1417,7 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_add, op_sub, op_mul, op_lt, op_le, op_eq_num,
     op_num_0, op_num_1, op_num_2,
     op_symbol, op_tailcall_x, op_load_global, op_discard_tos,
-    op_capture_local, op_capture_upvalue,
+    op_capture_local, op_capture_upvalue, op_list_tail,
 };
 
 //---------------------------------------------------------------
@@ -1315,6 +1447,19 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
 {
     if (!pvm || !fn || pvm->abort_exec) return NULL;
 
+    if (pvm->exec_depth >= VM_MAX_NATIVE_DEPTH)
+    {
+        // each level nests C calls; stop before the C stack runs out
+        vm_abort(pvm, "native calls nested too deeply (recursion through map, apply or call/cc)");
+        return NULL;
+    }
+
+    if (IS_CONTINUATION(fn))
+    {
+        vm_escape(pvm, fn, nargs > 0 ? args[0] : MAKE_UNSPEC());
+        return NULL;
+    }
+
     if (IS_NATIVE_FN(fn))
     {
         // Native function - call directly
@@ -1331,15 +1476,22 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        // For variable arity, push arg count; for fixed arity, it's handled by the native
-        if (native->arity < 0)
-            vm_push(pvm, MAKE_NUM(nargs));
-
-        int result_sp = pvm->sp - (native->arity >= 0 ? nargs : nargs + 1) + 1;
-
-        // Call the native function
-        native->func(pvm->sk_state);
-        vm_native_result(pvm, result_sp);
+        int next_nargs;
+        Object* next = vm_run_native(pvm, native, nargs, &next_nargs);
+        if (next && !pvm->abort_exec)
+        {
+            // the native requested a call (apply): make it from here, with
+            // its arguments taken off the stack. Nothing allocates between
+            // the pops and vm_call_function pushing them back.
+            Object** next_args = (Object**)malloc(sizeof(Object*) * (next_nargs ? next_nargs : 1));
+            pvm->call_root = next;
+            for (int i = next_nargs - 1; i >= 0; i--)
+                next_args[i] = vm_pop(pvm);
+            Object* result = vm_call_function(pvm, next, next_nargs, next_args);
+            pvm->call_root = NULL;
+            free(next_args);
+            return result;
+        }
 
         // Result is on stack
         Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
@@ -1351,13 +1503,6 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         Closure* closure = (Closure*)fn;
         Procedure* proc = closure->function;
 
-        // Check arity
-        if (proc->arity != nargs)
-        {
-            yyerror(pvm->sk_state, "vm_call_function: wrong number of arguments to closure");
-            return NULL;
-        }
-
         // Save current VM state
         VMCode_t* saved_ip = pvm->ip;
         int saved_fp = pvm->fp;
@@ -1367,6 +1512,13 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Push arguments onto stack (in order - first arg pushed first)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
+
+        if (!vm_bind_args(pvm, fn, proc, nargs))
+        {
+            pvm->sp = saved_sp;
+            pvm->ip = saved_ip;
+            return NULL;
+        }
 
         // Set up frame: [args..., ret_addr, saved_fp, fn]
         vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
@@ -1388,7 +1540,9 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Result is on stack
         Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
 
-        // Restore state
+        // Restore state. After an abort or escape, frames above saved_sp are
+        // abandoned, so close their upvalues (a normal return already has).
+        vm_close_upvalues(pvm, saved_sp);
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
         pvm->sp = saved_sp;
@@ -1402,13 +1556,6 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Scheme procedure - need to execute bytecode
         Procedure* proc = (Procedure*)fn;
 
-        // Check arity
-        if (proc->arity != nargs)
-        {
-            yyerror(pvm->sk_state, "vm_call_function: wrong number of arguments to procedure");
-            return NULL;
-        }
-
         // Save current VM state
         VMCode_t* saved_ip = pvm->ip;
         int saved_fp = pvm->fp;
@@ -1418,6 +1565,13 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Push arguments onto stack (in order - first arg pushed first)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
+
+        if (!vm_bind_args(pvm, fn, proc, nargs))
+        {
+            pvm->sp = saved_sp;
+            pvm->ip = saved_ip;
+            return NULL;
+        }
 
         // Set up frame: [args..., ret_addr, saved_fp, fn]
         vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
@@ -1439,7 +1593,9 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         // Result is on stack
         Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
 
-        // Restore state
+        // Restore state. After an abort or escape, frames above saved_sp are
+        // abandoned, so close their upvalues (a normal return already has).
+        vm_close_upvalues(pvm, saved_sp);
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
         pvm->sp = saved_sp;
@@ -1640,6 +1796,14 @@ static void markObjects(VM* pvm) {
     // mark open upvalues: the VM still links them, even if no closure does
     for (Upvalue* up = pvm->open_upvalues; up; up = up->next_open)
         markObject(pvm, (Object*)up);
+
+    // procedures held by the VM between steps of a call
+    markObject(pvm, pvm->pending_call);
+    markObject(pvm, pvm->call_root);
+
+    // an escape in progress (call/cc)
+    markObject(pvm, pvm->escape_to);
+    markObject(pvm, pvm->escape_value);
 
     // mark environment chain
     Environment* env = pvm->current_scope;
@@ -1874,19 +2038,19 @@ static void traceReferences(VM* pvm) {
 //--------------------------------------------------------------
 // Remove unmarked objects from the interned string table
 //--------------------------------------------------------------
-static void removeWhiteObjects(VM* pvm) {
+static void removeWhiteFromTable(HashTable* table) {
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
     int SK_UNUSED removed = 0;
 
     // only remove unmarked strings
-    while(ht_next(pvm->interned_strings, &index, &key, &value))
+    while(ht_next(table, &index, &key, &value))
     {
         if (!IS_OBJ((Object*)value) || IS_MARKED((Object*)value))
             continue;
 
-        if (HT_OK == ht_remove(pvm->interned_strings, key))
+        if (HT_OK == ht_remove(table, key))
         {
             removed++;
             GC_LOG("-- gc removing interned string: '%s'\n", ((String*)value)->value);
@@ -1896,6 +2060,12 @@ static void removeWhiteObjects(VM* pvm) {
     }
 
     GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
+}
+
+// The intern tables are weak: they do not keep strings and symbols alive.
+static void removeWhiteObjects(VM* pvm) {
+    removeWhiteFromTable(pvm->interned_strings);
+    removeWhiteFromTable(pvm->interned_symbols);
 }
 
 //--------------------------------------------------------------
@@ -2012,7 +2182,8 @@ static void vm_exec_leave(VM* pvm)
 {
     pvm->exec_depth--;
 
-    if (pvm->exec_depth == 0 && pvm->abort_exec)
+    // (an escape to a continuation is still on its way to its call/cc)
+    if (pvm->exec_depth == 0 && pvm->abort_exec && !pvm->escape_to)
     {
         vm_close_upvalues(pvm, 0);
         pvm->sp = 0;
@@ -2224,10 +2395,16 @@ Object *vm_new_symbol(VM* pvm, const char* name)
 {
     if (!pvm || !name) return NULL;
 
+    // symbols are interned: one object per name, so eq? can compare pointers
+    ht_value_t existing = ht_find(pvm->interned_symbols, name);
+    if (existing)
+        return (Object*)existing;
+
     Object* obj = vm_newObject(pvm, sizeof(String) + strlen(name) + 1, OBJ_SYMBOL);
     String* sym = (String*)obj;
     strcpy((char*)sym->value, name);
 
+    ht_insert(pvm->interned_symbols, sym->value, sym);
     return obj;
 }
 

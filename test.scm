@@ -37,7 +37,7 @@
 ;----------------------
 ;(test-suite "apply")
 (define (plus1 a) (+ 1 a))
-(test-case "apply plus1" (equal? (list 2 3 4) (apply plus1 (list 1 2 3))))
+(test-case "apply plus1" (= (apply plus1 (list 1)) 2))
 
 ;----------------------
 ; test filter
@@ -918,6 +918,78 @@
 (test-case "letrec loop in constant stack" (= (rg-lr-loop 2) 200000))
 (test-case "letrec with no bindings" (= (letrec () 5) 5))
 (test-case "letrec with plain values" (= (letrec ((a 1) (b 2)) (+ a b)) 3))
+
+;----------------------
+; language features: symbols, dotted pairs, procedures as values, variadic
+; procedures, apply, named let, call/cc
+;----------------------
+(test-suite "language features")
+
+; symbols are interned: one object per name
+(test-case "same symbol is eq?" (eq? 'abc (string->symbol "abc")))
+(test-case "quoted keyword symbol is eq?" (eq? (car '(if)) (string->symbol "if")))
+(test-case "symbol is not its string" (not (eq? 'abc "abc")))
+
+; dotted pairs in quoted data
+(test-case "dotted pair literal" (equal? '(1 . 2) (cons 1 2)))
+(test-case "dotted list literal" (equal? (cdr (cdr '(a b . c))) 'c))
+(test-case "dotted pair normalizes" (equal? '(1 . (2 3)) '(1 2 3)))
+(test-case "association list literal" (= (cdr (car (cdr '((a . 1) (b . 2))))) 2))
+
+; operators and list as values; identifiers with / and =
+(test-case "map with +" (equal? (map + '(1 2) '(3 4)) '(4 6)))
+(define lf-plus +)
+(test-case "operator bound to a variable" (= (lf-plus 2 3) 5))
+(test-case "map with list" (equal? (map list '(1 2) '(3 4)) '((1 3) (2 4))))
+(define lf-a/b 6)
+(test-case "identifier with /" (= lf-a/b 6))
+
+; variadic procedures
+(define (lf-all . xs) xs)
+(define (lf-rest a . r) (list a r))
+(test-case "rest parameter only" (equal? (lf-all 1 2 3) '(1 2 3)))
+(test-case "rest parameter, no extras" (equal? (lf-all) '()))
+(test-case "required and rest" (equal? (lf-rest 1 2 3) '(1 (2 3))))
+(test-case "required, empty rest" (equal? (lf-rest 1) '(1 ())))
+(test-case "lambda with a single rest symbol" (equal? ((lambda args args) 1 2) '(1 2)))
+(test-case "lambda with dotted parameters" (equal? ((lambda (a b . c) (list a b c)) 1 2 3 4) '(1 2 (3 4))))
+(define (lf-tl n . acc) (if (= n 0) acc (lf-tl (- n 1) n)))
+(test-case "variadic tail calls" (equal? (lf-tl 100000) '(1)))
+
+; apply
+(test-case "apply with a list" (= (apply + '(1 2 3)) 6))
+(test-case "apply with leading arguments" (= (apply + 1 2 '(3 4)) 10))
+(test-case "apply a lambda" (= (apply (lambda (a b) (* a b)) '(3 4)) 12))
+(test-case "apply a variadic procedure" (equal? (apply lf-all 1 '(2 3)) '(1 2 3)))
+(test-case "apply list" (equal? (apply list '(1 2)) '(1 2)))
+(define (lf-apply-loop n) (if (= n 0) 'done (apply lf-apply-loop (list (- n 1)))))
+(test-case "apply in tail position" (eq? (lf-apply-loop 100000) 'done))
+(test-case "apply passed to map" (equal? (map apply (list + *) '((1 2) (3 4))) '(3 12)))
+
+; named let
+(test-case "named let loop" (= (let loop ((i 0) (acc 1)) (if (= i 5) acc (loop (+ i 1) (* acc 2)))) 32))
+(test-case "named let in constant stack" (= (let loop ((i 0)) (if (< i 100000) (loop (+ i 1)) i)) 100000))
+(test-case "named let with no bindings" (= (let loop () 5) 5))
+(define (lf-rev l) (let lp ((l l) (acc '())) (if (null? l) acc (lp (cdr l) (cons (car l) acc)))))
+(test-case "named let shadowing a parameter" (equal? (lf-rev '(1 2 3)) '(3 2 1)))
+(test-case "named let closures per iteration"
+    (equal? (map (lambda (f) (f)) (let loop ((i 0) (acc '())) (if (= i 3) acc (loop (+ i 1) (cons (lambda () i) acc)))))
+            '(2 1 0)))
+
+; call/cc (escape-only)
+(test-case "call/cc normal return" (= (call/cc (lambda (k) 5)) 5))
+(test-case "call/cc escape" (= (call/cc (lambda (k) (+ 1 (k 42)))) 42))
+(test-case "call/cc escape from map"
+    (eq? (call/cc (lambda (k) (map (lambda (x) (if (= x 2) (k 'escaped) x)) '(1 2 3)))) 'escaped))
+(test-case "call/cc escape to outer"
+    (= (+ 1 (call/cc (lambda (outer) (+ 10 (call/cc (lambda (inner) (outer 100))))))) 101))
+(test-case "call/cc escape to inner"
+    (= (+ 1 (call/cc (lambda (outer) (+ 10 (call/cc (lambda (inner) (inner 100))))))) 111))
+(define (lf-find p l) (call/cc (lambda (ret) (for-each (lambda (x) (if (p x) (ret x))) l) #f)))
+(test-case "call/cc early exit from a search" (equal? (list (lf-find even? '(1 3 4 5)) (lf-find even? '(1 3))) '(4 #f)))
+(define (lf-cc-loop i) (if (= i 10000) i (lf-cc-loop (+ 1 (call/cc (lambda (k) (k i)))))))
+(test-case "call/cc in a loop" (= (lf-cc-loop 0) 10000))
+(test-case "continuation is a procedure" (call/cc (lambda (k) (procedure? k))))
 
 ; report test results
 ;----------------------

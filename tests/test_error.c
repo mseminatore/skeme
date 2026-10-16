@@ -216,7 +216,7 @@ void test_error(int argc, char *argv[])
         sk_set_error_handler(&sk, test_error_handler);
 
         COMMENT("Forms after a syntax error still run, the bad form does not...");
-        eval_quietly(&sk, "(define pe-a 1) (define pe-b (car '(1 . 2))) (define pe-c 3)");
+        eval_quietly(&sk, "(define pe-a 1) (define pe-b (car '(. 2))) (define pe-c 3)");
         TEST(g_test_ctx.error_count >= 1);
         TEST(AS_NUM(get_global(&sk, "pe-a")) == 1);
         TEST(AS_NUM(get_global(&sk, "pe-c")) == 3);
@@ -292,6 +292,57 @@ void test_error(int argc, char *argv[])
         COMMENT("Once defined, the same code finds it...");
         eval_quietly(&sk, "(define (ub-h x) (+ x 41)) (define ub-r2 (ub-g))");
         TEST(AS_NUM(get_global(&sk, "ub-r2")) == 42);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: errors from calls: arity, stale continuations, native nesting
+    SUITE("Call Errors");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("A wrong argument count names the procedure and aborts...");
+        eval_quietly(&sk, "(define (ce-two a b) a) (define ce-r (ce-two 1))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'ce-two' called with 1 argument, expects 2") != NULL);
+        TEST(IS_UNBOUND(get_global(&sk, "ce-r")));
+        TEST(sk.vm.sp == 0);
+
+        COMMENT("Too few arguments for a variadic procedure...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (ce-v a . r) a) (ce-v)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "expects at least 1") != NULL);
+
+        COMMENT("Calling a continuation after its call/cc returned is an error...");
+        reset_test_context();
+        eval_quietly(&sk, "(define ce-k #f) (define ce-x (call/cc (lambda (k) (set! ce-k k) 1)))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "ce-x")) == 1);
+        eval_quietly(&sk, "(ce-k 2)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "only escaping continuations") != NULL);
+        TEST(sk.vm.sp == 0);
+        TEST(sk.vm.escape_to == NULL);
+
+        COMMENT("Deep recursion through native callbacks stops with an error, not a crash...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (ce-deep n) (if (= n 0) 0 (+ 1 (call/cc (lambda (k) (ce-deep (- n 1)))))))");
+        eval_quietly(&sk, "(define ce-ok (ce-deep 100))");
+        TEST(AS_NUM(get_global(&sk, "ce-ok")) == 100);
+        eval_quietly(&sk, "(define ce-bad (ce-deep 100000))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "nested too deeply") != NULL);
+        TEST(sk.vm.sp == 0);
+        TEST(sk.vm.exec_depth == 0);
+
+        COMMENT("The VM keeps working afterwards...");
+        eval_quietly(&sk, "(define ce-after (ce-deep 10))");
+        TEST(AS_NUM(get_global(&sk, "ce-after")) == 10);
 
         sk_shutdown(&sk);
     }
