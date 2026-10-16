@@ -810,6 +810,33 @@
 (define (reg-or-loop i) (or #f (if (< i 100000) (reg-or-loop (+ i 1)) i)))
 (test-case "tail call through or" (= (reg-or-loop 0) 100000))
 
+; closures keep their captured variables across calls to other functions
+(define (cl-id x) x)
+(define (cl-mk1 a) (lambda () (+ (cl-id 5) a)))
+(test-case "closure: upvalue read after a call" (= ((cl-mk1 10)) 15))
+(define (cl-mk2 a) (lambda () (+ a (cl-id 5))))
+(test-case "closure: upvalue read before a call" (= ((cl-mk2 10)) 15))
+(define (cl-mk3 a) (lambda () (let ((b (cl-id 1))) (+ b a))))
+(test-case "closure: let body calls then reads upvalue" (= ((cl-mk3 10)) 11))
+(define (cl-mk4 a) (let ((inc (lambda (x) (+ x a)))) (lambda () (list (inc 1) (inc 2) a))))
+(test-case "closure: calls a captured closure" (equal? ((cl-mk4 10)) '(11 12 10)))
+
+; calling a captured function goes through the upvalue, not the local frame
+(define (cl-mk5 f) (lambda () (f 5)))
+(test-case "closure: call captured fn in tail position" (= ((cl-mk5 (lambda (x) (* x 2)))) 10))
+(define (cl-mk6 f) (lambda () (+ 1 (f 5))))
+(test-case "closure: call captured fn in non-tail position" (= ((cl-mk6 cl-id)) 6))
+(define (cl-mk7 f) (lambda (y) (f y)))
+(test-case "closure: call captured fn with an argument" (= ((cl-mk7 cl-id) 7) 7))
+(define (cl-mk8 f) (lambda () (lambda () (f 5))))
+(test-case "closure: call captured fn two levels deep" (= (((cl-mk8 cl-id))) 5))
+
+(define (cl-counter) (let ((n 0)) (lambda () (set! n (+ n 1)) n)))
+(define cl-c (cl-counter))
+(cl-c)
+(cl-c)
+(test-case "closure: set! on captured variable" (= (cl-c) 3))
+
 ; report test results
 ;----------------------
 (test-end)

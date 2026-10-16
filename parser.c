@@ -333,14 +333,14 @@ static int formals(SKState* pSK, Procedure* proc)
         Environment* env = pSK->vm.current_scope;
 
         // update all bindings in the current environment
-        // Stack layout: [args..., ret_addr, saved_fp, arity] with fp pointing past arity
-        // So args are at fp-4, fp-5, etc. (arity at fp-1, saved_fp at fp-2, ret_addr at fp-3)
+        // Stack layout: [args..., ret_addr, saved_fp, fn] with fp pointing past fn
+        // So args are at fp-4, fp-5, etc. (callee fn at fp-1, saved_fp at fp-2, ret_addr at fp-3)
         size_t env_index = 0;
         ht_key_t env_key;
         ht_value_t env_value;
         while (ht_next(env->bindings, &env_index, &env_key, &env_value))
         {
-			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 3)); // +3 for ret_addr, saved_fp, arity
+			ht_add(env->bindings, env_key, MAKE_NUM(arity - AS_NUM(env_value) + 3)); // +3 for ret_addr, saved_fp, fn
         }
     }
 
@@ -1851,14 +1851,21 @@ static int expr(SKState* pSK)
                 if (key)
                 {
                     int local_fn = FALSE;
+                    int fn_upvalue = -1;
 
                     // look first for a local variable or param
-                    Object* proc = vm_get_local_var(&pSK->vm, ((String*)key)->value);
+                    int scope_depth = -1;
+                    Object* proc = vm_get_local_var_ex(&pSK->vm, ((String*)key)->value, &scope_depth);
 
 					// if not found, look in globals
                     if (proc && IS_NUM(proc))
                     {
                         local_fn = TRUE;
+
+                        // a function from an enclosing scope must be read through
+                        // an upvalue, not from this frame (same as variable references)
+                        if (scope_depth > 0)
+                            fn_upvalue = register_upvalue(pSK, ((String*)key)->value, scope_depth, AS_NUM(proc));
                     }
                     else
                         proc = vm_get_global(&pSK->vm, key);
@@ -1918,9 +1925,17 @@ static int expr(SKState* pSK)
                     {
                         int count = expr_tail(pSK); // parse function arguments (if any)
 
-                        vm_emit(&pSK->vm, OP_GET_LOCAL);
-                        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(proc));
-                        
+                        if (fn_upvalue >= 0)
+                        {
+                            vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                            vm_emit(&pSK->vm, (VMCode_t)fn_upvalue);
+                        }
+                        else
+                        {
+                            vm_emit(&pSK->vm, OP_GET_LOCAL);
+                            vm_emit(&pSK->vm, (VMCode_t)AS_NUM(proc));
+                        }
+
                         // Record offset for potential tail call patching
                         CodeChunk* chunk = vm_get_current_chunk();
                         pSK->last_call_offset = (int)chunk->count;

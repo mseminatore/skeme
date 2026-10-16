@@ -687,6 +687,26 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 //     pvm->fp = AS_NUM(fp_obj);
 // }
 
+//---------------------------------------------------------------
+// Frame layout: [args..., ret_addr, saved_fp, fn] with fp pointing past fn.
+// The fn slot holds the Procedure or Closure being run. Its arity sizes the
+// argument block, and its closure (if any) is the one to restore on return.
+// Keeping it on the stack also keeps a running closure reachable for the GC.
+//---------------------------------------------------------------
+static inline int frame_arity(Object* fn)
+{
+    return IS_CLOSURE(fn) ? ((Closure*)fn)->function->arity : ((Procedure*)fn)->arity;
+}
+
+static inline Closure* frame_closure(VM* pvm)
+{
+    if (pvm->fp <= 0)
+        return NULL;    // top level: no frame
+
+    Object* fn = pvm->stack[pvm->fp - 1];
+    return IS_CLOSURE(fn) ? (Closure*)fn : NULL;
+}
+
 static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
 {
     if (IS_CLOSURE(fn_obj))
@@ -708,7 +728,7 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
         vm_push_ip(pvm, pvm->ip);               // push return address
         pvm->ip = proc->chunk.code;             // set IP to function code
         vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
-        vm_push(pvm, MAKE_NUM(proc->arity));    // push arity
+        vm_push(pvm, fn_obj);                   // push callee (arity and closure for RET)
         pvm->fp = pvm->sp;
         pvm->current_closure = closure;         // set current closure for upvalue access
     }
@@ -731,8 +751,8 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
         vm_push_ip(pvm, pvm->ip);               // push return address onto stack
         pvm->ip = proc->chunk.code;             // set IP to function code
         vm_push(pvm, MAKE_NUM(pvm->fp));        // push old frame pointer
-        vm_push(pvm, MAKE_NUM(proc->arity));    // push arity (for RET to use)
-        pvm->fp = pvm->sp;                      // fp points past arity
+        vm_push(pvm, fn_obj);                   // push callee (arity for RET to use)
+        pvm->fp = pvm->sp;                      // fp points past callee slot
         pvm->current_closure = NULL;            // not in a closure
     }
     else if (IS_NATIVE_FN(fn_obj))
@@ -822,12 +842,13 @@ static VMExecResult op_ret(VM* pvm) {
     // Read the frame header relative to fp, not the top of the stack. The values
     // of non-final body expressions (and natives such as display, which push
     // nothing) can leave a different number of temporaries above the frame, so
-    // the top of the stack is not reliably the arity slot.
-    int arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+    // the top of the stack is not reliably the callee slot.
+    int arity = frame_arity(pvm->stack[pvm->fp - 1]);
     int saved_fp = AS_NUM(pvm->stack[pvm->fp - 2]);
     VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
     pvm->sp = pvm->fp - 3 - arity;
     pvm->fp = saved_fp;
+    pvm->current_closure = frame_closure(pvm);  // back to the caller's closure
     vm_push(pvm, ret_val);
     pvm->ip = ret_addr;
     return VM_CONTINUE;
@@ -929,10 +950,11 @@ static VMExecResult op_tailcall(VM* pvm) {
     if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
         Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
         if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments"); return VM_ERROR; }
-        int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+        int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
         if (nargs == old_arity) {
             int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
             for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
+            pvm->stack[pvm->fp - 1] = fn_obj;   // the reused frame now runs fn_obj
             pvm->sp = pvm->fp;
             pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
             pvm->ip = proc->chunk.code;
@@ -947,10 +969,11 @@ static VMExecResult op_tailcall_i(VM* pvm) {
     if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
         Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
         if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments"); return VM_ERROR; }
-        int old_arity = AS_NUM(pvm->stack[pvm->fp - 1]);
+        int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
         if (nargs == old_arity) {
             int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
             for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
+            pvm->stack[pvm->fp - 1] = fn_obj;   // the reused frame now runs fn_obj
             pvm->sp = pvm->fp;
             pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
             pvm->ip = proc->chunk.code;
@@ -1123,10 +1146,10 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        // Set up frame: [args..., ret_addr, saved_fp, arity]
+        // Set up frame: [args..., ret_addr, saved_fp, fn]
         vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
         vm_push(pvm, MAKE_NUM(pvm->fp));     // saved fp
-        vm_push(pvm, MAKE_NUM(nargs));       // arity
+        vm_push(pvm, fn);                    // callee (see frame_arity)
         pvm->fp = pvm->sp;
         pvm->ip = proc->chunk.code;
         pvm->current_closure = closure;      // set for upvalue access
@@ -1172,10 +1195,10 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         for (int i = 0; i < nargs; i++)
             vm_push(pvm, args[i]);
 
-        // Set up frame: [args..., ret_addr, saved_fp, arity]
+        // Set up frame: [args..., ret_addr, saved_fp, fn]
         vm_push_ip(pvm, NULL);               // NULL return address = exit sentinel
         vm_push(pvm, MAKE_NUM(pvm->fp));     // saved fp
-        vm_push(pvm, MAKE_NUM(nargs));       // arity
+        vm_push(pvm, fn);                    // callee (see frame_arity)
         pvm->fp = pvm->sp;
         pvm->ip = proc->chunk.code;
         pvm->current_closure = NULL;         // not in a closure
