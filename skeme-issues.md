@@ -64,7 +64,7 @@ Any non-trivial closure code broke, e.g. a `let` whose body calls a function and
 ## 2. ✅ A syntax error inside a form aborts the process (stack-underflow assertion)
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -101,7 +101,7 @@ The parser had no error recovery. After an error it kept parsing, and the byteco
 ## 3. ✅ Stack overflow aborts the process; default 1024-slot stack allows only ~100 non-tail recursion levels
 
 **Labels:** bug, enhancement
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -149,7 +149,7 @@ To get the push check off the hot path, do what Lua does: have the compiler comp
 ## 4. ✅ Tail calls are only optimized when caller and callee take the same number of arguments
 
 **Labels:** bug, enhancement
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -190,7 +190,7 @@ The repro above runs `(f 1000000 0)` in constant stack. Tail calls to functions 
 ## 5. ✅ `display` and `newline` push no result, which unbalances the stack in `begin` and nested calls
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -233,7 +233,7 @@ The loop above crashed with a segfault on `main`, not just the assertion.
 ## 6. ✅ `define` of an existing global does not update already-compiled references; forward references are compile errors
 
 **Labels:** bug, enhancement
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -290,7 +290,7 @@ Both repros print `2`. `(define x 5) (define x (+ x 1))` gives `6`, and mutually
 ## 7. ✅ `letrec` is a keyword but fails to parse
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -367,7 +367,7 @@ Happy to split any of these into their own issues.
 ## 9. ✅ Script runs echo the value of every top-level expression
 
 **Labels:** enhancement
-**Status:** Complete (working tree, not yet committed).
+**Status:** Complete.
 
 Found while writing `examples/metacircular.scm` and `examples/forth.scm`. Reproduced on `main` with the recent tail-call / `RET` / quote fixes applied.
 
@@ -400,7 +400,7 @@ Checked by hand; there is no automated test because the echo goes to stdout. `(d
 ## 10. ✅ Closures copy captured variables, so they do not see later `set!`s
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed). Found while working on #7.
+**Status:** Complete. Found while working on #7.
 
 A closure got a copy of each captured variable when it was created. So two closures over the same variable did not see each other's updates, and a closure did not see a `set!` made by its enclosing function afterwards:
 
@@ -426,7 +426,7 @@ Both repros give the Scheme answers (`2`, `5`). Tests: the four new "closure:" t
 ## 11. ✅ `let*` binds in parallel; `(let () ...)` does not parse
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed). Found while working on #7.
+**Status:** Complete. Found while working on #7.
 
 `let*` was parsed exactly like `let`, so a binding could not see the ones before it:
 
@@ -447,7 +447,7 @@ Tests: "let* sees earlier bindings", "let* binding shadows a global", "let* body
 ## 12. ✅ Objects freed while still in use (GC rooting bugs)
 
 **Labels:** bug
-**Status:** Complete (working tree, not yet committed). Found by building with `-DVM_STRESS_GC`, which collects on every allocation.
+**Status:** Complete. Found by building with `-DVM_STRESS_GC`, which collects on every allocation.
 
 On `main` under GC stress, `test.scm` fails 5 tests and `examples/metacircular.scm` computes wrong answers. In normal runs a badly timed collection could do the same. The causes:
 * `map` kept its partial result list rooted only around its own allocation, not while calling the mapped function, which can allocate (and collect).
@@ -465,10 +465,10 @@ The GC does not trace object constants embedded in bytecode. They are safe as lo
 
 ---
 
-## 13. Internal `define` creates a global
+## 13. ✅ Internal `define` creates a global
 
 **Labels:** bug
-**Status:** Open. Found while working on #7.
+**Status:** Fixed (working tree, not yet committed). Found while working on #7.
 
 A `define` inside a function body binds a global, not a local of the function:
 
@@ -480,15 +480,32 @@ A `define` inside a function body binds a global, not a local of the function:
 
 Recursion through the internal define works, but the name leaks to the top level, two functions with internal defines of the same name overwrite each other, and a recursive `outer` shares one `inner` between its calls.
 
-### Suggestion
-Treat a body's leading internal defines as `letrec*` over the rest of the body. The `letrec` machinery from #7 (token replay to collect the names first, then a lambda whose body prologue assigns them) should carry over.
+### Fix
+A body's leading internal defines compile like `letrec*` over the rest of the body, so the names are local to each call and each definition can use the ones before it:
+
+```scheme
+(define (f x) (define a 1) (define (g y) (+ a y)) (g x))
+; compiles like
+(define (f x) ((lambda (a g) (set! a 1) (set! g (lambda (y) (+ a y))) (g x)) <unspecified> <unspecified>))
+```
+
+* `body_defines` in `parser.c` runs at the start of every body (`local_body_ex`, after any prologue), so it covers `define`, `lambda`, `let`, `let*`, `letrec` and named `let` bodies. As in `letrec`, it reads the leading defines ahead to collect their names, then replays the tokens; its prologue, `body_define_inits`, compiles each define and assigns it to its variable. The recording code that `letrec` used is now shared: `replay_record` and `replay_start`.
+* `(define (name param ...) ...)` inside a body compiles through `lambda_ex`, split out of `lambda()`, which takes the procedure's name (used in messages such as "'g' called with 1 argument").
+* The inner lambda's call is in tail position, so a tail call at the end of a body with defines still runs in constant stack.
+* As in R7RS, defines are allowed only at the start of a body. A `define` anywhere else inside a procedure, e.g. after an expression or inside an `if`, is now a syntax error: "define is only allowed at top level or at the start of a body". The local branch of `definition()`, which stored the inner procedure to a global under its real name, is gone.
+
+### Cost
+A procedure whose body starts with defines makes one extra call (to the inner lambda) per call, and its inner procedures that refer to each other or to themselves are closures. Procedures without internal defines are unaffected; `fib(30)` timing is unchanged.
+
+### Verification
+14 new tests in `test.scm` (411 total): the name doesn't leak, the same inner name in two procedures, a separate inner define per recursive call, mutual recursion, defines that use earlier ones, tail calls and loops in constant stack, and defines in `lambda`, `let`, `let*`, named `let` and variadic bodies. Several fail on `HEAD`. A "Define Placement" suite in `tests/test_error.c` (241 total) checks the error for a misplaced define and that parsing continues. The existing "inner define" tests pass unchanged.
 
 ---
 
 ## 14. ✅ Named let, variadic procedures, apply, call/cc, dotted pairs, interned symbols
 
 **Labels:** enhancement
-**Status:** Complete (working tree, not yet committed). Items from the #8 list.
+**Status:** Complete. Items from the #8 list.
 
 ### What was added
 * **Interned symbols.** `vm_new_symbol` returns one object per name, from a weak `interned_symbols` table that the GC prunes like the string table. `eq?` on symbols is a pointer compare again, so the compare-by-name workaround in `eq?`/`equal?` is gone, and quoted symbols no longer allocate each time they are evaluated.
@@ -511,13 +528,41 @@ Treat a body's leading internal defines as `letrec*` over the rest of the body. 
 
 ---
 
-## 15. Small bugs noticed along the way (open)
+## 15. ✅ Small bugs noticed along the way
 
 **Labels:** bug
-**Status:** Open.
+**Status:** Fixed (working tree, not yet committed).
 
-* `(- 5)` returns `5`; unary minus should negate.
-* The empty list prints as `nil`, e.g. `(display (list 1 '()))` prints `(1 nil)`. Scheme prints `()`.
-* `.5` is not read as a number (`0.5` is).
+* ✅ `(- 5)` returned `5`; it now negates. Native arities below zero (`SK_ARITY_ONE_OR_MORE` and the like) are never checked, so the arithmetic natives handle short calls themselves:
+  * `(- x)` negates.
+  * `(/ x)` is `(/ 1 x)`, with the usual integer division, so `(/ 2)` is `0` and `(/ 2.0)` is `0.5`.
+  * `(+)` is `0` and `(*)` is `1`. Before, they read past their arguments on the stack.
+  * `(-)` and `(/)` are errors.
+* ✅ The empty list printed as `nil`; it now prints as `()`, e.g. `(1 () 2)`. `PRINT_NIL` in `vm.h`. No test or example depended on the old text. `nil` is still accepted as a name for the empty list in source.
+* ✅ `.5` was not read as a number; `.5`, `-.5` and `+.25` now are. A `.` followed by a digit starts a number; a lone `.` is still the dotted-pair token, so `'(a . 5)` and `'(a .5)` differ as they should. A sign and dot with no digits, `-.`, is a "malformed number" error.
+* ✅ A top-level `(define (f) ...)` binds `f` while it is being compiled, so its body can call it. If the form then had a syntax error and was dropped, `f` stayed bound to the half-compiled procedure. Fixed in #16.
+
+Tests: 11 new in `test.scm` under "arithmetic with one or zero arguments" and "numbers starting with a dot".
 
 ---
+
+## 16. ✅ Reading code from a string: `eval` hangs, `load` inside `eval`, dropped defines
+
+**Labels:** bug
+**Status:** Fixed (working tree, not yet committed). The first two were reported by a review; the rest turned up while fixing them.
+
+### Problems
+* **`(eval "x")` hung.** `getch` returns EOF at the end of an eval string without advancing, but `ungetch` stepped back anyway. A symbol or number at the very end of the string was then re-read forever (`"x"`), or re-read as an extra form: `(eval "42")` returned `2`. File input was unaffected, because `ungetc(EOF)` does nothing.
+* **`load` inside `eval` did nothing.** `getch` always read the eval string while there was one, so a file that `load` pushed onto the input stack was never read. It also stayed on the stack, so later error messages named the wrong file.
+* **The eval string could be freed while it was read.** The `eval` builtin popped its string argument before parsing it in place. A collection during compiling (for example, while loading a file) could free it, and the lexer then read freed memory. The GC-stress build shows this.
+* **`eval` of several forms** left every form's value on the stack, not just the last one, so a script ending in such an `eval` printed leftover values.
+* **A dropped top-level procedure define stayed bound** (from #15): a form with a syntax error is discarded, but the compile-time binding of its name was not undone.
+
+### Fix
+* `ungetch` ignores EOF (`lexer.c`).
+* `SKState.eval_file_depth` records the input-stack depth an eval string belongs to (set by `sk_eval_string` and by the `do` step code in `parser.c`, which also lexes from strings). The lexer reads the string only at that depth, so a file loaded from it is read first. At the end of that file the lexer pops back to the string, even when that leaves only the sentinel entry (as it does at run time, after a script has been compiled). `sk_eval_string` closes any loaded files that parsing stopped inside.
+* `sk_eval` keeps its string on the stack while it is parsed, and returns the last form's value, dropping everything else the string left on the stack.
+* `definition()` saves the name's previous value under the hidden global `<define-prev>` (so the GC sees it) and records the name in `SKState.define_name`. After each top-level form, `finish_define` in `yyparse` puts the previous value back if the form was dropped, then releases the saved value.
+
+### Verification
+4 new tests in `test.scm` (415 total): `eval` of a bare symbol, a bare number, several forms, and a string that loads `tests/eval_load.scm` (a new fixture) and then goes on to use it. An "Eval Input" suite in `tests/test_error.c` calls `sk_eval_string` directly with the same cases, and "Define Placement" now checks that a dropped define, or redefinition, leaves the name as it was (257 total). Everything passes in Debug, Release and the GC-stress build, plus `ctest`.

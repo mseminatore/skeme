@@ -91,7 +91,7 @@ typedef enum {
 
 #define PRINT_TRUE  "true"      // historically this would be #t
 #define PRINT_FALSE "false"     // historically this would be #f
-#define PRINT_NIL   "nil"       // historically '()
+#define PRINT_NIL   "()"        // empty list prints as ()
 
 extern int g_bGCLog;
 extern int g_bVMLog;

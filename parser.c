@@ -445,6 +445,9 @@ static int call_is_in_tail_position(CodeChunk* chunk, int call_offset)
 
 typedef void (*BodyPrologue)(SKState* pSK);
 
+static int body_defines(SKState* pSK);
+static void lambda_ex(SKState* pSK, const char* name);
+
 //-----------------------------------------------
 // A function body. 'prologue', if given, compiles code at the start of
 // the body (it may also consume part of it, as let* does), and takes part
@@ -470,6 +473,9 @@ static int local_body_ex(SKState* pSK, BodyPrologue prologue)
 
     if (prologue)
         prologue(pSK);
+
+    // leading internal defines compile the rest of the body themselves
+    body_defines(pSK);
 
     // Parse all body expressions
     while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
@@ -524,24 +530,37 @@ static int definition(SKState* pSK)
 
     match(pSK, DEFINE);
 
+    // Internal defines at the start of a body are compiled by body_defines.
+    // Any other define inside a procedure is an error; parse it anyway so
+    // the rest of the form can be read (its code is discarded).
+    if (pSK->vm.current_scope != NULL)
+    {
+        yyerror(pSK, "define is only allowed at top level or at the start of a body");
+
+        if (LOOKAHEAD == '(')
+        {
+            match(pSK, '(');
+            char name[64];
+            strncpy(name, pSK->yylval.word, 63);
+            name[63] = '\0';
+            match(pSK, ID);
+            lambda_ex(pSK, name);
+        }
+        else
+        {
+            match(pSK, ID);
+            expr(pSK);
+        }
+
+        unindent(pSK);
+        return 0;
+    }
+
     // look for a function definition or variable definition
     if (LOOKAHEAD == '(')
     {
 		// function definition
 		match(pSK, '(');
-
-        // Check if we're inside a local scope (nested define)
-        int is_local = (pSK->vm.current_scope != NULL);
-
-        // Save upvalue state for nested lambdas (like lambda() does)
-        ParseUpvalue saved_upvalues[MAX_UPVALUES];
-        int saved_upvalue_count = pSK->upvalue_count;
-        if (is_local)
-        {
-            if (saved_upvalue_count > 0)
-                memcpy(saved_upvalues, pSK->upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
-            pSK->upvalue_count = 0;
-        }
 
         vm_new_environment(&pSK->vm);   // create new environment for function scope
 
@@ -567,13 +586,19 @@ static int definition(SKState* pSK)
         vm_define_global(&pSK->vm, gc_key, proc_obj);
         vm_pop(&pSK->vm);
 
-        if (!is_local)
-        {
-            // Top-level: also bind the real name now, so the body and later
-            // code see a procedure while compiling. The definition takes
-            // effect in program order through the OP_STORE emitted below.
-            vm_define_global(&pSK->vm, proc_name, proc_obj);
-        }
+        // Also bind the real name now, so the body and later code see a
+        // procedure while compiling. The definition takes effect in program
+        // order through the OP_STORE emitted below. If the form has a syntax
+        // error, yyparse drops it and undoes this binding (finish_define); the
+        // previous value waits in <define-prev>, where the GC can see it.
+        Object* prev = vm_get_global(&pSK->vm, proc_name);
+        vm_push(&pSK->vm, prev ? prev : MAKE_UNBOUND());
+        Object* prev_key = vm_new_string(&pSK->vm, "<define-prev>");
+        prev = vm_pop(&pSK->vm);
+        vm_define_global(&pSK->vm, prev_key, prev);
+        pSK->define_name = proc_name;
+
+        vm_define_global(&pSK->vm, proc_name, proc_obj);
 
         match(pSK, ID);
 		
@@ -591,73 +616,11 @@ static int definition(SKState* pSK)
 
         vm_free_environment(&pSK->vm); // pop function environment off chain
 
-        if (is_local)
-        {
-            // Capture upvalue info before restoring outer state
-            int num_upvalues = pSK->upvalue_count;
-            ParseUpvalue captured[MAX_UPVALUES];
-            if (num_upvalues > 0)
-                memcpy(captured, pSK->upvalues, sizeof(ParseUpvalue) * num_upvalues);
-
-            // Restore outer lambda's upvalue state
-            pSK->upvalue_count = saved_upvalue_count;
-            if (saved_upvalue_count > 0)
-                memcpy(pSK->upvalues, saved_upvalues, sizeof(ParseUpvalue) * saved_upvalue_count);
-
-            // Propagate deep captures upward (same as lambda)
-            for (int i = 0; i < num_upvalues; i++)
-            {
-                if (captured[i].scope_depth > 1)
-                {
-                    int parent_uv_idx = register_upvalue(pSK, captured[i].name,
-                        captured[i].scope_depth - 1, captured[i].local_index);
-                    captured[i].local_index = parent_uv_idx;
-                    captured[i].is_upvalue = 1;
-                }
-            }
-
-            if (num_upvalues > 0)
-            {
-                // Emit closure creation and store to global under its real name
-                vm_emit_push_object(&pSK->vm, proc_name);
-
-                for (int i = 0; i < num_upvalues; i++)
-                {
-                    if (captured[i].is_upvalue)
-                    {
-                        vm_emit(&pSK->vm, OP_CAPTURE_UPVALUE);
-                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
-                    }
-                    else
-                    {
-                        vm_emit(&pSK->vm, OP_CAPTURE_LOCAL);
-                        vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
-                    }
-                }
-
-                vm_emit_push_object(&pSK->vm, proc_obj);
-                vm_emit(&pSK->vm, OP_MAKE_CLOSURE);
-                vm_emit(&pSK->vm, (VMCode_t)num_upvalues);
-
-                // Store the closure to global under its real name
-                vm_emit(&pSK->vm, OP_STORE);
-            }
-            else
-            {
-                // No upvalues — store plain procedure to global under its real name
-                vm_emit_push_object(&pSK->vm, proc_name);
-                vm_emit_push_object(&pSK->vm, proc_obj);
-                vm_emit(&pSK->vm, OP_STORE);
-            }
-        }
-        else
-        {
-            // Top-level: bind the name when the define runs, so definitions
-            // and redefinitions take effect in program order
-            vm_emit_push_object(&pSK->vm, proc_name);
-            vm_emit_push_object(&pSK->vm, proc_obj);
-            vm_emit(&pSK->vm, OP_STORE);
-        }
+        // bind the name when the define runs, so definitions and
+        // redefinitions take effect in program order
+        vm_emit_push_object(&pSK->vm, proc_name);
+        vm_emit_push_object(&pSK->vm, proc_obj);
+        vm_emit(&pSK->vm, OP_STORE);
 	}
     else
     {
@@ -682,12 +645,26 @@ static int definition(SKState* pSK)
 // lambda-definition := '(' parameter* ')' s-expr
 // test: (define a (lambda (x) (* 2 2)))
 //-----------------------------------------------
+
 static int lambda(SKState* pSK)
 {
     PARSE_LOG("lambda(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
 
     match(pSK, LAMBDA);
+    lambda_ex(pSK, NULL);
 
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// Compile a procedure and emit code that pushes it (or its closure). With
+// a name, as for an internal (define (name param ...) body ...), the caller
+// has matched '(' and the name, and the parameters follow; without one,
+// LOOKAHEAD is at the lambda's parameter list.
+//-----------------------------------------------
+static void lambda_ex(SKState* pSK, const char* name)
+{
     // Save outer lambda's upvalue state (for nested lambdas)
     ParseUpvalue saved_upvalues[MAX_UPVALUES];
     int saved_upvalue_count = pSK->upvalue_count;
@@ -710,10 +687,18 @@ static int lambda(SKState* pSK)
     snprintf(lambda_name, sizeof(lambda_name), "<lambda-%d>", lambda_id++);
 	proc->name = (String*)vm_new_string(&pSK->vm, lambda_name);
     vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);   // store in globals as GC root
+    if (name)
+        proc->name = (String*)vm_new_string(&pSK->vm, name);     // for messages; reachable from proc
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
-    if (LOOKAHEAD == '(')
+    if (name)
+    {
+        // (define (name param ...) ...): the parameters run to the ')'
+        formals(pSK, proc, 0);
+        match(pSK, ')');
+    }
+    else if (LOOKAHEAD == '(')
     {
         match(pSK, '(');
 
@@ -814,9 +799,6 @@ static int lambda(SKState* pSK)
     // The bytecode contains a pointer to proc_obj, but GC doesn't scan bytecode.
     // Leaving it on stack keeps it alive during subsequent allocs that might trigger GC.
     // The stack will be cleared before execution starts.
-
-    unindent(pSK);
-    return 0;
 }
 
 //-----------------------------------------------
@@ -1209,17 +1191,20 @@ static int do_expr(SKState* pSK)
         {
             const char* saved_eval = pSK->eval_input;
             int saved_eval_pos = pSK->eval_pos;
+            int saved_eval_depth = pSK->eval_file_depth;
             int saved_lookahead = pSK->lookahead;
             int saved_expr_level = pSK->expr_level;
 
             pSK->eval_input = step_strs[i];
             pSK->eval_pos = 0;
+            pSK->eval_file_depth = pSK->file_stack_ptr;
             pSK->expr_level = 1;
             pSK->lookahead = yylex(pSK);
             expr(pSK);
 
             pSK->eval_input = saved_eval;
             pSK->eval_pos = saved_eval_pos;
+            pSK->eval_file_depth = saved_eval_depth;
             pSK->lookahead = saved_lookahead;
             pSK->expr_level = saved_expr_level;
         }
@@ -1477,6 +1462,155 @@ static int let_star_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// Record a token just read (with its yylval) for replay
+//-----------------------------------------------
+static void replay_record(SKState* pSK, TokenReplay* replay, int* capacity, int token)
+{
+    if (replay->count == *capacity)
+    {
+        *capacity = *capacity ? *capacity * 2 : 32;
+        replay->tokens = (int*)realloc(replay->tokens, sizeof(int) * *capacity);
+        replay->values = (YYLVAL*)realloc(replay->values, sizeof(YYLVAL) * *capacity);
+    }
+    replay->tokens[replay->count] = token;
+    replay->values[replay->count] = pSK->yylval;
+    replay->count++;
+}
+
+//-----------------------------------------------
+// Replay the recorded tokens, which began at LOOKAHEAD: the lexer hands
+// them out again, counted afresh from 'depth_before', the paren depth
+// before the first of them
+//-----------------------------------------------
+static void replay_start(SKState* pSK, TokenReplay* replay, int depth_before)
+{
+    pSK->paren_depth = depth_before;
+    replay->next = pSK->replay;
+    pSK->replay = replay;
+    LOOKAHEAD = yylex(pSK);
+}
+
+//-----------------------------------------------
+// Internal definitions. A body that starts with defines,
+//   (define (f x) (define a 1) (define (g y) (+ a y)) (g x))
+// compiles like letrec* over the rest of the body,
+//   ((lambda (a g) (set! a 1) (set! g (lambda (y) (+ a y))) (g x)) <unspecified> <unspecified>)
+// so the names are local to each call of f, and each definition can use
+// the ones before it. As in letrec, the defines are read ahead to collect
+// the names, then replayed to compile them.
+//
+// Returns 1 if the body started with defines, having compiled the whole
+// rest of the body; 0, with nothing compiled, if not.
+//-----------------------------------------------
+static int body_define_count;
+
+static void body_define_inits(SKState* pSK)
+{
+    int ndefs = body_define_count;
+
+    for (int i = 0; i < ndefs; i++)
+    {
+        match(pSK, '(');
+        match(pSK, DEFINE);
+
+        int is_proc = (LOOKAHEAD == '(');
+        if (is_proc)
+            match(pSK, '(');
+
+        char name[64];
+        strncpy(name, pSK->yylval.word, 63);
+        name[63] = '\0';
+
+        int scope_depth = -1;
+        Object* slot = vm_get_local_var_ex(&pSK->vm, name, &scope_depth);
+        match(pSK, ID);
+
+        if (is_proc)
+            lambda_ex(pSK, name);       // (define (name param ...) body ...)
+        else
+            expr(pSK);                  // (define name value)
+
+        vm_emit(&pSK->vm, OP_SET_LOCAL);
+        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(slot));
+
+        match(pSK, ')');
+    }
+}
+
+static int body_defines(SKState* pSK)
+{
+    if (LOOKAHEAD != '(')
+        return 0;
+
+    // record the leading define forms, and the two tokens after them that
+    // show the next form is not a define
+    TokenReplay* replay = (TokenReplay*)calloc(1, sizeof(TokenReplay));
+    int capacity = 0;
+    int depth_before = pSK->paren_depth - token_depth(LOOKAHEAD);
+    int token = LOOKAHEAD;
+
+    char names[MAX_LET_BINDINGS][64];
+    int ndefs = 0;
+
+    while (token == '(')
+    {
+        replay_record(pSK, replay, &capacity, token);
+        token = yylex(pSK);
+        if (token != DEFINE)
+            break;
+
+        // (define name ...) or (define (name ...) ...)
+        replay_record(pSK, replay, &capacity, token);
+        int depth = 1;
+        token = yylex(pSK);
+        if (token == '(')
+        {
+            replay_record(pSK, replay, &capacity, token);
+            depth++;
+            token = yylex(pSK);
+        }
+
+        if (token == ID)
+        {
+            if (ndefs >= MAX_LET_BINDINGS)
+                yyerror(pSK, "too many internal defines");
+            strncpy(names[ndefs], pSK->yylval.word, 63);
+            names[ndefs][63] = '\0';
+            ndefs++;
+        }
+
+        // the rest of the define form, through its ')'
+        while (depth > 0 && token != DONE)
+        {
+            replay_record(pSK, replay, &capacity, token);
+            depth += token_depth(token);
+            token = yylex(pSK);
+        }
+    }
+    replay_record(pSK, replay, &capacity, token);
+    replay_start(pSK, replay, depth_before);
+
+    if (ndefs == 0)
+        return 0;
+
+    // every name starts out unspecified
+    for (int i = 0; i < ndefs; i++)
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());
+
+    body_define_count = ndefs;
+    let_create_lambda(pSK, names, ndefs, body_define_inits);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)ndefs);
+
+    return 1;
+}
+
+//-----------------------------------------------
 // Body prologue of the letrec lambda: replay the binding list and assign
 // each initializer to its variable (a parameter of the lambda) in order.
 // The initializers are compiled inside the lambda, so they can refer to
@@ -1533,15 +1667,7 @@ static int letrec_expr(SKState* pSK)
 
         for (;;)
         {
-            if (replay->count == capacity)
-            {
-                capacity = capacity ? capacity * 2 : 32;
-                replay->tokens = (int*)realloc(replay->tokens, sizeof(int) * capacity);
-                replay->values = (YYLVAL*)realloc(replay->values, sizeof(YYLVAL) * capacity);
-            }
-            replay->tokens[replay->count] = token;
-            replay->values[replay->count] = pSK->yylval;
-            replay->count++;
+            replay_record(pSK, replay, &capacity, token);
 
             depth += token_depth(token);
 
@@ -1560,11 +1686,7 @@ static int letrec_expr(SKState* pSK)
             token = yylex(pSK);
         }
 
-        // replay it: the lexer hands these tokens out again, counted afresh
-        pSK->paren_depth = depth_before;
-        replay->next = pSK->replay;
-        pSK->replay = replay;
-        LOOKAHEAD = yylex(pSK);
+        replay_start(pSK, replay, depth_before);
     }
 
     // initial values: every variable starts out unspecified
@@ -2379,6 +2501,24 @@ static void discard_form(SKState* pSK, CodeChunk* chunk, int form_start,
 }
 
 //-----------------------------------------------
+// After a top-level form: a procedure define binds its name while it is
+// compiled (see definition). Keep that if the form compiled; if it was
+// dropped, put back the name's previous value, or leave it unbound.
+//-----------------------------------------------
+static void finish_define(SKState* pSK, int dropped)
+{
+    if (!pSK->define_name)
+        return;
+
+    Object* prev_key = vm_new_string(&pSK->vm, "<define-prev>");
+    if (dropped)
+        vm_define_global(&pSK->vm, pSK->define_name, vm_get_global(&pSK->vm, prev_key));
+    vm_define_global(&pSK->vm, prev_key, MAKE_UNBOUND());   // don't keep the old value alive
+
+    pSK->define_name = NULL;
+}
+
+//-----------------------------------------------
 // parse the input stream (stdin or file)
 //-----------------------------------------------
 int yyparse(SKState *pSK)
@@ -2411,10 +2551,13 @@ int yyparse(SKState *pSK)
         // script or a loaded file
         pSK->echo_form = (pSK->eval_input == NULL && pSK->yyin == stdin);
 
+        pSK->define_name = NULL;
         expr(pSK);
 
-        if (pSK->err_count != errors_before)
+        int dropped = (pSK->err_count != errors_before);
+        if (dropped)
             discard_form(pSK, chunk, form_start, saved_expr_level, saved_scope);
+        finish_define(pSK, dropped);
     }
 
     return 0;

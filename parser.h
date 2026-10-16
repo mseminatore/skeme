@@ -95,9 +95,12 @@ struct SKState
     // String input for eval (when non-NULL, getch reads from this)
     const char* eval_input;         // string buffer for eval
     int eval_pos;                   // current position in eval_input
+    int eval_file_depth;            // file_stack_ptr that eval_input belongs to; a file loaded
+                                    // from the string is pushed above it and read first
 
     int indent_level;               // current parse indent level
     int expr_level;                 // current expression nesting level
+    Object* define_name;            // name a top-level define bound while compiling (see definition)
     int bDone;                      // flag to signal interpreter shutdown
     int lookahead;                  // current lookahead token
     YYLVAL yylval;                  // current token value

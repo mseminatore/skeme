@@ -729,6 +729,13 @@
 (test-case "eval string" (equal? (eval "(string-append \"hello\" \" world\")") "hello world"))
 (test-case "eval define" (begin (eval "(define eval-test-var 99)") (= eval-test-var 99)))
 (test-case "eval nested" (= (eval "(+ (eval \"(+ 1 2)\") 4)") 7))
+(define eval-sym-var 5)
+(test-case "eval a bare symbol" (= (eval "eval-sym-var") 5))
+(test-case "eval a bare number" (= (eval "42") 42))
+(test-case "eval returns the last value" (= (eval "1 2 3") 3))
+(test-case "eval loads a file, then reads on"
+    (begin (eval "(load \"tests/eval_load.scm\") (define eval-after-load (lf-loaded-fn 2))")
+           (= eval-after-load 14)))
 
 ;----------------------
 ;--- do loop tests ---
@@ -990,6 +997,55 @@
 (define (lf-cc-loop i) (if (= i 10000) i (lf-cc-loop (+ 1 (call/cc (lambda (k) (k i)))))))
 (test-case "call/cc in a loop" (= (lf-cc-loop 0) 10000))
 (test-case "continuation is a procedure" (call/cc (lambda (k) (procedure? k))))
+
+; arithmetic with one or zero arguments
+(test-case "unary minus" (= (- 5) -5))
+(test-case "unary minus float" (= (- 2.5) -2.5))
+(define (lf-neg x) (- x))
+(test-case "unary minus in a procedure" (= (lf-neg (lf-neg 7)) 7))
+(test-case "unary divide" (and (= (/ 1) 1) (= (/ 2.0) 0.5)))
+(test-case "zero-argument + and *" (and (= (+) 0) (= (*) 1)))
+(test-case "one-argument + and *" (and (= (+ 3) 3) (= (* 4) 4)))
+(test-case "apply unary minus" (= (apply - '(3)) -3))
+
+; numbers starting with a dot
+(test-case "leading-dot float" (= .5 0.5))
+(test-case "signed leading-dot floats" (and (= -.5 -0.5) (= +.25 0.25)))
+(test-case "leading-dot float in a list" (equal? '(a .5) (list 'a 0.5)))
+(test-case "dot still makes a pair" (equal? '(a . 5) (cons 'a 5)))
+
+; internal defines are local to the body
+(define lf-inner 'global)
+(define (lf-hide) (define (lf-inner) 'local) (lf-inner))
+(test-case "internal define is local" (eq? (lf-hide) 'local))
+(test-case "internal define does not leak" (eq? lf-inner 'global))
+(define (lf-def-a) (define (helper) 'a) (helper))
+(define (lf-def-b) (define (helper) 'b) (helper))
+(test-case "same inner name in two procedures" (equal? (list (lf-def-a) (lf-def-b)) '(a b)))
+(define (lf-depth n) (define (me) n) (if (= n 0) (list (me)) (let ((r (lf-depth (- n 1)))) (append r (list (me))))))
+(test-case "each call has its own inner define" (equal? (lf-depth 3) '(0 1 2 3)))
+(define (lf-parity n)
+  (define (ev? n) (if (= n 0) #t (od? (- n 1))))
+  (define (od? n) (if (= n 0) #f (ev? (- n 1))))
+  (list (ev? n) (od? n)))
+(test-case "mutually recursive internal defines" (equal? (lf-parity 7) '(#f #t)))
+(define (lf-seq x) (define a (+ x 1)) (define b (* a 2)) (define (c) (+ a b)) (c))
+(test-case "internal defines see earlier ones" (= (lf-seq 1) 6))
+(define (lf-def-loop n) (define m (- n 1)) (if (= n 0) 'done (lf-def-loop m)))
+(test-case "tail call after internal defines" (eq? (lf-def-loop 100000) 'done))
+(define (lf-def-count n) (define (step i acc) (if (= i n) acc (step (+ i 1) (+ acc 1)))) (step 0 0))
+(test-case "inner loop in constant stack" (= (lf-def-count 100000) 100000))
+(test-case "internal define in lambda" (= ((lambda (x) (define y (* x 2)) (+ x y)) 5) 15))
+(test-case "internal define in let" (= (let ((x 3)) (define (sq) (* x x)) (sq)) 9))
+(test-case "internal define in let*" (= (let* ((x 2) (y 3)) (define z (* x y)) z) 6))
+(test-case "internal define in named let"
+    (equal? (let loop ((i 0) (acc '())) (define next (+ i 1)) (if (= i 3) acc (loop next (cons i acc)))) '(2 1 0)))
+(define (lf-def-rest . xs) (define (count l) (if (null? l) 0 (+ 1 (count (cdr l))))) (count xs))
+(test-case "variadic internal define" (= (lf-def-rest 'a 'b 'c) 3))
+(define (lf-def-closure n) (define (get) n) (define (inc!) (set! n (+ n 1))) (list get inc!))
+(define lf-dc (lf-def-closure 10))
+((cadr lf-dc))
+(test-case "internal defines share captured state" (= ((car lf-dc)) 11))
 
 ; report test results
 ;----------------------

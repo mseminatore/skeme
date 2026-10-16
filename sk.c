@@ -188,6 +188,7 @@ int sk_eval_string(SKState *pSK, const char *code)
     int saved_indent = pSK->indent_level;
     const char* saved_eval_input = pSK->eval_input;
     int saved_eval_pos = pSK->eval_pos;
+    int saved_eval_depth = pSK->eval_file_depth;
     int saved_paren_depth = pSK->paren_depth;
 
     // Save current code chunk and create a temporary one for eval
@@ -198,6 +199,7 @@ int sk_eval_string(SKState *pSK, const char *code)
     // Set up string input — suppress OP_PRINT_TOS by starting at expr_level 1
     pSK->eval_input = code;
     pSK->eval_pos = 0;
+    pSK->eval_file_depth = pSK->file_stack_ptr;
     pSK->expr_level = 1;
     pSK->indent_level = 0;
     pSK->bDone = 0;
@@ -205,6 +207,10 @@ int sk_eval_string(SKState *pSK, const char *code)
     // Parse the string
     yyparse(pSK);
     vm_emit(&pSK->vm, OP_HALT);
+
+    // close any file loaded from the string that parsing stopped inside
+    while (pSK->file_stack_ptr > pSK->eval_file_depth && pop_file_stack(pSK))
+        ;
 
     // Execute the compiled code - save/restore VM ip
     vm_set_current_chunk(&pSK->vm, saved_chunk);
@@ -218,6 +224,7 @@ int sk_eval_string(SKState *pSK, const char *code)
     pSK->indent_level = saved_indent;
     pSK->eval_input = saved_eval_input;
     pSK->eval_pos = saved_eval_pos;
+    pSK->eval_file_depth = saved_eval_depth;
     pSK->paren_depth = saved_paren_depth;
 
     // Free temporary chunk

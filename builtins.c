@@ -704,6 +704,18 @@ static int sk_mathop(SKState* pSK, char op)
     Object* raw_n = vm_pop(&pSK->vm);
     int n = AS_NUM(raw_n);
 
+    // (+) is 0 and (*) is 1; the other ops need an argument
+    if (n == 0)
+    {
+        if (op != '+' && op != '*')
+        {
+            yyerror(pSK, "mathop requires at least one argument");
+            return SK_FALSE;
+        }
+        vm_push(&pSK->vm, MAKE_NUM(op == '+' ? 0 : 1));
+        return SK_TRUE;
+    }
+
     // First pass: check if any argument is a float
     int has_float = FALSE;
     for (int i = 0; i < n; i++)
@@ -823,6 +835,26 @@ static int sk_add(SKState* pSK)
 //-----------------------------------------------
 static int sk_subtract(SKState* pSK)
 {
+    if (!pSK) return SK_FALSE;
+
+    // (- x) negates x
+    Object* raw_n = vm_peek(&pSK->vm, 0);
+    if (AS_NUM(raw_n) == 1)
+    {
+        vm_pop(&pSK->vm);
+        Object* obj = vm_pop(&pSK->vm);
+        if (!IS_NUMERIC(obj))
+        {
+            yyerror(pSK, "arguments to mathop must be numbers");
+            return SK_FALSE;
+        }
+        if (IS_FLOAT(obj))
+            vm_push(&pSK->vm, MAKE_TAGGED_FLOAT((float)-AS_DOUBLE(obj)));
+        else
+            vm_push(&pSK->vm, MAKE_NUM(-AS_NUM(obj)));
+        return SK_TRUE;
+    }
+
     return sk_mathop(pSK, '-');
 }
 
@@ -839,6 +871,19 @@ static int sk_multiply(SKState* pSK)
 //-----------------------------------------------
 static int sk_divide(SKState* pSK)
 {
+    if (!pSK) return SK_FALSE;
+
+    // (/ x) is (/ 1 x)
+    Object* raw_n = vm_peek(&pSK->vm, 0);
+    if (AS_NUM(raw_n) == 1)
+    {
+        vm_pop(&pSK->vm);
+        Object* obj = vm_pop(&pSK->vm);
+        vm_push(&pSK->vm, MAKE_NUM(1));
+        vm_push(&pSK->vm, obj);
+        vm_push(&pSK->vm, MAKE_NUM(2));
+    }
+
     return sk_mathop(pSK, '/');
 }
 
@@ -1559,13 +1604,19 @@ static int sk_eval(SKState* pSK)
         return SK_FALSE;
     }
 
+    // keep the string on the stack while it is parsed: the lexer reads it in
+    // place, and compiling (or a file it loads) can trigger a collection
+    vm_push(&pSK->vm, obj);
     int sp_before = pSK->vm.sp;
     const char* code = ((String*)obj)->value;
     sk_eval_string(pSK, code);
 
-    // If eval produced no result (e.g. define), push false as void
-    if (pSK->vm.sp == sp_before)
-        vm_push(&pSK->vm, MAKE_FALSE());
+    // The result is the last form's value, on top. Each form leaves a
+    // value, and compiling can leave GC roots too; drop those and the string.
+    // If eval produced no result (e.g. define), the result is false as void.
+    Object* result = (pSK->vm.sp > sp_before) ? vm_peek(&pSK->vm, 0) : MAKE_FALSE();
+    pSK->vm.sp = sp_before - 1;
+    vm_push(&pSK->vm, result);
 
     return SK_TRUE;
 }
@@ -2679,10 +2730,10 @@ static SKFuncSet built_in_funcs[] =
 	{ ">=", sk_greater_equal, 2 },
 
     // arithmetic operators
-    { "+", sk_add, SK_ARITY_TWO_OR_MORE },
-    { "-", sk_subtract, SK_ARITY_TWO_OR_MORE },
-    { "*", sk_multiply, SK_ARITY_TWO_OR_MORE },
-	{ "/", sk_divide, SK_ARITY_TWO_OR_MORE },
+    { "+", sk_add, SK_ARITY_ANY },
+    { "-", sk_subtract, SK_ARITY_ONE_OR_MORE },
+    { "*", sk_multiply, SK_ARITY_ANY },
+	{ "/", sk_divide, SK_ARITY_ONE_OR_MORE },
     { "=", sk_equalnum, SK_ARITY_TWO_OR_MORE },
     { "modulo", sk_modulo, 2},
     { "abs", sk_abs, 1 },

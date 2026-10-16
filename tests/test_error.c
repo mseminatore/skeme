@@ -72,6 +72,14 @@ static Object* get_global(SKState* sk, const char* name)
 }
 
 //--------------------------------------------------------------
+// Is a global missing, or only a placeholder for a name that was used?
+//--------------------------------------------------------------
+static int no_value(Object* value)
+{
+    return value == NULL || IS_UNBOUND(value);
+}
+
+//--------------------------------------------------------------
 // Run all error tests
 //--------------------------------------------------------------
 void test_error(int argc, char *argv[])
@@ -343,6 +351,100 @@ void test_error(int argc, char *argv[])
         COMMENT("The VM keeps working afterwards...");
         eval_quietly(&sk, "(define ce-after (ce-deep 10))");
         TEST(AS_NUM(get_global(&sk, "ce-after")) == 10);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: define inside a procedure must come at the start of a body
+    SUITE("Define Placement");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("Internal defines at the start of a body are local...");
+        eval_quietly(&sk, "(define (dp-ok) (define dp-x 1) (define (dp-f) dp-x) (dp-f)) (define dp-r (dp-ok))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "dp-r")) == 1);
+        TEST(no_value(get_global(&sk, "dp-x")));
+        TEST(no_value(get_global(&sk, "dp-f")));
+
+        COMMENT("A define after a body expression is an error...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (dp-late) (display \"\") (define dp-y 2) dp-y)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "start of a body") != NULL);
+        TEST(no_value(get_global(&sk, "dp-late")));
+        TEST(no_value(get_global(&sk, "dp-y")));
+
+        COMMENT("A dropped redefinition keeps the old procedure...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (dp-keep) 1)");
+        eval_quietly(&sk, "(define (dp-keep) (display \"\") (define dp-z 2) 3)");
+        TEST(g_test_ctx.error_count == 1);
+        eval_quietly(&sk, "(define dp-kept (dp-keep))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(AS_NUM(get_global(&sk, "dp-kept")) == 1);
+
+        COMMENT("So is a define nested in an expression...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (dp-if c) (if c (define (dp-g) 1)) 0)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(no_value(get_global(&sk, "dp-g")));
+
+        COMMENT("Parsing continues after the error...");
+        reset_test_context();
+        eval_quietly(&sk, "(define dp-after 5)");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "dp-after")) == 5);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: reading code from a string (sk_eval_string, eval)
+    SUITE("Eval Input");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("A symbol or number at the very end of the string is read once...");
+        eval_quietly(&sk, "(define ei-x 5)");
+        eval_quietly(&sk, "(define ei-a 0) (set! ei-a ei-x)");
+        TEST(AS_NUM(get_global(&sk, "ei-a")) == 5);
+        sk_eval_string(&sk, "ei-x");
+        TEST(sk.vm.sp == 1 && AS_NUM(sk.vm.stack[0]) == 5);
+        vm_clear_stack(&sk.vm);
+        sk_eval_string(&sk, "42");
+        TEST(sk.vm.sp == 1 && AS_NUM(sk.vm.stack[0]) == 42);
+        vm_clear_stack(&sk.vm);
+        TEST(g_test_ctx.error_count == 0);
+
+        COMMENT("load inside a string reads the file, then the rest of the string...");
+        FILE* f = fopen("ei_load_test.scm", "w");
+        TEST(f != NULL);
+        if (f)
+        {
+            fputs("(define ei-loaded 7)\n(define ei-loaded2 (+ ei-loaded 1))", f);
+            fclose(f);
+        }
+        int depth = sk.file_stack_ptr;
+        eval_quietly(&sk, "(load \"ei_load_test.scm\") (define ei-after (+ ei-loaded2 1))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "ei-loaded")) == 7);
+        TEST(AS_NUM(get_global(&sk, "ei-after")) == 9);
+        TEST(sk.file_stack_ptr == depth);
+
+        COMMENT("eval of a string that loads a file...");
+        eval_quietly(&sk, "(define ei-loaded 0) (eval \"(load \\\"ei_load_test.scm\\\")\") (define ei-again ei-loaded)");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "ei-again")) == 7);
+        TEST(sk.file_stack_ptr == depth);
+        remove("ei_load_test.scm");
 
         sk_shutdown(&sk);
     }

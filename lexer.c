@@ -157,11 +157,20 @@ int pop_file_stack(SKState* pSK)
 }
 
 //-----------------------------------
+// Is the lexer reading the eval string? Not while a file loaded from it
+// is on the file stack above it.
+//-----------------------------------
+static int reading_string(SKState* pSK)
+{
+    return pSK->eval_input && pSK->file_stack_ptr == pSK->eval_file_depth;
+}
+
+//-----------------------------------
 // next next char from input stream
 //-----------------------------------
 int getch(SKState* pSK)
 {
-    if (pSK->eval_input) {
+    if (reading_string(pSK)) {
         char c = pSK->eval_input[pSK->eval_pos];
         if (c == '\0') return EOF;
         pSK->eval_pos++;
@@ -175,7 +184,12 @@ int getch(SKState* pSK)
 //-----------------------------------
 int ungetch(SKState* pSK, int c)
 {
-    if (pSK->eval_input) {
+    // getch did not advance past the end, so there is nothing to put back
+    // (ungetc ignores EOF too)
+    if (c == EOF)
+        return c;
+
+    if (reading_string(pSK)) {
         if (pSK->eval_pos > 0) pSK->eval_pos--;
         return c;
     }
@@ -293,6 +307,9 @@ int getNumber(SKState* pSK)
 	// make sure string is asciiz
 	*bufptr = '\0';
 
+	if (!strpbrk(buf, base == 16 ? "0123456789abcdefABCDEF" : "0123456789"))
+		yyerror(pSK, "malformed number");
+
 	if (is_float)
 	{
 		pSK->yylval.fval = (float)strtod(buf, NULL);
@@ -395,9 +412,18 @@ yylex01:
     // see if input stack is empty
     if (c == EOF)
     {
-        // In eval/string mode, just return DONE — don't touch file stack
-        if (pSK->eval_input)
+        // the end of the eval string ends the input; the end of a file
+        // loaded from it pops back to the string
+        if (reading_string(pSK))
             return DONE;
+
+        if (pSK->eval_input && pSK->file_stack_ptr > pSK->eval_file_depth)
+        {
+            // back to the string, even when that leaves only the sentinel
+            // entry, which pop_file_stack reports as the end of input
+            pop_file_stack(pSK);
+            goto yylex01;
+        }
 
         if (pop_file_stack(pSK))
         {
@@ -445,14 +471,16 @@ yylex01:
     }
 
 	// look for a number value
-	if (isdigit(c) || c == '-' || c == '+' || c == '$')
+	if (isdigit(c) || c == '-' || c == '+' || c == '$' || c == '.')
 	{
-        if (c == '-' || c == '+')
+        if (c == '-' || c == '+' || c == '.')
         {
             int n = getch(pSK);
             ungetch(pSK, n);
 
-            if (n != '$' && !isdigit(n))
+            // a lone '.' is the dotted-pair token; '.5' is a number.
+            // '-' or '+' starts a number before a digit, '$' or '.' (e.g. -.5)
+            if (!isdigit(n) && (c == '.' || (n != '$' && n != '.')))
             {
                 pSK->yylval.word[0] = c; pSK->yylval.word[1] = 0;
                 return c;
