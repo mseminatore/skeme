@@ -1008,6 +1008,8 @@
 (test-case "one-argument + and *" (and (= (+ 3) 3) (= (* 4) 4)))
 (test-case "apply unary minus" (= (apply - '(3)) -3))
 
+(test-case "string-append of zero or one strings" (and (equal? (string-append) "") (equal? (string-append "a") "a")))
+
 ; numbers starting with a dot
 (test-case "leading-dot float" (= .5 0.5))
 (test-case "signed leading-dot floats" (and (= -.5 -0.5) (= +.25 0.25)))

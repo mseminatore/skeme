@@ -189,17 +189,22 @@ int sk_eval_string(SKState *pSK, const char *code)
     const char* saved_eval_input = pSK->eval_input;
     int saved_eval_pos = pSK->eval_pos;
     int saved_eval_depth = pSK->eval_file_depth;
+    const char* saved_eval_name = pSK->eval_name;
+    int saved_eval_lineno = pSK->eval_lineno;
     int saved_paren_depth = pSK->paren_depth;
 
     // Save current code chunk and create a temporary one for eval
     CodeChunk eval_chunk;
     vm_init_chunk(&eval_chunk);
     CodeChunk* saved_chunk = vm_set_current_chunk(&pSK->vm, &eval_chunk);
+    vm_push_root_chunk(&pSK->vm, &eval_chunk);    // the GC traces what its code refers to
 
     // Set up string input — suppress OP_PRINT_TOS by starting at expr_level 1
     pSK->eval_input = code;
     pSK->eval_pos = 0;
     pSK->eval_file_depth = pSK->file_stack_ptr;
+    pSK->eval_name = "<eval>";      // errors name the string, by its own lines
+    pSK->eval_lineno = 1;
     pSK->expr_level = 1;
     pSK->indent_level = 0;
     pSK->bDone = 0;
@@ -225,9 +230,12 @@ int sk_eval_string(SKState *pSK, const char *code)
     pSK->eval_input = saved_eval_input;
     pSK->eval_pos = saved_eval_pos;
     pSK->eval_file_depth = saved_eval_depth;
+    pSK->eval_name = saved_eval_name;
+    pSK->eval_lineno = saved_eval_lineno;
     pSK->paren_depth = saved_paren_depth;
 
     // Free temporary chunk
+    vm_pop_root_chunk(&pSK->vm);
     vm_free_chunk(&pSK->vm, &eval_chunk);
 
     return SK_TRUE;

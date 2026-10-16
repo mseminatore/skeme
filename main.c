@@ -104,6 +104,7 @@ int main(int argc, char *argv[])
     // initialize repl code chunk
     vm_init_chunk(&repl_chunk);
     vm_set_current_chunk(&sk.vm, &repl_chunk);
+    vm_push_root_chunk(&sk.vm, &repl_chunk);     // the GC traces what its code refers to
 
 	sk_define(&sk, "__version__", vm_new_string(&sk.vm, APP_VER));
 	sk_define(&sk, "__author__", vm_new_string(&sk.vm, "Mark Seminatore"));
@@ -178,6 +179,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    vm_pop_root_chunk(&sk.vm);
     vm_free_chunk(&sk.vm, &repl_chunk);
 
     LOG("max stack size: %d, max call depth: %d\n", sk.vm.max_stack_size, sk.vm.max_call_depth);

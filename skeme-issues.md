@@ -144,6 +144,8 @@ On `fib(32)`, about 15 of those points are the overflow check in `vm_push`, meas
 
 To get the push check off the hot path, do what Lua does: have the compiler compute each function's maximum stack depth, and check for that much room once per call instead of on every push.
 
+**Update (#17):** done. The gain was much smaller than the measurement above suggested, about 2% on `fib(34)`; see #17.
+
 ---
 
 ## 4. ✅ Tail calls are only optimized when caller and callee take the same number of arguments
@@ -460,8 +462,8 @@ Each one keeps its objects on the VM stack, which the GC marks, across the alloc
 ### Verification
 Under a `-DVM_STRESS_GC` build: `test.scm` 348/348, the C unit tests pass, and both examples print exactly what a normal build prints.
 
-### Not fixed
-The GC does not trace object constants embedded in bytecode. They are safe as long as something else keeps them alive. Global names and compiled procedures are kept alive by the global table, and strings and symbols are created when the code runs. That makes this a hazard for future code rather than a known bug.
+### Later fixed
+The GC did not trace object constants embedded in bytecode; they were safe only because something else kept them alive. It does now (#17).
 
 ---
 
@@ -566,3 +568,52 @@ Tests: 11 new in `test.scm` under "arithmetic with one or zero arguments" and "n
 
 ### Verification
 4 new tests in `test.scm` (415 total): `eval` of a bare symbol, a bare number, several forms, and a string that loads `tests/eval_load.scm` (a new fixture) and then goes on to use it. An "Eval Input" suite in `tests/test_error.c` calls `sk_eval_string` directly with the same cases, and "Define Placement" now checks that a dropped define, or redefinition, leaves the name as it was (257 total). Everything passes in Debug, Release and the GC-stress build, plus `ctest`.
+
+---
+
+## 17. ✅ Macro traps, bytecode GC roots, REPL echo, eval error locations, native arity, stack checks
+
+**Labels:** bug, performance
+**Status:** Fixed (working tree, not yet committed). Covers the remaining open items except #8, plus problems reported by reviewers.
+
+### Value macros evaluated their argument more than once
+`AS_NUM`, `IS_NUM`, `OBJ_TYPE`, `IS_FLOAT`, `AS_DOUBLE` and most other `AS_*`/`IS_*` macros in `vm.h` used their argument two or three times, so `AS_NUM(vm_pop(pvm))` popped twice. That caused a "stack underflow" in an embedder's `exit` override; `sk_exit` only avoided it by popping into a variable first.
+* Each macro now passes its argument once to a `static inline` function (`sk_is_obj`, `sk_as_num`, `sk_obj_type`, `sk_is_float`, `sk_as_double`, ...). The macro names and every call site are unchanged. The object-type enum moved above them.
+* A search for side-effecting arguments found only `IS_FALSE(vm_pop(...))`, which was already safe, and `get_global` in the C tests, which ran twice per check. Release speed is unchanged.
+
+### The GC did not trace bytecode, and the REPL echoed a stray procedure
+`(define (make-adder n) (lambda (x) (+ x n)))` at the REPL printed `#<procedure:<lambda-0>>`, while `(define (f x) x)` printed nothing. To keep procedures alive while compiling, the compiler left each `lambda`/`let`/`do` procedure on the VM stack, intending the stack to be cleared before running. The script path cleared it, but the REPL did not, so `OP_PRINT_TOS` echoed it. The compiler also stored every compiled procedure under a hidden global (`<lambda-N>`, `<let-N>`, `<do-N>`, `<define-N>`), so none was ever freed, not even ones compiled by `eval` in a loop.
+
+Both were workarounds for the GC not tracing the objects bytecode refers to (#12). Fixed at the root:
+* `markChunk` walks a chunk's instructions, using `op_operand_words` for their lengths, and marks pushed constants, called procedures and global keys. A procedure's chunk is traced when the procedure is marked. A `LOAD_GLOBAL` cache is not traced: it may be stale, and a valid one is the global's current value anyway.
+* New GC roots in `VM`: `root_chunks`, the top-level code being compiled or run (`main.c` registers the REPL chunk, `sk_eval_string` each eval chunk), and `compile_roots`, procedures still being compiled, until the enclosing code refers to them.
+* The stack leftovers and the hidden globals are gone. Compiled procedures are now collected when unused.
+* `freeObject` (and `vm_free_chunk`) free the C strings that `OP_STRING`/`OP_SYMBOL` operands own; they leaked before.
+* Tracing exposed a latent bug: `vm_emit` grew a chunk with `vm_alloc`, which `realloc`s and then may collect before the caller stores the new pointer, so the GC read a freed buffer. It now allocates the new buffer, copies, and frees the old one.
+
+### Errors from `sk_eval_string` named the wrong place
+They reported the lexer's position in whatever file was on top of the input stack (e.g. `in file '<unknown>' near line 57`), not the line in the string.
+* While the lexer reads an eval string, errors now report `<eval>` and the line within the string (`SKState.eval_name`, `eval_lineno`; `sk_log` checks `sk_reading_string`). The `do` loop's step code, which the parser also re-lexes from a string, keeps naming the enclosing file.
+* A newline inside an eval string no longer moves the file's line count, and at the REPL it no longer ends the input: `(eval "(define a 1)\n(define b 2)")` typed at the REPL stopped after the first line.
+* `eval` of a `define` (no value) now returns the unspecified value instead of `#f`, so the REPL doesn't echo `false`.
+
+### Native argument counts were not checked unless fixed
+`SK_ARITY_ONE_OR_MORE`, `TWO_OR_MORE` and `ZERO_OR_ONE` were never enforced, and a wrong fixed count only logged "incorrect number of arguments to native function" and carried on.
+* `vm_run_native` checks every arity, and a wrong count aborts like a procedure's, naming the native: `'car' called with 2 arguments, expects 1`, `'map' called with 1 argument, expects at least 2`, `... expects at most 1`. The duplicate check in `vm_call_function` is gone.
+* The `SK_ARITY_*` constants moved from `parser.h` to `vm.h`, beside `NativeFunction`.
+* `string-append` takes any number of strings, as in Scheme (`(string-append)` is `""`). It also no longer overflows its buffer: it `strcat`ed into a fixed array with no bound.
+
+### Inline arithmetic did not check its operands
+Two-argument `+ - * < <= =` compile to opcodes whose slow path treated any non-number as 0, so `(+ 1 "x")` was `1`. They now abort with "arguments to '+' must be numbers", like the builtins.
+
+### Stack checks per call instead of per push (from #3)
+`vm_push` checked for overflow on every push. Following Lua:
+* `vm_max_depth` computes the most stack slots code can use, following every path with each instruction's stack effect (branches only go forward). A procedure computes it on its first call and caches it in `Procedure.max_stack`.
+* `vm_ensure_frame` checks once per call (normal, tail and from C) for room for the frame header plus that depth: one inline add and compare. The opcode handlers then push with `vm_push_fast`, which only `assert`s, so a Debug build catches any underestimate. Natives and other C code keep the checked `vm_push`, since their pushes are not in the bytecode, and so do the few handlers that push a temporary GC root.
+* Top-level code is checked per form: `yyparse` starts each form with a new `OP_CHECK_STACK n`, filled in once the form is compiled. A form too big for the stack fails alone; earlier forms still run.
+* `max_stack_size` is now an upper bound, and calls update it only when profiling (`-p`).
+
+The gain was small: `fib(34)` about 2% faster (2487 vs 2533 ms, min of 9 interleaved runs; noise is about ±3%), and `bench.scm` the same. The ~15% measured in #3 was against an older VM. This is a modest win for a real increase in complexity; it is easy to revert if you prefer the simpler per-push check.
+
+### Verification
+New C tests in `tests/test_error.c` (295 total): native arity messages, `<eval>` locations, inline arithmetic type errors, a "Compiled Code Roots" suite (nothing left on the stack after compiling a lambda, a procedure reachable only from another's code survives a collection, procedures compiled by `eval` are collected), and stack overflow with wide frames and with one oversized top-level form. One new `test.scm` test (416 total) for `string-append` with zero or one strings. Everything passes in Debug, Release and the GC-stress build, plus `ctest` in Debug and Release.

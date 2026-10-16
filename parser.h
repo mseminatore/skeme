@@ -50,11 +50,6 @@ typedef enum {
 	#define SK_NULL NULL
 #endif
 
-#define SK_ARITY_ANY -1
-#define SK_ARITY_ZERO_OR_ONE -2
-#define SK_ARITY_ONE_OR_MORE -3
-#define SK_ARITY_TWO_OR_MORE -4
-
 #define SK_UNKNOWN_FILE "<unknown>"
 #define SK_NONAME_FILE "noname"
 
@@ -95,6 +90,9 @@ struct SKState
     // String input for eval (when non-NULL, getch reads from this)
     const char* eval_input;         // string buffer for eval
     int eval_pos;                   // current position in eval_input
+    const char* eval_name;          // name errors report for eval_input, e.g. "<eval>"; NULL
+                                    // reports the enclosing file (do loop steps)
+    int eval_lineno;                // current line in eval_input
     int eval_file_depth;            // file_stack_ptr that eval_input belongs to; a file loaded
                                     // from the string is pushed above it and read first
 

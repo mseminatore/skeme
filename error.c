@@ -86,7 +86,11 @@ void sk_log(SKState* sk, SKLogLevel level, const char* fmt, ...)
     const char* file = NULL;
     int line = 0;
 
-    if (sk->file_stack_ptr >= 0 && sk->file_stack) {
+    if (sk_reading_string(sk) && sk->eval_name) {
+        // code from a string (sk_eval_string): its name and the line in it
+        file = sk->eval_name;
+        line = sk->eval_lineno;
+    } else if (sk->file_stack_ptr >= 0 && sk->file_stack) {
         file = sk->file_stack[sk->file_stack_ptr].filename;
         line = sk->file_stack[sk->file_stack_ptr].yylineno;
     }

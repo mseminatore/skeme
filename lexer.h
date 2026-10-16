@@ -83,6 +83,7 @@ extern int g_bDebug;
 int push_fileptr_stack(SKState* pSK, FILE *fptr, const char* filename);
 int push_filename_stack(SKState* pSK, const char *filename);
 int pop_file_stack(SKState* pSK);
+int sk_reading_string(SKState* pSK);
 
 int yylex(SKState* pSK);
 void LOG(const char *fmt, ...);

@@ -130,97 +130,6 @@ typedef struct Object {
 #define TAG_UNSPEC  0x6   // The unspecified value (result of display, newline, ...)
 #define TAG_UNBOUND 0x7   // Placeholder for a global that is referenced but not yet defined
 
-// macros to check and convert to object pointers
-#define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & TAG_MASK))
-#define AS_OBJ(ObjT, obj)   (IS_OBJ(obj) ? (ObjT*)(obj) : NULL)
-#define AS_NUM(obj)         (IS_OBJ(obj) ? 0 : ((int)((intptr_t)(obj) >> TAG_BIT_SHIFT)))
-#define AS_STRING(obj)      (IS_OBJ(obj) ? (String*)(obj) : NULL)
-
-#define OBJ_TYPE(obj)       (IS_OBJ(obj) ? AS_OBJ(Object, obj)->type : OBJ_NULL)
-#define SET_TYPE(obj, t)    do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->type = (t); } while(0)
-
-#define MARK_OBJ(obj)       do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 1; } while(0)
-#define UNMARK_OBJ(obj)     do { if (IS_OBJ(obj)) AS_OBJ(Object, obj)->marked = 0; } while(0)
-#define IS_MARKED(obj)      (IS_OBJ(obj) ? AS_OBJ(Object, obj)->marked : 0)
-
-// object classification - integers
-#define IS_NUM(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_NUM))
-#define IS_NIL(obj)         (obj == NULL)
-
-// object classification - booleans (false=0x02, true=0x0A)
-#define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_BOOL))
-#define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x8))
-#define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
-
-// the unspecified value: what an expression with no useful result yields.
-// The REPL does not echo it.
-#define MAKE_UNSPEC()       ((Object*)TAG_UNSPEC)
-#define IS_UNSPEC(obj)      (((intptr_t)(obj)) == TAG_UNSPEC)
-
-// the value of a global the compiler has seen referenced but that has not
-// been defined yet; reading it is an "unbound variable" error
-#define MAKE_UNBOUND()      ((Object*)TAG_UNBOUND)
-#define IS_UNBOUND(obj)     (((intptr_t)(obj)) == TAG_UNBOUND)
-
-// object classification - characters
-#define IS_CHAR(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_CHAR))
-#define AS_CHAR(obj)        ((char)((intptr_t)(obj) >> TAG_BIT_SHIFT))
-#define MAKE_CHAR(c)        ((Object*)((uintptr_t)((unsigned char)(c) << TAG_BIT_SHIFT) | TAG_CHAR))
-
-// object classification - floats (tagged on 64-bit, heap on 32-bit)
-#if SK_64BIT
-static inline uint32_t sk_encode_float(float f) { 
-    union { float f; uint32_t u; } conv; conv.f = f; return conv.u; 
-}
-static inline float sk_decode_float(intptr_t bits) { 
-    union { float f; uint32_t u; } conv; conv.u = (uint32_t)bits; return conv.f; 
-}
-#define IS_TAGGED_FLOAT(obj)    (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_FLOAT))
-#define AS_TAGGED_FLOAT(obj)    (sk_decode_float((intptr_t)(obj) >> TAG_BIT_SHIFT))
-#define MAKE_TAGGED_FLOAT(f)    ((Object*)(((uintptr_t)sk_encode_float(f) << TAG_BIT_SHIFT) | TAG_FLOAT))
-#define IS_FLOAT(obj)           (IS_TAGGED_FLOAT(obj) || (OBJ_TYPE(obj) == OBJ_FLOAT))
-#else
-#define IS_TAGGED_FLOAT(obj)    (0)
-#define IS_FLOAT(obj)           (OBJ_TYPE(obj) == OBJ_FLOAT)
-#endif
-
-// Return addresses (stored on unified stack)
-#define IS_RETADDR(obj)         (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_RETADDR))
-#define AS_RETADDR(obj)         ((VMCode_t*)((intptr_t)(obj) >> TAG_BIT_SHIFT))
-#define MAKE_RETADDR(addr)      ((Object*)(((uintptr_t)(addr) << TAG_BIT_SHIFT) | TAG_RETADDR))
-
-// object classification - heap types
-#define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
-#define IS_SYMBOL(obj)      (OBJ_TYPE(obj) == OBJ_SYMBOL)
-#define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
-#define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
-#define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
-#define IS_FUNCTION(obj)    (IS_PROCEDURE(obj) || IS_NATIVE_FN(obj))
-#define IS_ENVIRONMENT(obj) (OBJ_TYPE(obj) == OBJ_ENVIRONMENT)
-#define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
-#define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
-#define IS_CONTINUATION(obj) (OBJ_TYPE(obj) == OBJ_CONTINUATION)
-
-// Numeric classification (integer or float)
-#define IS_NUMERIC(obj)     (IS_NUM(obj) || IS_FLOAT(obj))
-
-// Convert any numeric to double (for mixed arithmetic)
-#if SK_64BIT
-#define AS_DOUBLE(obj)      (IS_FLOAT(obj) ? (double)AS_TAGGED_FLOAT(obj) : (double)AS_NUM(obj))
-#else
-#define AS_DOUBLE(obj)      (IS_FLOAT(obj) ? (double)((Float*)(obj))->value : (double)AS_NUM(obj))
-#endif
-
-// macros to create tagged objects
-#define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x8))
-#define MAKE_FALSE()        ((Object*)TAG_BOOL)
-#define MAKE_NUM(val)       ((Object*)((uintptr_t)((val) << TAG_BIT_SHIFT) | TAG_NUM))
-
-typedef struct SKState SKState;
-typedef int (*SKFunc)(SKState* pSK);
-
-void yyerror(SKState* pSK, const char *s);
-
 // object types
 enum
 {
@@ -242,6 +151,137 @@ enum
 	// mark the last object type
     OBJ_LAST
 };
+
+// Checks and conversions of tagged values. Each macro passes its argument to
+// an inline function, so the argument is evaluated exactly once:
+// AS_NUM(vm_pop(pvm)) pops one value. The (Object*) casts let call sites
+// pass anything pointer-sized, as the macros always have.
+static inline int sk_is_obj(const Object* obj) {
+    return obj != NULL && !((intptr_t)obj & TAG_MASK);
+}
+static inline int sk_tag_is(const Object* obj, int tag) {
+    return sk_is_obj(obj) ? 0 : (((intptr_t)obj & TAG_MASK) == tag);
+}
+static inline Object* sk_as_obj(Object* obj) {
+    return sk_is_obj(obj) ? obj : NULL;
+}
+static inline int sk_as_num(const Object* obj) {
+    return sk_is_obj(obj) ? 0 : (int)((intptr_t)obj >> TAG_BIT_SHIFT);
+}
+static inline int sk_obj_type(const Object* obj) {
+    return sk_is_obj(obj) ? obj->type : OBJ_NULL;
+}
+static inline void sk_set_mark(Object* obj, uint8_t marked) {
+    if (sk_is_obj(obj)) obj->marked = marked;
+}
+
+#define IS_OBJ(obj)         sk_is_obj((const Object*)(obj))
+#define AS_OBJ(ObjT, obj)   ((ObjT*)sk_as_obj((Object*)(obj)))
+#define AS_NUM(obj)         sk_as_num((const Object*)(obj))
+#define AS_STRING(obj)      ((String*)sk_as_obj((Object*)(obj)))
+
+#define OBJ_TYPE(obj)       sk_obj_type((const Object*)(obj))
+#define SET_TYPE(obj, t)    do { Object* o_ = (Object*)(obj); if (IS_OBJ(o_)) o_->type = (t); } while(0)
+
+#define MARK_OBJ(obj)       sk_set_mark((Object*)(obj), 1)
+#define UNMARK_OBJ(obj)     sk_set_mark((Object*)(obj), 0)
+#define IS_MARKED(obj)      sk_is_marked((const Object*)(obj))
+static inline int sk_is_marked(const Object* obj) {
+    return sk_is_obj(obj) ? obj->marked : 0;
+}
+
+// object classification - integers
+#define IS_NUM(obj)         sk_tag_is((const Object*)(obj), TAG_NUM)
+#define IS_NIL(obj)         ((obj) == NULL)
+
+// object classification - booleans (false=0x02, true=0x0A)
+#define IS_BOOL(obj)        sk_tag_is((const Object*)(obj), TAG_BOOL)
+#define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x8))
+#define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
+
+// the unspecified value: what an expression with no useful result yields.
+// The REPL does not echo it.
+#define MAKE_UNSPEC()       ((Object*)TAG_UNSPEC)
+#define IS_UNSPEC(obj)      (((intptr_t)(obj)) == TAG_UNSPEC)
+
+// the value of a global the compiler has seen referenced but that has not
+// been defined yet; reading it is an "unbound variable" error
+#define MAKE_UNBOUND()      ((Object*)TAG_UNBOUND)
+#define IS_UNBOUND(obj)     (((intptr_t)(obj)) == TAG_UNBOUND)
+
+// object classification - characters
+#define IS_CHAR(obj)        sk_tag_is((const Object*)(obj), TAG_CHAR)
+#define AS_CHAR(obj)        ((char)((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_CHAR(c)        ((Object*)((uintptr_t)((unsigned char)(c) << TAG_BIT_SHIFT) | TAG_CHAR))
+
+// object classification - floats (tagged on 64-bit, heap on 32-bit)
+#if SK_64BIT
+static inline uint32_t sk_encode_float(float f) { 
+    union { float f; uint32_t u; } conv; conv.f = f; return conv.u; 
+}
+static inline float sk_decode_float(intptr_t bits) { 
+    union { float f; uint32_t u; } conv; conv.u = (uint32_t)bits; return conv.f; 
+}
+static inline int sk_is_float(const Object* obj) {
+    return sk_tag_is(obj, TAG_FLOAT) || sk_obj_type(obj) == OBJ_FLOAT;
+}
+#define IS_TAGGED_FLOAT(obj)    sk_tag_is((const Object*)(obj), TAG_FLOAT)
+#define AS_TAGGED_FLOAT(obj)    (sk_decode_float((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_TAGGED_FLOAT(f)    ((Object*)(((uintptr_t)sk_encode_float(f) << TAG_BIT_SHIFT) | TAG_FLOAT))
+#else
+static inline int sk_is_float(const Object* obj) {
+    return sk_obj_type(obj) == OBJ_FLOAT;
+}
+#define IS_TAGGED_FLOAT(obj)    (0)
+#endif
+#define IS_FLOAT(obj)           sk_is_float((const Object*)(obj))
+
+// Return addresses (stored on unified stack)
+#define IS_RETADDR(obj)         sk_tag_is((const Object*)(obj), TAG_RETADDR)
+#define AS_RETADDR(obj)         ((VMCode_t*)((intptr_t)(obj) >> TAG_BIT_SHIFT))
+#define MAKE_RETADDR(addr)      ((Object*)(((uintptr_t)(addr) << TAG_BIT_SHIFT) | TAG_RETADDR))
+
+// object classification - heap types
+#define IS_STRING(obj)      (OBJ_TYPE(obj) == OBJ_STRING)
+#define IS_SYMBOL(obj)      (OBJ_TYPE(obj) == OBJ_SYMBOL)
+#define IS_PAIR(obj)        (OBJ_TYPE(obj) == OBJ_PAIR)
+#define IS_PROCEDURE(obj)   (OBJ_TYPE(obj) == OBJ_PROCEDURE)
+#define IS_NATIVE_FN(obj)   (OBJ_TYPE(obj) == OBJ_NATIVE_FN)
+#define IS_FUNCTION(obj)    sk_is_function((const Object*)(obj))
+#define IS_ENVIRONMENT(obj) (OBJ_TYPE(obj) == OBJ_ENVIRONMENT)
+#define IS_CLOSURE(obj)     (OBJ_TYPE(obj) == OBJ_CLOSURE)
+#define IS_PORT(obj)        (OBJ_TYPE(obj) == OBJ_PORT)
+#define IS_CONTINUATION(obj) (OBJ_TYPE(obj) == OBJ_CONTINUATION)
+static inline int sk_is_function(const Object* obj) {
+    int type = sk_obj_type(obj);
+    return type == OBJ_PROCEDURE || type == OBJ_NATIVE_FN;
+}
+
+// Numeric classification (integer or float)
+#define IS_NUMERIC(obj)     sk_is_numeric((const Object*)(obj))
+static inline int sk_is_numeric(const Object* obj) {
+    return sk_tag_is(obj, TAG_NUM) || sk_is_float(obj);
+}
+
+// Convert any numeric to double (for mixed arithmetic)
+#define AS_DOUBLE(obj)      sk_as_double((const Object*)(obj))
+#if SK_64BIT
+static inline double sk_as_double(const Object* obj) {
+    return sk_is_float(obj) ? (double)AS_TAGGED_FLOAT(obj) : (double)sk_as_num(obj);
+}
+#else
+static inline double sk_as_double(const Object* obj);   // defined after Float
+#endif
+
+// macros to create tagged objects
+#define MAKE_TRUE()         ((Object*)(TAG_BOOL | 0x8))
+#define MAKE_FALSE()        ((Object*)TAG_BOOL)
+#define MAKE_NUM(val)       ((Object*)((uintptr_t)((val) << TAG_BIT_SHIFT) | TAG_NUM))
+
+typedef struct SKState SKState;
+typedef int (*SKFunc)(SKState* pSK);
+
+void yyerror(SKState* pSK, const char *s);
 
 // opcode definitions
 enum { 
@@ -296,6 +336,7 @@ enum {
     OP_CAPTURE_LOCAL,   // push the (shared) upvalue for local slot idx, for OP_MAKE_CLOSURE
     OP_CAPTURE_UPVALUE, // push the current closure's upvalue idx, for OP_MAKE_CLOSURE
     OP_LIST_TAIL,   // like OP_LIST n, but the list ends in the value on top (a dotted list)
+    OP_CHECK_STACK, // n: abort unless the stack has room for n more values (a top-level form)
     OP_LAST         // last opcode
 };
     
@@ -329,6 +370,12 @@ typedef struct Float {
     float value;    // float value
 } Float;
 
+#if !SK_64BIT
+static inline double sk_as_double(const Object* obj) {
+    return sk_is_float(obj) ? (double)((const Float*)obj)->value : (double)sk_as_num(obj);
+}
+#endif
+
 // Upvalue descriptor - describes how to capture a variable
 typedef struct {
     int is_local;       // 1 if capturing from immediate enclosing scope, 0 if from closure
@@ -345,13 +392,21 @@ typedef struct Procedure {
     UpvalueDesc* upvalues;  // array of upvalue descriptors (NULL if no upvalues)
     int upvalue_count;      // number of upvalues
     uint64_t call_count;    // profiling: number of times called
+    int max_stack;          // most stack slots its code uses above the frame, or
+                            // VM_MAX_STACK_UNKNOWN until first called (vm_ensure_frame)
 } Procedure;
+
+// native arities other than a fixed count; the VM checks each call
+#define SK_ARITY_ANY -1
+#define SK_ARITY_ZERO_OR_ONE -2
+#define SK_ARITY_ONE_OR_MORE -3
+#define SK_ARITY_TWO_OR_MORE -4
 
 // native function object
 typedef struct NativeFunction {
     Object base;       // base object
     SKFunc func;       // pointer to native function
-    int arity;         // number of arguments
+    int arity;         // number of arguments, or an SK_ARITY_ value
     String *name;      // function name
 } NativeFunction;
 
@@ -423,7 +478,7 @@ typedef struct VM {
     size_t nextGC;                  // Threshold to trigger next GC
     size_t allocatedBytes;          // Total allocated bytes
     size_t gc_cycles;               // Number of GC cycles run
-	size_t max_stack_size;          // Maximum stack size reached
+	size_t max_stack_size;          // Maximum stack size reached (an upper bound; calls update it only when profiling)
 	size_t max_call_depth;          // Maximum call depth reached
 
     HashTable *global_table;        // Hash table for global variables
@@ -441,7 +496,19 @@ typedef struct VM {
     Object* call_root;              // callee kept alive while a call allocates (rest lists)
     Object* escape_to;              // continuation being escaped to (see vm_escape), or NULL
     Object* escape_value;           // the value it returns
-    
+
+    // GC roots outside the object graph. The GC traces the objects that
+    // bytecode refers to (see markChunk), starting from these chunks: the
+    // top-level code being compiled or run (the REPL's, each eval's). A
+    // procedure the compiler is still building is a compile root until its
+    // parent's code refers to it.
+    CodeChunk** root_chunks;
+    int root_chunk_count;
+    int root_chunk_capacity;
+    Object** compile_roots;
+    int compile_root_count;
+    int compile_root_capacity;
+
     int grayCount;
     int grayCapacity;
     Object** grayStack;
@@ -480,15 +547,34 @@ void vm_abort(VM* pvm, const char* msg);
 
 void vm_stack_overflow(VM* pvm);
 
+// A checked push, for natives and other C code. The bytecode does not
+// check each push: a call checks once that its frame has room for the
+// most the procedure's code can push (vm_ensure_frame), and the op_
+// handlers then use vm_push_fast.
 static inline void vm_push(VM* pvm, Object* obj) {
-    // the common case first; the rare overflow is out of line (pushes are hot)
+    // the common case first; the rare overflow is out of line
     if (pvm->sp < VM_STACK_SIZE) {
         pvm->stack[pvm->sp++] = obj;
-        if (pvm->sp > (int)pvm->max_stack_size)
-            pvm->max_stack_size = pvm->sp;
     } else
         vm_stack_overflow(pvm);
 }
+// An unchecked push, for the op_ handlers: their frame was checked on entry
+static inline void vm_push_fast(VM* pvm, Object* obj) {
+    assert(pvm->sp < VM_STACK_SIZE && "stack depth analysis underestimated (vm_max_depth)");
+    pvm->stack[pvm->sp++] = obj;
+}
+// On entering a procedure: is there room for its frame header (return
+// address, saved fp, callee) and the most its code can push? Then its
+// instructions can push unchecked. One add and compare per call; the first
+// call (max_stack not yet computed) and profiling take vm_frame_check.
+#define VM_MAX_STACK_UNKNOWN (VM_STACK_SIZE + 1)
+int vm_frame_check(VM* pvm, Procedure* proc);
+static inline int vm_ensure_frame(VM* pvm, Procedure* proc) {
+    if (pvm->sp + 3 + proc->max_stack <= VM_STACK_SIZE && !g_bProfile)
+        return 1;
+    return vm_frame_check(pvm, proc);
+}
+int vm_max_depth(const VMCode_t* code, size_t count);
 static inline Object* vm_pop(VM* pvm) {
     if (pvm->sp <= 0) { vm_abort(pvm, "stack underflow"); return MAKE_UNSPEC(); }
     return pvm->stack[--pvm->sp];
@@ -539,6 +625,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name);
 CodeChunk* vm_get_current_chunk();
 CodeChunk* vm_set_current_chunk(VM* pvm, CodeChunk* chunk);
 void vm_init_chunk(CodeChunk* chunk);
+void vm_push_root_chunk(VM* pvm, CodeChunk* chunk);
+void vm_pop_root_chunk(VM* pvm);
+void vm_push_compile_root(VM* pvm, Object* obj);
+void vm_pop_compile_root(VM* pvm);
 void vm_free_chunk(VM* pvm, CodeChunk* chunk);
 VMCode_t* vm_get_chunk_ip();
 

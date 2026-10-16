@@ -326,6 +326,26 @@ void test_error(int argc, char *argv[])
         TEST(g_test_ctx.error_count == 1);
         TEST(strstr(g_test_ctx.last_message, "expects at least 1") != NULL);
 
+        COMMENT("A native with the wrong argument count aborts, naming it...");
+        reset_test_context();
+        eval_quietly(&sk, "(define ce-n1 (car '(1) '(2)))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'car' called with 2 arguments, expects 1") != NULL);
+        TEST(no_value(get_global(&sk, "ce-n1")));
+        reset_test_context();
+        eval_quietly(&sk, "(define ce-n2 (map car))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'map' called with 1 argument, expects at least 2") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ce-n3 (-))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "expects at least 1") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ce-n4 (exit 1 2))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "expects at most 1") != NULL);
+        TEST(sk.vm.sp == 0);
+
         COMMENT("Calling a continuation after its call/cc returned is an error...");
         reset_test_context();
         eval_quietly(&sk, "(define ce-k #f) (define ce-x (call/cc (lambda (k) (set! ce-k k) 1)))");
@@ -351,6 +371,52 @@ void test_error(int argc, char *argv[])
         COMMENT("The VM keeps working afterwards...");
         eval_quietly(&sk, "(define ce-after (ce-deep 10))");
         TEST(AS_NUM(get_global(&sk, "ce-after")) == 10);
+
+        COMMENT("Calls check room for the whole frame: deep recursion with wide frames...");
+        {
+            // a procedure whose body pushes 1000 values before recursing
+            char code[8192] = "(define (ce-wide n) (if (= n 0) 0 (+ (length (list";
+            for (int i = 0; i < 1000; i++)
+                strcat(code, " 1");
+            strcat(code, ")) (ce-wide (- n 1)))))");
+            eval_quietly(&sk, code);
+            reset_test_context();
+            eval_quietly(&sk, "(define ce-w1 (ce-wide 10))");
+            TEST(g_test_ctx.error_count == 0);
+            TEST(AS_NUM(get_global(&sk, "ce-w1")) == 10000);
+            eval_quietly(&sk, "(define ce-w2 (ce-wide 20000))");
+            TEST(g_test_ctx.error_count == 1);
+            TEST(strstr(g_test_ctx.last_message, "stack overflow") != NULL);
+            TEST(sk.vm.sp == 0);
+        }
+
+        COMMENT("A top-level form too big for the stack fails alone...");
+        {
+            size_t size = 8 * (VM_STACK_SIZE + 100);
+            char* code = (char*)malloc(size);
+            TEST(code != NULL);
+            if (code)
+            {
+                strcpy(code, "(define ce-big (list");
+                size_t len = strlen(code);
+                for (int i = 0; i < VM_STACK_SIZE + 10; i++)
+                {
+                    memcpy(code + len, " 1", 2);
+                    len += 2;
+                }
+                strcpy(code + len, "))");
+                reset_test_context();
+                eval_quietly(&sk, code);
+                free(code);
+                TEST(g_test_ctx.error_count == 1);
+                TEST(strstr(g_test_ctx.last_message, "stack overflow") != NULL);
+                TEST(no_value(get_global(&sk, "ce-big")));
+            }
+            reset_test_context();
+            eval_quietly(&sk, "(define ce-after-big (ce-wide 2))");
+            TEST(g_test_ctx.error_count == 0);
+            TEST(AS_NUM(get_global(&sk, "ce-after-big")) == 2000);
+        }
 
         sk_shutdown(&sk);
     }
@@ -424,6 +490,29 @@ void test_error(int argc, char *argv[])
         vm_clear_stack(&sk.vm);
         TEST(g_test_ctx.error_count == 0);
 
+        COMMENT("Errors in a string name <eval> and the line in the string...");
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-l1 1)\n\n(define ei-l3 (car 5))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(g_test_ctx.last_file != NULL && strcmp(g_test_ctx.last_file, "<eval>") == 0);
+        TEST(g_test_ctx.last_line == 3);
+        reset_test_context();
+        eval_quietly(&sk, "\n(1 2");
+        TEST(g_test_ctx.error_count >= 1);
+        TEST(g_test_ctx.last_file != NULL && strcmp(g_test_ctx.last_file, "<eval>") == 0);
+        TEST(g_test_ctx.last_line == 2);
+        reset_test_context();
+
+        COMMENT("Inline arithmetic checks its operands...");
+        eval_quietly(&sk, "(define ei-bad (+ 1 \"x\"))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "arguments to '+' must be numbers") != NULL);
+        TEST(no_value(get_global(&sk, "ei-bad")));
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-bad2 (< 'a 1))");
+        TEST(g_test_ctx.error_count == 1);
+        reset_test_context();
+
         COMMENT("load inside a string reads the file, then the rest of the string...");
         FILE* f = fopen("ei_load_test.scm", "w");
         TEST(f != NULL);
@@ -445,6 +534,43 @@ void test_error(int argc, char *argv[])
         TEST(AS_NUM(get_global(&sk, "ei-again")) == 7);
         TEST(sk.file_stack_ptr == depth);
         remove("ei_load_test.scm");
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: the GC traces the objects compiled code refers to
+    SUITE("Compiled Code Roots");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("Compiling a lambda leaves nothing on the stack (the REPL echoed it)...");
+        sk_eval_string(&sk, "(define (cr-make-adder n) (lambda (x) (+ x n)))");
+        TEST(sk.vm.sp == 0);
+        sk_eval_string(&sk, "(define cr-l (let ((a 1)) (lambda () a)))");
+        TEST(sk.vm.sp == 0);
+        vm_clear_stack(&sk.vm);
+
+        COMMENT("A procedure only the code of another refers to survives a collection...");
+        eval_quietly(&sk, "(define (cr-outer) (lambda () 7))");
+        vm_gc(&sk.vm);
+        eval_quietly(&sk, "(define cr-r ((cr-outer)))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "cr-r")) == 7);
+
+        COMMENT("Procedures compiled by eval are collected once unused...");
+        eval_quietly(&sk, "(define cr-x ((lambda (x) x) 1))");
+        vm_gc(&sk.vm);
+        size_t before = sk.vm.numObjects;
+        for (int i = 0; i < 200; i++)
+            eval_quietly(&sk, "(set! cr-x ((lambda (x) (let ((y x)) y)) 1))");
+        vm_gc(&sk.vm);
+        TEST(sk.vm.numObjects < before + 20);
+        TEST(AS_NUM(get_global(&sk, "cr-x")) == 1);
+        TEST(g_test_ctx.error_count == 0);
 
         sk_shutdown(&sk);
     }

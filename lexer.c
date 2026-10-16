@@ -160,7 +160,7 @@ int pop_file_stack(SKState* pSK)
 // Is the lexer reading the eval string? Not while a file loaded from it
 // is on the file stack above it.
 //-----------------------------------
-static int reading_string(SKState* pSK)
+int sk_reading_string(SKState* pSK)
 {
     return pSK->eval_input && pSK->file_stack_ptr == pSK->eval_file_depth;
 }
@@ -170,7 +170,7 @@ static int reading_string(SKState* pSK)
 //-----------------------------------
 int getch(SKState* pSK)
 {
-    if (reading_string(pSK)) {
+    if (sk_reading_string(pSK)) {
         char c = pSK->eval_input[pSK->eval_pos];
         if (c == '\0') return EOF;
         pSK->eval_pos++;
@@ -189,7 +189,7 @@ int ungetch(SKState* pSK, int c)
     if (c == EOF)
         return c;
 
-    if (reading_string(pSK)) {
+    if (sk_reading_string(pSK)) {
         if (pSK->eval_pos > 0) pSK->eval_pos--;
         return c;
     }
@@ -414,7 +414,7 @@ yylex01:
     {
         // the end of the eval string ends the input; the end of a file
         // loaded from it pops back to the string
-        if (reading_string(pSK))
+        if (sk_reading_string(pSK))
             return DONE;
 
         if (pSK->eval_input && pSK->file_stack_ptr > pSK->eval_file_depth)
@@ -597,10 +597,18 @@ yylex01:
     // track line numbers
     if (c == '\n')
     {
+        // a newline in an eval string counts lines in the string; it
+        // neither moves the file's position nor ends a REPL line
+        if (sk_reading_string(pSK))
+        {
+            pSK->eval_lineno++;
+            goto yylex01;
+        }
+
         pSK->lineno++;           // update global line count
         if (pSK && pSK->file_stack_ptr >= 0)
             CURRENT_LINENO++;   // update file local line number
-        
+
         if (pSK->yyin == stdin)
             return DONE;
 

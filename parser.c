@@ -575,16 +575,8 @@ static int definition(SKState* pSK)
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
-        // Store under a unique internal name as a GC root. The emitted code
-        // refers to proc_obj directly, and the real name may be rebound by a
-        // later define before this one runs.
-        static int inner_def_id = 0;
-        char gc_name[48];
-        snprintf(gc_name, sizeof(gc_name), "<define-%d>", inner_def_id++);
-        vm_push(&pSK->vm, proc_obj);        // keep proc reachable while the name is allocated
-        Object* gc_key = vm_new_string(&pSK->vm, gc_name);
-        vm_define_global(&pSK->vm, gc_key, proc_obj);
-        vm_pop(&pSK->vm);
+        // keep the procedure alive until the code below refers to it
+        vm_push_compile_root(&pSK->vm, proc_obj);
 
         // Also bind the real name now, so the body and later code see a
         // procedure while compiling. The definition takes effect in program
@@ -621,6 +613,7 @@ static int definition(SKState* pSK)
         vm_emit_push_object(&pSK->vm, proc_name);
         vm_emit_push_object(&pSK->vm, proc_obj);
         vm_emit(&pSK->vm, OP_STORE);
+        vm_pop_compile_root(&pSK->vm);
 	}
     else
     {
@@ -676,19 +669,16 @@ static void lambda_ex(SKState* pSK, const char* name)
 
     Object* proc_obj = vm_new_proc(&pSK->vm);
 
-    // put the procedure object on the stack for GC safety
-    vm_push(&pSK->vm, proc_obj);
+    // keep the procedure alive until the code below refers to it
+    vm_push_compile_root(&pSK->vm, proc_obj);
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
-    
-    // Give each lambda a unique internal name for GC root storage
+
+    // the name in messages: an anonymous lambda is <lambda-N>
     static int lambda_id = 0;
     char lambda_name[32];
     snprintf(lambda_name, sizeof(lambda_name), "<lambda-%d>", lambda_id++);
-	proc->name = (String*)vm_new_string(&pSK->vm, lambda_name);
-    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);   // store in globals as GC root
-    if (name)
-        proc->name = (String*)vm_new_string(&pSK->vm, name);     // for messages; reachable from proc
+    proc->name = (String*)vm_new_string(&pSK->vm, name ? name : lambda_name);
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
@@ -794,11 +784,8 @@ static void lambda_ex(SKState* pSK, const char* name)
         vm_emit_push_object(&pSK->vm, proc_obj);
     }
 
-    // NOTE: We intentionally DO NOT pop proc_obj from the stack here!
-    // It must stay on the stack as a GC root until parsing completes.
-    // The bytecode contains a pointer to proc_obj, but GC doesn't scan bytecode.
-    // Leaving it on stack keeps it alive during subsequent allocs that might trigger GC.
-    // The stack will be cleared before execution starts.
+    // the enclosing code refers to the procedure now, and the GC traces it
+    vm_pop_compile_root(&pSK->vm);
 }
 
 //-----------------------------------------------
@@ -1121,14 +1108,13 @@ static int do_expr(SKState* pSK)
     vm_new_environment(&pSK->vm);
 
     Object* proc_obj = vm_new_proc(&pSK->vm);
-    vm_push(&pSK->vm, proc_obj);
+    vm_push_compile_root(&pSK->vm, proc_obj);   // until the code below refers to it
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
     static int do_id = 0;
     char do_name[32];
     snprintf(do_name, sizeof(do_name), "<do-%d>", do_id++);
     proc->name = (String*)vm_new_string(&pSK->vm, do_name);
-    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
@@ -1192,12 +1178,14 @@ static int do_expr(SKState* pSK)
             const char* saved_eval = pSK->eval_input;
             int saved_eval_pos = pSK->eval_pos;
             int saved_eval_depth = pSK->eval_file_depth;
+            const char* saved_eval_name = pSK->eval_name;
             int saved_lookahead = pSK->lookahead;
             int saved_expr_level = pSK->expr_level;
 
             pSK->eval_input = step_strs[i];
             pSK->eval_pos = 0;
             pSK->eval_file_depth = pSK->file_stack_ptr;
+            pSK->eval_name = NULL;      // errors name the file the do loop is in
             pSK->expr_level = 1;
             pSK->lookahead = yylex(pSK);
             expr(pSK);
@@ -1205,6 +1193,7 @@ static int do_expr(SKState* pSK)
             pSK->eval_input = saved_eval;
             pSK->eval_pos = saved_eval_pos;
             pSK->eval_file_depth = saved_eval_depth;
+            pSK->eval_name = saved_eval_name;
             pSK->lookahead = saved_lookahead;
             pSK->expr_level = saved_expr_level;
         }
@@ -1253,6 +1242,7 @@ static int do_expr(SKState* pSK)
     {
         vm_emit_push_object(&pSK->vm, proc_obj);
     }
+    vm_pop_compile_root(&pSK->vm);      // the code above refers to it now
 
     vm_emit(&pSK->vm, OP_ICALL);
     vm_emit(&pSK->vm, (VMCode_t)nbindings);
@@ -1262,7 +1252,7 @@ static int do_expr(SKState* pSK)
 }
 
 // Returns proc_obj. Caller must have already emitted value code.
-// Stack after: [...vals..., proc/closure]
+// Code after: [...vals..., proc/closure]
 //-----------------------------------------------
 static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindings, BodyPrologue prologue)
 {
@@ -1275,14 +1265,13 @@ static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindi
     vm_new_environment(&pSK->vm);
 
     Object* proc_obj = vm_new_proc(&pSK->vm);
-    vm_push(&pSK->vm, proc_obj);
+    vm_push_compile_root(&pSK->vm, proc_obj);   // until the code below refers to it
 
     Procedure* proc = AS_OBJ(Procedure, proc_obj);
     static int let_id = 0;
     char let_name[32];
     snprintf(let_name, sizeof(let_name), "<let-%d>", let_id++);
     proc->name = (String*)vm_new_string(&pSK->vm, let_name);
-    vm_define_global(&pSK->vm, (Object*)proc->name, proc_obj);
 
     CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
@@ -1345,6 +1334,7 @@ static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindi
     {
         vm_emit_push_object(&pSK->vm, proc_obj);
     }
+    vm_pop_compile_root(&pSK->vm);      // the code above refers to it now
 
     return proc_obj;
 }
@@ -2551,12 +2541,20 @@ int yyparse(SKState *pSK)
         // script or a loaded file
         pSK->echo_form = (pSK->eval_input == NULL && pSK->yyin == stdin);
 
+        // The VM does not check each push: the form starts by checking for
+        // room for the most it can push, filled in once it is compiled
+        vm_emit(&pSK->vm, OP_CHECK_STACK);
+        vm_emit(&pSK->vm, 0);
+        size_t form_code = chunk->count;
+
         pSK->define_name = NULL;
         expr(pSK);
 
         int dropped = (pSK->err_count != errors_before);
         if (dropped)
             discard_form(pSK, chunk, form_start, saved_expr_level, saved_scope);
+        else
+            chunk->code[form_code - 1] = (VMCode_t)vm_max_depth(chunk->code + form_code, chunk->count - form_code);
         finish_define(pSK, dropped);
     }
 

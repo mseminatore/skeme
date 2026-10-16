@@ -1612,9 +1612,9 @@ static int sk_eval(SKState* pSK)
     sk_eval_string(pSK, code);
 
     // The result is the last form's value, on top. Each form leaves a
-    // value, and compiling can leave GC roots too; drop those and the string.
-    // If eval produced no result (e.g. define), the result is false as void.
-    Object* result = (pSK->vm.sp > sp_before) ? vm_peek(&pSK->vm, 0) : MAKE_FALSE();
+    // value; drop the others and the string.
+    // If eval produced no result (e.g. define), the result is unspecified.
+    Object* result = (pSK->vm.sp > sp_before) ? vm_peek(&pSK->vm, 0) : MAKE_UNSPEC();
     pSK->vm.sp = sp_before - 1;
     vm_push(&pSK->vm, result);
 
@@ -2108,6 +2108,7 @@ static int sk_string_append(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
 	char buffer[LARGE_BUFFER] = { 0 };
+    size_t len = 0;
 
     // get message count from stack
     Object* raw_n = vm_pop(&pSK->vm);
@@ -2118,8 +2119,16 @@ static int sk_string_append(SKState* pSK)
         Object* obj = vm_peek(&pSK->vm, i);
         if (IS_OBJ(obj) && OBJ_TYPE(obj) == OBJ_STRING)
         {
-            // Get the error message from the string object
-			strcat(buffer, ((String*)obj)->value);
+            size_t part = strlen(((String*)obj)->value);
+            if (len + part >= sizeof(buffer))
+            {
+                yyerror(pSK, "string-append: result too long");
+                vm_pop_n(&pSK->vm, n);
+                vm_push(&pSK->vm, NULL);
+                return SK_FALSE;
+            }
+            memcpy(buffer + len, ((String*)obj)->value, part + 1);
+            len += part;
         }
         else
             {
@@ -2654,7 +2663,7 @@ static SKFuncSet built_in_funcs[] =
     { "write", sk_write, 2 },
     // { "print", sk_print },
     
-    { "string-append", sk_string_append, SK_ARITY_TWO_OR_MORE },
+    { "string-append", sk_string_append, SK_ARITY_ANY },
 	{ "printf", sk_printf, SK_ARITY_ONE_OR_MORE },
 
     // predicate functions
