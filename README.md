@@ -1,7 +1,7 @@
 # Skeme
 
 [![CMake](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml/badge.svg)](https://github.com/mseminatore/skeme/actions/workflows/cmake-single-platform.yml)
-![GitHub License](https://img.shields.io/github/license/mseminatore/skeme)
+![GitHub License](https://img.shields.io/github/license/mseminatore/skeme.svg?cacheSeconds=3600)
 
 ## What is Skeme
 
