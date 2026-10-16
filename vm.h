@@ -36,10 +36,12 @@ typedef enum {
 // uncomment to enable VM debug logging
  //#define VM_DEBUG_LOG
 
-// Number of stack slots. Override at build time for deeper recursion, e.g.
-//   make CFLAGS="-I. -I./hash/testy -O2 -DVM_STACK_SIZE=65536"
+// Number of stack slots (allocated on the heap by vm_init). Each non-tail call
+// uses its arguments plus 3 frame slots, so 64K slots allow roughly 10-15K
+// nested calls. Override at build time, e.g.
+//   make CFLAGS="-I. -I./hash/testy -O2 -DVM_STACK_SIZE=262144"
 #ifndef VM_STACK_SIZE
-#define VM_STACK_SIZE 1024
+#define VM_STACK_SIZE 65536
 #endif
 #define VM_FREE_LIST 128
 #define VM_INITIAL_GC_THRESHOLD 256
@@ -117,6 +119,8 @@ typedef struct Object {
 #define TAG_CHAR    0x3   // Characters: char_value << 3 | 0x3
 #define TAG_FLOAT   0x4   // Floats (64-bit only): float_bits << 3 | 0x4
 #define TAG_RETADDR 0x5   // Return addresses (code pointers)
+#define TAG_UNSPEC  0x6   // The unspecified value (result of display, newline, ...)
+#define TAG_UNBOUND 0x7   // Placeholder for a global that is referenced but not yet defined
 
 // macros to check and convert to object pointers
 #define IS_OBJ(obj)         ((obj) != NULL && !((intptr_t)(obj) & TAG_MASK))
@@ -139,6 +143,16 @@ typedef struct Object {
 #define IS_BOOL(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_BOOL))
 #define IS_TRUE(obj)        (((intptr_t)(obj)) == (TAG_BOOL | 0x8))
 #define IS_FALSE(obj)       (((intptr_t)(obj)) == TAG_BOOL)
+
+// the unspecified value: what an expression with no useful result yields.
+// The REPL does not echo it.
+#define MAKE_UNSPEC()       ((Object*)TAG_UNSPEC)
+#define IS_UNSPEC(obj)      (((intptr_t)(obj)) == TAG_UNSPEC)
+
+// the value of a global the compiler has seen referenced but that has not
+// been defined yet; reading it is an "unbound variable" error
+#define MAKE_UNBOUND()      ((Object*)TAG_UNBOUND)
+#define IS_UNBOUND(obj)     (((intptr_t)(obj)) == TAG_UNBOUND)
 
 // object classification - characters
 #define IS_CHAR(obj)        (!IS_OBJ(obj) && (((intptr_t)(obj) & TAG_MASK) == TAG_CHAR))
@@ -266,6 +280,11 @@ enum {
     OP_NUM_1,       // push 1
     OP_NUM_2,       // push 2
     OP_SYMBOL,      // push a symbol value onto the stack
+    OP_TAILCALL_X,  // tail call with fn under args (tail form of OP_XCALL)
+    OP_LOAD_GLOBAL, // push global: operands key, cached value, cache version (see op_load_global)
+    OP_DISCARD_TOS, // discard a top-level expr result without printing it (script input)
+    OP_CAPTURE_LOCAL,   // push the (shared) upvalue for local slot idx, for OP_MAKE_CLOSURE
+    OP_CAPTURE_UPVALUE, // push the current closure's upvalue idx, for OP_MAKE_CLOSURE
     OP_LAST         // last opcode
 };
     
@@ -332,11 +351,23 @@ typedef struct Environment {
 } Environment;
 
 // closure object
+// A captured variable, shared by every closure that captures it. While the
+// frame that owns the variable is live the upvalue is "open" and reads and
+// writes the variable's stack slot, so the frame and the closures see each
+// other's set!s. When the frame goes away the upvalue is "closed": the value
+// moves into the upvalue, where the closures keep sharing it.
+typedef struct Upvalue {
+    Object base;                // base object
+    int slot;                   // stack index while open, -1 once closed
+    Object* closed;             // the value, once closed
+    struct Upvalue* next_open;  // VM's open upvalue list, highest slot first
+} Upvalue;
+
 typedef struct Closure {
     Object base;            // base object
     struct Procedure* function;  // pointer to the procedure
-    Object** upvalues;      // array of captured values
-    int upvalue_count;      // number of captured values
+    Upvalue** upvalues;     // array of captured variables
+    int upvalue_count;      // number of captured variables
 } Closure;
 
 // port object
@@ -364,7 +395,7 @@ typedef struct VM {
     int fp;                         // Frame pointer
     VMCode_t *ip;                   // Instruction pointer
     Object* head;                   // Head of the object list
-    Object* stack[VM_STACK_SIZE];   // Unified stack (data + return addresses)
+    Object** stack;                 // Unified stack (data + return addresses), VM_STACK_SIZE slots
     size_t numObjects;              // Number of allocated objects should be size_t
     size_t peakObjects;             // Peak number of allocated objects
     size_t objectsCollected;        // Number of objects garbage collected
@@ -380,6 +411,10 @@ typedef struct VM {
 
     Environment *current_scope;     // Current environment/scope
     Closure* current_closure;       // Currently executing closure (for upvalue access)
+    int abort_exec;                 // set by a fatal runtime error (stack overflow); unwinds to top level
+    int exec_depth;                 // nesting of vm_exec / vm_call_function
+    size_t globals_version;         // bumped on every global write; invalidates OP_LOAD_GLOBAL caches
+    struct Upvalue* open_upvalues;  // upvalues still pointing into the stack, highest slot first
     
     int grayCount;
     int grayCapacity;
@@ -412,27 +447,36 @@ void vm_gc(VM* pvm);
 void vm_print_object(Object* obj, int flags, FILE *stream);
 
 // stack management - inlined for performance
-// Debug builds get bounds checks via assert(); release (NDEBUG) gets zero overhead
+// Out-of-range accesses are runtime errors in every build: they report the
+// error, set abort_exec so execution unwinds to the top level, and touch
+// nothing outside the stack.
+void vm_abort(VM* pvm, const char* msg);
+
+void vm_stack_overflow(VM* pvm);
+
 static inline void vm_push(VM* pvm, Object* obj) {
-    assert(pvm->sp < VM_STACK_SIZE && "Stack overflow");
-    pvm->stack[pvm->sp++] = obj;
-    if (pvm->sp > (int)pvm->max_stack_size)
-        pvm->max_stack_size = pvm->sp;
+    // the common case first; the rare overflow is out of line (pushes are hot)
+    if (pvm->sp < VM_STACK_SIZE) {
+        pvm->stack[pvm->sp++] = obj;
+        if (pvm->sp > (int)pvm->max_stack_size)
+            pvm->max_stack_size = pvm->sp;
+    } else
+        vm_stack_overflow(pvm);
 }
 static inline Object* vm_pop(VM* pvm) {
-    assert(pvm->sp > 0 && "Stack underflow");
+    if (pvm->sp <= 0) { vm_abort(pvm, "stack underflow"); return MAKE_UNSPEC(); }
     return pvm->stack[--pvm->sp];
 }
 static inline Object* vm_peek(VM* pvm, int distance) {
-    assert(pvm->sp - 1 - distance >= 0 && "Stack underflow on peek");
+    if (pvm->sp - 1 - distance < 0) { vm_abort(pvm, "stack underflow"); return MAKE_UNSPEC(); }
     return pvm->stack[pvm->sp - 1 - distance];
 }
 static inline Object* vm_fp_peek(VM* pvm, int distance) {
-    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_peek");
+    if (pvm->fp - 1 - distance < 0) { vm_abort(pvm, "stack underflow"); return MAKE_UNSPEC(); }
     return pvm->stack[pvm->fp - 1 - distance];
 }
 static inline void vm_fp_set(VM* pvm, int distance, Object* value) {
-    assert(pvm->fp - 1 - distance >= 0 && "Stack underflow on fp_set");
+    if (pvm->fp - 1 - distance < 0) { vm_abort(pvm, "stack underflow"); return; }
     pvm->stack[pvm->fp - 1 - distance] = value;
 }
 void vm_stack_replace_n(VM* pvm, int distance, Object* obj);
@@ -484,6 +528,7 @@ void vm_print_profile(VM* pvm);
 int vm_define_global(VM* pvm, Object* key, Object* value);
 int vm_update_global(VM *pvm, Object* key, Object *value);
 Object* vm_get_global(VM *pvm, Object *key);
+int vm_has_global(VM *pvm, Object *key);
 Object *vm_new_environment(VM* pvm);
 void vm_free_environment(VM* pvm);
 void vm_set_var(VM* pvm, const char* name, Object* value);

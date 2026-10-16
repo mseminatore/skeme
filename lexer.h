@@ -53,6 +53,18 @@ typedef struct
     char word[BUF_SIZE];   // storage for symbol/string name
 } YYLVAL;
 
+// Tokens to hand out again before reading more input. The parser records
+// part of a form and replays it when it needs to look ahead first (letrec
+// reads its binding names before compiling the bindings).
+typedef struct TokenReplay
+{
+    int count;                  // recorded tokens
+    int pos;                    // next token to replay
+    int* tokens;
+    YYLVAL* values;
+    struct TokenReplay* next;   // replay that this one interrupted, if any
+} TokenReplay;
+
 // input file ptr
 extern FILE *yyin;
 

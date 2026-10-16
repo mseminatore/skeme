@@ -563,13 +563,16 @@ static int sk_symbolp(SKState* pSK)
 static int sk_symbol_to_string(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
-    Object* obj = vm_pop(&pSK->vm);
+    Object* obj = vm_peek(&pSK->vm, 0);     // stays on the stack: vm_new_string can GC
     if (!IS_SYMBOL(obj)) {
+        vm_pop(&pSK->vm);
         yyerror(pSK, "symbol->string: expected a symbol");
         vm_push(&pSK->vm, MAKE_FALSE());
         return SK_FALSE;
     }
-    vm_push(&pSK->vm, vm_new_string(&pSK->vm, ((String*)obj)->value));
+    Object* str = vm_new_string(&pSK->vm, ((String*)obj)->value);
+    vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, str);
     return SK_TRUE;
 }
 
@@ -579,13 +582,16 @@ static int sk_symbol_to_string(SKState* pSK)
 static int sk_string_to_symbol(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
-    Object* obj = vm_pop(&pSK->vm);
+    Object* obj = vm_peek(&pSK->vm, 0);     // stays on the stack: vm_new_symbol can GC
     if (!IS_STRING(obj)) {
+        vm_pop(&pSK->vm);
         yyerror(pSK, "string->symbol: expected a string");
         vm_push(&pSK->vm, MAKE_FALSE());
         return SK_FALSE;
     }
-    vm_push(&pSK->vm, vm_new_symbol(&pSK->vm, ((String*)obj)->value));
+    Object* sym = vm_new_symbol(&pSK->vm, ((String*)obj)->value);
+    vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, sym);
     return SK_TRUE;
 }
 
@@ -1367,6 +1373,12 @@ static int sk_map(SKState* pSK)
     Object* result_head = NULL;
     Pair* result_tail = NULL;
 
+    // Keep the result list reachable for the GC for the whole loop: the
+    // callback can allocate (and so collect), not only vm_newObject below.
+    // The slot sits below fn, so the stack offsets used below are unchanged.
+    int result_slot = pSK->vm.sp;
+    vm_push(&pSK->vm, NULL);
+
     // Protect fn and all lists from GC
     vm_push(&pSK->vm, fn);
     for (int i = 0; i < num_lists; i++)
@@ -1401,15 +1413,12 @@ static int sk_map(SKState* pSK)
         fn = vm_peek(&pSK->vm, num_lists);  // re-read fn from stack
         Object* mapped = vm_call_function(&pSK->vm, fn, num_lists, args);
 
-        // Protect mapped and result_head before allocation
+        // Protect mapped before allocation (result_head is in result_slot)
         vm_push(&pSK->vm, mapped);
-        vm_push(&pSK->vm, result_head);
 
         // Allocate new pair
         Pair* new_pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
 
-        // Restore protected values
-        result_head = vm_pop(&pSK->vm);
         mapped = vm_pop(&pSK->vm);
 
         new_pair->car = mapped;
@@ -1419,6 +1428,7 @@ static int sk_map(SKState* pSK)
         if (result_head == NULL) {
             result_head = (Object*)new_pair;
             result_tail = new_pair;
+            pSK->vm.stack[result_slot] = result_head;
         } else {
             result_tail->cdr = (Object*)new_pair;
             result_tail = new_pair;
@@ -1434,8 +1444,8 @@ static int sk_map(SKState* pSK)
         }
     }
 
-    // Pop all protected values (lists + fn)
-    vm_pop_n(&pSK->vm, num_lists + 1);
+    // Pop all protected values (lists + fn + result slot)
+    vm_pop_n(&pSK->vm, num_lists + 2);
 
     vm_push(&pSK->vm, result_head);
     return SK_TRUE;

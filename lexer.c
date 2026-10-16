@@ -349,10 +349,42 @@ int getString(SKState* pSK, int delim)
     return STRING;
 }
 
+static int next_token(SKState* pSK);
+
 //------------------------
-// lexical analyzer
+// lexical analyzer: returns the next token and tracks paren nesting,
+// which lets the parser skip the rest of a form after a syntax error
 //------------------------
 int yylex(SKState* pSK)
+{
+    int token;
+    TokenReplay* replay = pSK->replay;
+
+    if (replay)
+    {
+        // hand out recorded tokens first (see TokenReplay)
+        token = replay->tokens[replay->pos];
+        pSK->yylval = replay->values[replay->pos];
+        if (++replay->pos == replay->count)
+        {
+            pSK->replay = replay->next;
+            free(replay->tokens);
+            free(replay->values);
+            free(replay);
+        }
+    }
+    else
+        token = next_token(pSK);
+
+    if (token == '(')
+        pSK->paren_depth++;
+    else if (token == ')')
+        pSK->paren_depth--;
+
+    return token;
+}
+
+static int next_token(SKState* pSK)
 {
     int c;
 

@@ -142,6 +142,43 @@ static int match(SKState* pSK, int token)
 
 
 //-----------------------------------------------
+// The key for a reference to the global variable 'name'. Globals are looked
+// up by name at run time, so a name that is not defined yet (a forward
+// reference) is fine: it gets an unbound placeholder, which reading reports
+// as an error if the definition has still not run. The table entry also
+// keeps the interned name alive for the GC until then.
+//-----------------------------------------------
+static Object* global_key(SKState* pSK, const char* name)
+{
+    Object* key = vm_new_string(&pSK->vm, name);
+
+    if (key && !vm_has_global(&pSK->vm, key))
+        vm_define_global(&pSK->vm, key, MAKE_UNBOUND());
+
+    return key;
+}
+
+//-----------------------------------------------
+// paren nesting that a single token contributes
+//-----------------------------------------------
+static int token_depth(int token)
+{
+    return token == '(' ? 1 : (token == ')' ? -1 : 0);
+}
+
+//-----------------------------------------------
+// Emit a read of the global 'key': OP_LOAD_GLOBAL key cached_value cache_version,
+// with an empty cache (version 0 never matches; see op_load_global)
+//-----------------------------------------------
+static void emit_load_global(SKState* pSK, Object* key)
+{
+    vm_emit(&pSK->vm, OP_LOAD_GLOBAL);
+    vm_emit(&pSK->vm, (VMCode_t)key);
+    vm_emit(&pSK->vm, (VMCode_t)NULL);
+    vm_emit(&pSK->vm, (VMCode_t)0);
+}
+
+//-----------------------------------------------
 // Register an upvalue for the current lambda being parsed.
 // Returns the upvalue index (deduplicating by name).
 //-----------------------------------------------
@@ -266,18 +303,12 @@ static int atom(SKState* pSK)
             int scope_depth = -1;
 			Object* obj = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
 
-            // handle variable and check for undefined symbol
-            Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
-            char var_name[64];
+            char var_name[BUF_SIZE];
             strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
             var_name[sizeof(var_name) - 1] = '\0';
             match(pSK, ID);
 
-            if (!key)
-            {
-                yyerror(pSK, "entity undefined");
-            }
-            else if (scope_depth == 0 && IS_NUM(obj))
+            if (scope_depth == 0 && IS_NUM(obj))
             {
                 // Local variable in current scope
                 vm_emit(&pSK->vm, OP_GET_LOCAL);
@@ -294,8 +325,8 @@ static int atom(SKState* pSK)
             }
             else
             {
-                vm_emit_push_object(&pSK->vm, key);
-                vm_emit(&pSK->vm, OP_LOAD);
+                // global variable, looked up by name at run time
+                emit_load_global(pSK, global_key(pSK, var_name));
             }
 
             unindent(pSK);
@@ -369,7 +400,7 @@ static int formals(SKState* pSK, Procedure* proc)
 static int call_is_in_tail_position(CodeChunk* chunk, int call_offset)
 {
     VMCode_t op = chunk->code[call_offset];
-    long p = call_offset + (op == OP_CALL ? 3 : 2);     // CALL: op,fn,nargs  ICALL: op,nargs
+    long p = call_offset + (op == OP_CALL ? 3 : 2);     // CALL: op,fn,nargs  ICALL/XCALL: op,nargs
     long end = (long)chunk->count;
     int hops = 0;
 
@@ -388,26 +419,36 @@ static int call_is_in_tail_position(CodeChunk* chunk, int call_offset)
     return p == end;
 }
 
-static int local_body(SKState* pSK)
+typedef void (*BodyPrologue)(SKState* pSK);
+
+//-----------------------------------------------
+// A function body. 'prologue', if given, compiles code at the start of
+// the body (it may also consume part of it, as let* does), and takes part
+// in tail-call patching like the body expressions.
+//-----------------------------------------------
+static int local_body_ex(SKState* pSK, BodyPrologue prologue)
 {
 	PARSE_LOG("local_body(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
-    
+
     // Parse the body expressions - last expression's value becomes return value
-    // 
+    //
     // TCO Strategy: We record the offset of each CALL/ICALL as we emit it.
     // After parsing all expressions, we patch the LAST call to TAILCALL.
     // This correctly handles both single and multi-expression bodies.
-    
+
     // Save state for nested functions
     int saved_last_call_offset = pSK->last_call_offset;
     CodeChunk* saved_last_call_chunk = pSK->last_call_chunk;
-    
+
     // Reset for this function body
     pSK->last_call_offset = -1;
     pSK->last_call_chunk = NULL;
-    
+
+    if (prologue)
+        prologue(pSK);
+
     // Parse all body expressions
-    while (LOOKAHEAD != ')')
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         expr(pSK);
     }
@@ -428,6 +469,11 @@ static int local_body(SKState* pSK)
             PARSE_LOG("TCO: patching ICALL at offset %d to TAILCALL_I\n", pSK->last_call_offset);
             pSK->last_call_chunk->code[pSK->last_call_offset] = OP_TAILCALL_I;
         }
+        else if (opcode == OP_XCALL)
+        {
+            PARSE_LOG("TCO: patching XCALL at offset %d to TAILCALL_X\n", pSK->last_call_offset);
+            pSK->last_call_chunk->code[pSK->last_call_offset] = OP_TAILCALL_X;
+        }
     }
     
     // Restore state for outer function
@@ -436,6 +482,11 @@ static int local_body(SKState* pSK)
 
 	unindent(pSK);
     return 0;
+}
+
+static int local_body(SKState* pSK)
+{
+    return local_body_ex(pSK, NULL);
 }
 
 //-----------------------------------------------
@@ -481,21 +532,23 @@ static int definition(SKState* pSK)
 
         CodeChunk* prev_chunk = vm_set_current_chunk(&pSK->vm, &proc->chunk);
 
-        // Store as GC root in globals
+        // Store under a unique internal name as a GC root. The emitted code
+        // refers to proc_obj directly, and the real name may be rebound by a
+        // later define before this one runs.
+        static int inner_def_id = 0;
+        char gc_name[48];
+        snprintf(gc_name, sizeof(gc_name), "<define-%d>", inner_def_id++);
+        vm_push(&pSK->vm, proc_obj);        // keep proc reachable while the name is allocated
+        Object* gc_key = vm_new_string(&pSK->vm, gc_name);
+        vm_define_global(&pSK->vm, gc_key, proc_obj);
+        vm_pop(&pSK->vm);
+
         if (!is_local)
         {
-            // Top-level: the proc IS the final value, store under its real name
+            // Top-level: also bind the real name now, so the body and later
+            // code see a procedure while compiling. The definition takes
+            // effect in program order through the OP_STORE emitted below.
             vm_define_global(&pSK->vm, proc_name, proc_obj);
-        }
-        else
-        {
-            // Nested: store under a unique internal name for GC safety only
-            // The real name will be bound via OP_STORE at runtime
-            static int inner_def_id = 0;
-            char gc_name[48];
-            snprintf(gc_name, sizeof(gc_name), "<define-%d>", inner_def_id++);
-            Object* gc_key = vm_new_string(&pSK->vm, gc_name);
-            vm_define_global(&pSK->vm, gc_key, proc_obj);
         }
 
         match(pSK, ID);
@@ -548,12 +601,12 @@ static int definition(SKState* pSK)
                 {
                     if (captured[i].is_upvalue)
                     {
-                        vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                        vm_emit(&pSK->vm, OP_CAPTURE_UPVALUE);
                         vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
                     }
                     else
                     {
-                        vm_emit(&pSK->vm, OP_GET_LOCAL);
+                        vm_emit(&pSK->vm, OP_CAPTURE_LOCAL);
                         vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
                     }
                 }
@@ -573,12 +626,21 @@ static int definition(SKState* pSK)
                 vm_emit(&pSK->vm, OP_STORE);
             }
         }
+        else
+        {
+            // Top-level: bind the name when the define runs, so definitions
+            // and redefinitions take effect in program order
+            vm_emit_push_object(&pSK->vm, proc_name);
+            vm_emit_push_object(&pSK->vm, proc_obj);
+            vm_emit(&pSK->vm, OP_STORE);
+        }
 	}
     else
     {
-		// variable definition
-        Object* key = vm_new_string(&pSK->vm, pSK->yylval.word);
-		vm_define_global(&pSK->vm, key, NULL);   // needs to be in global table before expr() in case of GC
+		// variable definition: the value is stored when the define runs. An
+        // existing value is left alone until then; it may be used by expr(),
+        // as in (define x (+ x 1)). global_key also roots the name for the GC.
+        Object* key = global_key(pSK, pSK->yylval.word);
         vm_emit_push_object(&pSK->vm, key);
 
         match(pSK, ID);
@@ -688,19 +750,19 @@ static int lambda(SKState* pSK)
         // Emit closure creation in the OUTER context.
         // OP_MAKE_CLOSURE expects stack (bottom→top): [upval0, ..., upvalN-1, proc, count]
 
-        // Push captured values from enclosing scope
+        // Push the captured variables (shared upvalues) from the enclosing scope
         for (int i = 0; i < num_upvalues; i++)
         {
             if (captured[i].is_upvalue)
             {
                 // Variable was captured from grandparent+ — read from parent's upvalues
-                vm_emit(&pSK->vm, OP_GET_UPVALUE);
+                vm_emit(&pSK->vm, OP_CAPTURE_UPVALUE);
                 vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
             }
             else
             {
                 // Variable is in immediate parent's locals
-                vm_emit(&pSK->vm, OP_GET_LOCAL);
+                vm_emit(&pSK->vm, OP_CAPTURE_LOCAL);
                 vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
             }
         }
@@ -739,7 +801,7 @@ static int parse_list(SKState* pSK)
 
     match(pSK, LIST);
 
-    while (LOOKAHEAD != ')')
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         expr(pSK);
         nargs++;
@@ -1152,7 +1214,7 @@ static int do_expr(SKState* pSK)
     {
         for (int i = 0; i < num_upvalues; i++)
         {
-            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_CAPTURE_UPVALUE : OP_CAPTURE_LOCAL);
             vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
         }
         vm_emit_push_object(&pSK->vm, proc_obj);
@@ -1174,7 +1236,7 @@ static int do_expr(SKState* pSK)
 // Returns proc_obj. Caller must have already emitted value code.
 // Stack after: [...vals..., proc/closure]
 //-----------------------------------------------
-static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindings)
+static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindings, BodyPrologue prologue)
 {
     ParseUpvalue saved_upvalues[MAX_UPVALUES];
     int saved_upvalue_count = pSK->upvalue_count;
@@ -1213,7 +1275,7 @@ static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindi
     }
 
     // Parse body
-    local_body(pSK);
+    local_body_ex(pSK, prologue);
 
     vm_emit(&pSK->vm, OP_RET);
     vm_set_current_chunk(&pSK->vm, prev_chunk);
@@ -1244,7 +1306,7 @@ static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindi
     {
         for (int i = 0; i < num_upvalues; i++)
         {
-            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_GET_UPVALUE : OP_GET_LOCAL);
+            vm_emit(&pSK->vm, captured[i].is_upvalue ? OP_CAPTURE_UPVALUE : OP_CAPTURE_LOCAL);
             vm_emit(&pSK->vm, (VMCode_t)captured[i].local_index);
         }
         vm_emit_push_object(&pSK->vm, proc_obj);
@@ -1266,6 +1328,12 @@ static Object* let_create_lambda(SKState* pSK, char bind_names[][64], int nbindi
 
 static int let_parse_bindings(SKState* pSK, char bind_names[][64])
 {
+    if (LOOKAHEAD == NIL)
+    {
+        match(pSK, NIL);    // "()" lexes as one token: no bindings
+        return 0;
+    }
+
     match(pSK, '(');
 
     int nbindings = 0;
@@ -1292,9 +1360,193 @@ static int let_parse_bindings(SKState* pSK, char bind_names[][64])
 // let_expr: (let ((var val) ...) body ...)
 // Desugars to ((lambda (var ...) body ...) val ...)
 //-----------------------------------------------
+static void let_star_rest(SKState* pSK);
+
+//-----------------------------------------------
+// One let* binding, with LOOKAHEAD at its '(': evaluate the value in the
+// current scope, then call a one-parameter lambda whose body holds the
+// remaining bindings and finally the let* body (see let_star_rest).
+//-----------------------------------------------
+static void let_star_binding(SKState* pSK)
+{
+    char bind_name[1][64];
+
+    match(pSK, '(');
+    strncpy(bind_name[0], pSK->yylval.word, 63);
+    bind_name[0][63] = '\0';
+    match(pSK, ID);
+    expr(pSK);                  // value, which can see the earlier bindings
+    match(pSK, ')');
+
+    let_create_lambda(pSK, bind_name, 1, let_star_rest);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)1);
+}
+
+//-----------------------------------------------
+// Body prologue of a let* lambda: the next binding (which nests the rest),
+// or, after the last one, the end of the binding list. The innermost lambda
+// then parses the let* body itself.
+//-----------------------------------------------
+static void let_star_rest(SKState* pSK)
+{
+    if (LOOKAHEAD == ')')
+        match(pSK, ')');        // end of the bindings: the body follows
+    else
+        let_star_binding(pSK);
+}
+
+//-----------------------------------------------
+// let_star_expr: (let* ((var val) ...) body ...)
+// Each binding sees the ones before it, so this desugars to nested lets:
+// (let ((var1 val1)) (let* ((var2 val2) ...) body ...))
+//-----------------------------------------------
+static int let_star_expr(SKState* pSK)
+{
+    match(pSK, LET_STAR);
+
+    if (LOOKAHEAD == NIL)
+    {
+        // (let* () body ...) is (let () body ...); "()" lexes as one token
+        match(pSK, NIL);
+        let_create_lambda(pSK, NULL, 0, NULL);
+
+        CodeChunk* chunk = vm_get_current_chunk();
+        pSK->last_call_offset = (int)chunk->count;
+        pSK->last_call_chunk = chunk;
+
+        vm_emit(&pSK->vm, OP_ICALL);
+        vm_emit(&pSK->vm, (VMCode_t)0);
+    }
+    else
+    {
+        match(pSK, '(');        // the binding list
+        let_star_binding(pSK);
+    }
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// Body prologue of the letrec lambda: replay the binding list and assign
+// each initializer to its variable (a parameter of the lambda) in order.
+// The initializers are compiled inside the lambda, so they can refer to
+// every letrec variable; closures capture the variables themselves, so
+// they see the values assigned after they were created.
+//-----------------------------------------------
+static void letrec_inits(SKState* pSK)
+{
+    match(pSK, '(');
+    while (LOOKAHEAD == '(')
+    {
+        match(pSK, '(');
+
+        int scope_depth = -1;
+        Object* slot = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
+        match(pSK, ID);
+
+        expr(pSK);                              // initializer
+        vm_emit(&pSK->vm, OP_SET_LOCAL);
+        vm_emit(&pSK->vm, (VMCode_t)AS_NUM(slot));
+
+        match(pSK, ')');
+    }
+    match(pSK, ')');
+}
+
+//-----------------------------------------------
+// letrec_expr: (letrec ((var init) ...) body ...)
+// Desugars to ((lambda (var ...) (set! var init) ... body ...) <unspecified> ...)
+//
+// The variables must all be declared before any initializer is compiled
+// (they may be mutually recursive), but the compiler is single pass. So
+// the binding list is read ahead once to collect the names, then replayed
+// to compile it.
+//-----------------------------------------------
+static int letrec_expr(SKState* pSK)
+{
+    match(pSK, LETREC);
+
+    char bind_names[MAX_LET_BINDINGS][64];
+    int nbindings = 0;
+
+    if (LOOKAHEAD == NIL)
+    {
+        match(pSK, NIL);    // (letrec () body ...): no bindings, nothing to replay
+    }
+    else
+    {
+        // record the binding list, from LOOKAHEAD's '(' through its ')'
+        TokenReplay* replay = (TokenReplay*)calloc(1, sizeof(TokenReplay));
+        int capacity = 0, depth = 0, prev = 0;
+        int depth_before = pSK->paren_depth - token_depth(LOOKAHEAD);
+        int token = LOOKAHEAD;
+
+        for (;;)
+        {
+            if (replay->count == capacity)
+            {
+                capacity = capacity ? capacity * 2 : 32;
+                replay->tokens = (int*)realloc(replay->tokens, sizeof(int) * capacity);
+                replay->values = (YYLVAL*)realloc(replay->values, sizeof(YYLVAL) * capacity);
+            }
+            replay->tokens[replay->count] = token;
+            replay->values[replay->count] = pSK->yylval;
+            replay->count++;
+
+            depth += token_depth(token);
+
+            // a binding's name is the ID right after its '(', at depth 2
+            if (token == ID && prev == '(' && depth == 2 && nbindings < MAX_LET_BINDINGS)
+            {
+                strncpy(bind_names[nbindings], pSK->yylval.word, 63);
+                bind_names[nbindings][63] = '\0';
+                nbindings++;
+            }
+
+            if (depth <= 0 || token == DONE)
+                break;
+
+            prev = token;
+            token = yylex(pSK);
+        }
+
+        // replay it: the lexer hands these tokens out again, counted afresh
+        pSK->paren_depth = depth_before;
+        replay->next = pSK->replay;
+        pSK->replay = replay;
+        LOOKAHEAD = yylex(pSK);
+    }
+
+    // initial values: every variable starts out unspecified
+    for (int i = 0; i < nbindings; i++)
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());
+
+    let_create_lambda(pSK, bind_names, nbindings, nbindings ? letrec_inits : NULL);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+
+    vm_emit(&pSK->vm, OP_ICALL);
+    vm_emit(&pSK->vm, (VMCode_t)nbindings);
+
+    unindent(pSK);
+    return 0;
+}
+
 static int let_expr(SKState* pSK, int token)
 {
     PARSE_LOG("let_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    if (token == LET_STAR)
+        return let_star_expr(pSK);
 
     match(pSK, token);
 
@@ -1303,7 +1555,7 @@ static int let_expr(SKState* pSK, int token)
 
     // Create lambda, parse body, handle closures
     // Stack: [val1, ..., valN, proc/closure]
-    let_create_lambda(pSK, bind_names, nbindings);
+    let_create_lambda(pSK, bind_names, nbindings, NULL);
 
     // Call: fn on top, values underneath → ICALL
     CodeChunk* chunk = vm_get_current_chunk();
@@ -1330,20 +1582,11 @@ static int set(SKState* pSK)
     int scope_depth = -1;
     Object* obj = vm_get_local_var_ex(&pSK->vm, pSK->yylval.word, &scope_depth);
 
-    // handle variable and check for undefined symbol
-    Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
-    char var_name[64];
+    char var_name[BUF_SIZE];
     strncpy(var_name, pSK->yylval.word, sizeof(var_name) - 1);
     var_name[sizeof(var_name) - 1] = '\0';
 
     match(pSK, ID);
-
-    if (!key)
-    {
-        yyerror(pSK, "entity undefined");
-        unindent(pSK);
-        return 0;
-    }
 
     if (scope_depth == 0 && IS_NUM(obj))
     {
@@ -1351,7 +1594,7 @@ static int set(SKState* pSK)
         expr(pSK);
         vm_emit(&pSK->vm, OP_SET_LOCAL);
         vm_emit(&pSK->vm, (VMCode_t)AS_NUM(obj));
-        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());   // set! has no useful value
     }
     else if (scope_depth > 0 && IS_NUM(obj))
     {
@@ -1362,15 +1605,15 @@ static int set(SKState* pSK)
             vm_emit(&pSK->vm, OP_SET_UPVALUE);
             vm_emit(&pSK->vm, (VMCode_t)uv_idx);
         }
-        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());   // set! has no useful value
     }
     else
     {
-        // Global variable
-        vm_emit_push_object(&pSK->vm, key);
+        // Global variable (it may be defined later in the program)
+        vm_emit_push_object(&pSK->vm, global_key(pSK, var_name));
         expr(pSK);
         vm_emit(&pSK->vm, OP_STORE);
-        vm_emit(&pSK->vm, OP_FALSE);  // set! returns void (nil)
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());   // set! has no useful value
     }
 
     unindent(pSK);
@@ -1427,7 +1670,7 @@ static int cond_expr(SKState* pSK)
 
     match(pSK, COND);
 
-    while (LOOKAHEAD != ')')
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         match(pSK, '(');
 
@@ -1492,7 +1735,7 @@ static int begin_expr(SKState* pSK)
     expr(pSK);
 
     // Parse remaining expressions, discarding all but last
-    while (LOOKAHEAD != ')')
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         vm_emit(&pSK->vm, OP_POP);  // discard previous value
         expr(pSK);
@@ -1530,7 +1773,7 @@ static int case_expr(SKState* pSK)
     }
 
     // Parse clauses
-    while (LOOKAHEAD != ')')
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         match(pSK, '(');
 
@@ -1553,7 +1796,7 @@ static int case_expr(SKState* pSK)
             int match_addrs[MAX_REL_CLAUSES];
             int num_datums = 0;
 
-            while (LOOKAHEAD != ')')
+            while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
             {
                 vm_emit(&pSK->vm, OP_DUP);       // duplicate key for comparison
                 expr(pSK);                        // push datum value
@@ -1769,6 +2012,10 @@ static int expr(SKState* pSK)
             set(pSK);
             break;
 
+        case LETREC:
+            letrec_expr(pSK);
+            break;
+
         case LET:
         case LET_STAR:
             let_expr(pSK, LOOKAHEAD);
@@ -1843,12 +2090,10 @@ static int expr(SKState* pSK)
         case ID:
             {
                 // handle native and regular function calls
-                // handle variable and check for undefined symbol
-                Object* key = vm_get_string(&pSK->vm, pSK->yylval.word);
-                
+                Object* key = vm_new_string(&pSK->vm, pSK->yylval.word);
+
                 match(pSK, LOOKAHEAD);
 
-                if (key)
                 {
                     int local_fn = FALSE;
                     int fn_upvalue = -1;
@@ -1870,7 +2115,10 @@ static int expr(SKState* pSK)
                     else
                         proc = vm_get_global(&pSK->vm, key);
 
-                    if (IS_FUNCTION(proc))
+                    // Natives are bound when the call is compiled. User procedures are
+                    // looked up by name when the call runs (the last branch below), so
+                    // redefining one, or defining it after this call, takes effect.
+                    if (!local_fn && IS_NATIVE_FN(proc))
                     {
                         int count = expr_tail(pSK); // parse function arguments (if any)
 
@@ -1946,12 +2194,13 @@ static int expr(SKState* pSK)
                     }
                     else
                     {
-                        // Not a known function at parse time - emit runtime lookup
-                        // This handles forward references like (define f (lambda ...)) ... (f args)
+                        // A global user procedure, or a name not defined yet (a forward
+                        // reference): look it up by name at run time. Root the name
+                        // before the arguments are parsed, as parsing can trigger a GC.
+                        key = global_key(pSK, ((String*)key)->value);
                         int count = expr_tail(pSK); // parse function arguments
-                        
-                        vm_emit_push_object(&pSK->vm, key);  // push the name
-                        vm_emit(&pSK->vm, OP_LOAD);           // look up at runtime
+
+                        emit_load_global(pSK, key);           // look up at runtime
                         
                         // Record offset for potential tail call patching
                         CodeChunk* chunk = vm_get_current_chunk();
@@ -1962,8 +2211,6 @@ static int expr(SKState* pSK)
                         vm_emit(&pSK->vm, (VMCode_t)count);
                     }
                 }
-                else
-                    yyerror(pSK, "entity undefined");
             }
             break;
         }
@@ -1977,11 +2224,31 @@ static int expr(SKState* pSK)
 
     pSK->expr_level--;
 
-    // print result of top-level exprs
+    // finish a top-level expr: the REPL prints its result, a script just discards it
     if (pSK->expr_level == 0)
-        vm_emit(&pSK->vm, OP_PRINT_TOS);   // print and discard top-level expr result
+        vm_emit(&pSK->vm, pSK->echo_form ? OP_PRINT_TOS : OP_DISCARD_TOS);
 
     return 0;
+}
+
+//-----------------------------------------------
+// Recover from a syntax error in a top-level form: drop the code it
+// compiled to, restore the parser's top-level state, and skip the rest
+// of the form so parsing resumes with the next one.
+//-----------------------------------------------
+static void discard_form(SKState* pSK, CodeChunk* chunk, int form_start,
+                         int saved_expr_level, Environment* saved_scope)
+{
+    chunk->count = form_start;
+    vm_set_current_chunk(&pSK->vm, chunk);
+    pSK->expr_level = saved_expr_level;
+    pSK->vm.current_scope = saved_scope;
+    pSK->last_call_offset = -1;
+    pSK->last_call_chunk = NULL;
+
+    // parens consumed so far, not counting LOOKAHEAD, which is lexed but unparsed
+    while (LOOKAHEAD != DONE && pSK->paren_depth - token_depth(LOOKAHEAD) > 0)
+        LOOKAHEAD = yylex(pSK);
 }
 
 //-----------------------------------------------
@@ -2002,7 +2269,25 @@ int yyparse(SKState *pSK)
     // the top-level is zero or more s-expressions
 	while (!pSK->bDone && LOOKAHEAD != DONE)
     {
+        // remember where this form starts, so a form with a syntax error can
+        // be dropped rather than run half-compiled
+        CodeChunk* chunk = vm_get_current_chunk();
+        int form_start = (int)chunk->count;
+        int errors_before = pSK->err_count;
+        int saved_expr_level = pSK->expr_level;
+        Environment* saved_scope = pSK->vm.current_scope;
+
+        // LOOKAHEAD is already lexed; count nesting from the start of the form
+        pSK->paren_depth = token_depth(LOOKAHEAD);
+
+        // only forms typed at the REPL echo their value, not those from a
+        // script or a loaded file
+        pSK->echo_form = (pSK->eval_input == NULL && pSK->yyin == stdin);
+
         expr(pSK);
+
+        if (pSK->err_count != errors_before)
+            discard_form(pSK, chunk, form_start, saved_expr_level, saved_scope);
     }
 
     return 0;

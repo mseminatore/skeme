@@ -837,6 +837,88 @@
 (cl-c)
 (test-case "closure: set! on captured variable" (= (cl-c) 3))
 
+; closures share captured variables with their scope and with each other
+(define (cl-pair) (let ((n 0)) (cons (lambda () (set! n (+ n 1)) n) (lambda () n))))
+(define cl-p (cl-pair))
+((car cl-p))
+((car cl-p))
+(test-case "closure: closures share a captured variable" (= ((cdr cl-p)) 2))
+(define (cl-later) (let ((x 1)) (let ((g (lambda () x))) (set! x 2) (g))))
+(test-case "closure: sees a set! made after it was created" (= (cl-later) 2))
+(define (cl-acc n) (lambda (x) (set! n (+ n x)) n))
+(define cl-a1 (cl-acc 10))
+(define cl-a2 (cl-acc 100))
+(cl-a1 1)
+(test-case "closure: separate calls get separate variables" (equal? (list (cl-a1 1) (cl-a2 1)) '(12 101)))
+(define (cl-collect i acc) (if (= i 0) acc (cl-collect (- i 1) (cons (lambda () i) acc))))
+(test-case "closure: each tail-call iteration keeps its own variable"
+    (equal? (map (lambda (f) (f)) (cl-collect 3 '())) '(1 2 3)))
+
+;----------------------
+; issue regressions: stack, tail calls, unspecified values, globals, let*, letrec
+;----------------------
+(test-suite "issue regressions")
+
+; deep non-tail recursion fits the default stack
+(define (rg-count n) (if (= n 0) 0 (+ 1 (rg-count (- n 1)))))
+(test-case "deep non-tail recursion" (= (rg-count 10000) 10000))
+
+; tail calls run in constant stack whatever the arities
+(define rg-g #f)
+(define (rg-f n acc) (if (= n 0) acc (rg-g (- n 1))))
+(set! rg-g (lambda (n) (if (= n 0) 0 (rg-f (- n 1) n))))
+(test-case "tail calls between different arities" (= (rg-f 200000 0) 1))
+(define (rg-grow n) (if (= n 0) 'done (rg-wide n 1 2 3)))
+(define (rg-wide a b c d) (rg-grow (- a (- d c))))
+(test-case "tail call to a function with more arguments" (eq? (rg-grow 200000) 'done))
+(define (rg-mk) (lambda (n) (if (= n 0) 0 ((rg-mk) (- n 1)))))
+(test-case "tail call through a computed function" (= ((rg-mk) 200000) 0))
+
+; natives without a result (display, newline) still yield one value
+(test-case "display yields one value" (= (length (list (display "") (display ""))) 2))
+(define (rg-disp-loop i) (begin (display "") (if (< i 100000) (rg-disp-loop (+ i 1)) i)))
+(test-case "display in a begin inside a loop" (= (rg-disp-loop 0) 100000))
+
+; globals are looked up by name when the code runs
+(define (rg-fwd x) (rg-later x))
+(define (rg-later x) (+ x 1))
+(test-case "forward reference to a later define" (= (rg-fwd 1) 2))
+(define (rg-redef) 1)
+(define (rg-calls-redef) (rg-redef))
+(define (rg-redef) 2)
+(test-case "redefinition reaches earlier callers" (= (rg-calls-redef) 2))
+(define rg-stub #f)
+(define (rg-use-stub x) (rg-stub x))
+(define (rg-stub x) (* x 10))
+(test-case "define replaces an earlier variable define" (= (rg-use-stub 2) 20))
+(define rg-x 5)
+(define rg-x (+ rg-x 1))
+(test-case "define can use the old value" (= rg-x 6))
+(define (rg-ev n) (if (= n 0) #t (rg-od (- n 1))))
+(define (rg-od n) (if (= n 0) #f (rg-ev (- n 1))))
+(test-case "mutual recursion between top-level defines" (rg-ev 100000))
+
+; let* binds in order; empty binding lists
+(test-case "let* sees earlier bindings" (equal? (let* ((a 1) (b (+ a 1)) (c (* b 10))) (list a b c)) '(1 2 20)))
+(define rg-shadow 100)
+(test-case "let* binding shadows a global" (= (let* ((rg-shadow 1) (y rg-shadow)) y) 1))
+(define (rg-star-loop i) (let* ((j (+ i 1))) (if (< j 100000) (rg-star-loop j) j)))
+(test-case "let* body in tail position" (= (rg-star-loop 0) 100000))
+(test-case "let with no bindings" (= (let () 5) 5))
+(test-case "let* with no bindings" (= (let* () 5) 5))
+
+; letrec
+(test-case "letrec recursion" (= (letrec ((f (lambda (n) (if (= n 0) 1 (* n (f (- n 1))))))) (f 5)) 120))
+(test-case "letrec mutual recursion"
+    (equal? (letrec ((ev? (lambda (n) (if (= n 0) #t (od? (- n 1)))))
+                     (od? (lambda (n) (if (= n 0) #f (ev? (- n 1))))))
+              (list (ev? 10) (od? 7) (ev? 100001)))
+            '(#t #t #f)))
+(define (rg-lr-loop x) (letrec ((loop (lambda (i acc) (if (= i 0) acc (loop (- i 1) (+ acc x)))))) (loop 100000 0)))
+(test-case "letrec loop in constant stack" (= (rg-lr-loop 2) 200000))
+(test-case "letrec with no bindings" (= (letrec () 5) 5))
+(test-case "letrec with plain values" (= (letrec ((a 1) (b 2)) (+ a b)) 3))
+
 ; report test results
 ;----------------------
 (test-end)

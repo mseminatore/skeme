@@ -22,6 +22,13 @@ int g_bProfile = FALSE;
 #endif
 
 #define GC_LOG(...) (void)(g_bGCLog && fprintf(stderr, __VA_ARGS__))
+
+static void vm_close_upvalues(VM* pvm, int from_slot);
+
+// Where an aborted run continues (see vm_abort): the next instruction
+// dispatched is OP_HALT. A branch taken from here adds its operand,
+// OP_HALT == 0, so it stays put.
+static VMCode_t vm_halt_code[] = { OP_HALT, OP_HALT };
 #define VM_LOG(...) (void)(g_bVMLog && fprintf(stderr, __VA_ARGS__))
 
 // High-resolution timer for profiling
@@ -54,6 +61,18 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
     if (!obj)
     {
         fprintf(stream, PRINT_NIL);   // nil
+        return;
+    }
+
+    if (IS_UNSPEC(obj))
+    {
+        fprintf(stream, "#<unspecified>");
+        return;
+    }
+
+    if (IS_UNBOUND(obj))
+    {
+        fprintf(stream, "#<unbound>");
         return;
     }
 
@@ -228,9 +247,16 @@ static int compare_fn(const void* a, const void* b)
 int vm_init(VM* pvm) {
     CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_init: null VM pointer");
 
+    pvm->stack = (Object**)malloc(sizeof(Object*) * VM_STACK_SIZE);
+    CHECK_THAT_MSG(pvm->sk_state, pvm->stack != NULL, "vm_init: unable to allocate the stack");
+
     pvm->sp = 0;
     pvm->fp = 0;
     pvm->ip = 0;
+    pvm->abort_exec = 0;
+    pvm->exec_depth = 0;
+    pvm->globals_version = 1;   // OP_LOAD_GLOBAL caches start at 0, i.e. empty
+    pvm->open_upvalues = NULL;
     pvm->head = NULL;
     pvm->numObjects = 0;
     pvm->objectsCollected = 0;
@@ -287,6 +313,10 @@ int vm_shutdown(VM* pvm)
     CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_shutdown: null VM pointer");
 
     vm_freeObjects(pvm);
+
+    free(pvm->stack);
+    pvm->stack = NULL;
+    pvm->sp = pvm->fp = 0;
 
     free(pvm->grayStack);
     pvm->grayStack = NULL;
@@ -446,9 +476,13 @@ int vm_reset(VM* pvm)
 {
     CHECK_THAT_MSG(pvm->sk_state, pvm != NULL, "vm_reset: null VM pointer");
 
+    vm_close_upvalues(pvm, 0);
     vm_clear_stack(pvm);
     vm_clear_code(pvm);
-    
+    pvm->fp = 0;
+    pvm->current_closure = NULL;
+    pvm->abort_exec = 0;
+
     return VM_OK;
 }
 
@@ -599,6 +633,14 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("GET_UPVALUE idx=%zd\n", *ip++);
             break;
 
+        case OP_CAPTURE_LOCAL:
+            printf("CAPTURE_LOCAL idx=%zd\n", *ip++);
+            break;
+
+        case OP_CAPTURE_UPVALUE:
+            printf("CAPTURE_UPVALUE idx=%zd\n", *ip++);
+            break;
+
         case OP_SET_UPVALUE:
             printf("SET_UPVALUE idx=%zd\n", *ip++);
             break;
@@ -625,6 +667,22 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
             printf("TAILCALL_I nargs=%zd\n", *ip++);
             break;
 
+        case OP_XCALL:
+            printf("XCALL nargs=%zd\n", *ip++);
+            break;
+
+        case OP_TAILCALL_X:
+            printf("TAILCALL_X nargs=%zd\n", *ip++);
+            break;
+
+        case OP_LOAD_GLOBAL:
+        {
+            Object* key = (Object*)*ip++;
+            ip += 2;    // cached value and version
+            printf("LOAD_GLOBAL '%s'\n", IS_STRING(key) ? ((String*)key)->value : "?");
+        }
+            break;
+
         case OP_GET_LOCAL:
             printf("GET_LOCAL idx=%zd\n", *ip++);
             break;
@@ -636,6 +694,10 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
         case OP_PRINT_TOS:
             printf("PRINT_TOS\n");
 			break;
+
+        case OP_DISCARD_TOS:
+            printf("DISCARD_TOS\n");
+            break;
 
         case OP_ADD: printf("ADD\n"); break;
         case OP_SUB: printf("SUB\n"); break;
@@ -693,6 +755,49 @@ void vm_disassemble_chunk(VM* pvm, CodeChunk* chunk, const char* name)
 // argument block, and its closure (if any) is the one to restore on return.
 // Keeping it on the stack also keeps a running closure reachable for the GC.
 //---------------------------------------------------------------
+static void vm_exec_leave(VM* pvm);
+
+//---------------------------------------------------------------
+// The upvalue for stack slot 'slot', shared by every closure that captures
+// it: reuse the open one if there is one, else create it.
+//---------------------------------------------------------------
+static Upvalue* vm_capture_slot(VM* pvm, int slot)
+{
+    Upvalue* prev = NULL;
+    Upvalue* up = pvm->open_upvalues;
+    while (up && up->slot > slot) {
+        prev = up;
+        up = up->next_open;
+    }
+    if (up && up->slot == slot)
+        return up;
+
+    // may GC: the open list is a root, and the new upvalue is not on it yet
+    Upvalue* created = (Upvalue*)vm_newObject(pvm, sizeof(Upvalue), OBJ_UPVALUE);
+    created->slot = slot;
+    created->closed = NULL;
+
+    // the GC may have run, but it does not unlink open upvalues, so prev/up still hold
+    created->next_open = up;
+    if (prev) prev->next_open = created; else pvm->open_upvalues = created;
+    return created;
+}
+
+//---------------------------------------------------------------
+// Close the open upvalues for stack slots >= from_slot, because the frame
+// that owns those slots is going away (return, tail call or abort).
+//---------------------------------------------------------------
+static void vm_close_upvalues(VM* pvm, int from_slot)
+{
+    while (pvm->open_upvalues && pvm->open_upvalues->slot >= from_slot) {
+        Upvalue* up = pvm->open_upvalues;
+        up->closed = pvm->stack[up->slot];
+        up->slot = -1;
+        pvm->open_upvalues = up->next_open;
+        up->next_open = NULL;
+    }
+}
+
 static inline int frame_arity(Object* fn)
 {
     return IS_CLOSURE(fn) ? ((Closure*)fn)->function->arity : ((Procedure*)fn)->arity;
@@ -705,6 +810,18 @@ static inline Closure* frame_closure(VM* pvm)
 
     Object* fn = pvm->stack[pvm->fp - 1];
     return IS_CLOSURE(fn) ? (Closure*)fn : NULL;
+}
+
+//---------------------------------------------------------------
+// Every call yields exactly one value. A native that returns nothing
+// (display, newline, ...) leaves the stack one short of result_sp, the
+// stack depth expected once its arguments are consumed and its result
+// pushed; give it the unspecified value so the caller's stack stays balanced.
+//---------------------------------------------------------------
+static void vm_native_result(VM* pvm, int result_sp)
+{
+    if (pvm->sp == result_sp - 1)
+        vm_push(pvm, MAKE_UNSPEC());
 }
 
 static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
@@ -770,8 +887,9 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
                 {
                     yyerror(pvm->sk_state, "incorrect number of arguments to native function");
 
-                    // clear args from stack
+                    // clear args from stack, leaving a result in their place
                     vm_pop_n(pvm, nargs);
+                    vm_push(pvm, MAKE_UNSPEC());
                     return;
                 }
             }
@@ -781,6 +899,8 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
                 vm_push(pvm, MAKE_NUM(nargs));
             }
 
+            int result_sp = pvm->sp - (arity >= 0 ? nargs : nargs + 1) + 1;
+
             if (g_bProfile) {
                 double t0 = profile_get_ms();
                 func(pvm->sk_state);
@@ -788,6 +908,8 @@ static void vm_call_procedure(VM* pvm, Object* fn_obj, int nargs, const char* ca
             } else {
                 func(pvm->sk_state);
             }
+
+            vm_native_result(pvm, result_sp);
         }
         else {
             fprintf(stderr, "NULL function pointer in NATIVE call!\n");
@@ -832,10 +954,39 @@ static VMExecResult op_store(VM* pvm) {
     vm_update_global(pvm, key, value);
     return VM_CONTINUE;
 }
-static VMExecResult op_load(VM* pvm) {
-    Object* key = vm_pop(pvm);
-    vm_push(pvm, vm_get_global(pvm, key));
+// push the value of the global 'key'; reading an unbound global is an error
+static VMExecResult vm_load_global(VM* pvm, Object* key) {
+    Object* value = vm_get_global(pvm, key);
+    if (IS_UNBOUND(value) || (value == NULL && !vm_has_global(pvm, key))) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "unbound variable '%s'", IS_STRING(key) ? ((String*)key)->value : "?");
+        vm_abort(pvm, msg);
+        return VM_ERROR;
+    }
+    vm_push(pvm, value);
     return VM_CONTINUE;
+}
+static VMExecResult op_load(VM* pvm) {
+    return vm_load_global(pvm, vm_pop(pvm));
+}
+// OP_LOAD_GLOBAL key cached_value cache_version
+// The instruction caches the value it last read. Any global write bumps
+// globals_version, so a cache is valid exactly while its version matches.
+static VMExecResult op_load_global(VM* pvm) {
+    VMCode_t* operands = pvm->ip;
+    pvm->ip += 3;
+
+    if ((size_t)operands[2] == pvm->globals_version) {
+        vm_push(pvm, (Object*)operands[1]);
+        return VM_CONTINUE;
+    }
+
+    VMExecResult result = vm_load_global(pvm, (Object*)operands[0]);
+    if (result == VM_CONTINUE) {
+        operands[1] = (VMCode_t)vm_peek(pvm, 0);
+        operands[2] = (VMCode_t)pvm->globals_version;
+    }
+    return result;
 }
 static VMExecResult op_ret(VM* pvm) {
     Object* ret_val = vm_pop(pvm);
@@ -847,23 +998,27 @@ static VMExecResult op_ret(VM* pvm) {
     int saved_fp = AS_NUM(pvm->stack[pvm->fp - 2]);
     VMCode_t* ret_addr = AS_RETADDR(pvm->stack[pvm->fp - 3]);
     pvm->sp = pvm->fp - 3 - arity;
+    vm_close_upvalues(pvm, pvm->sp);            // the frame's slots are going away
     pvm->fp = saved_fp;
     pvm->current_closure = frame_closure(pvm);  // back to the caller's closure
     vm_push(pvm, ret_val);
     pvm->ip = ret_addr;
-    return VM_CONTINUE;
+    return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;    // ip was just reset; see vm_abort
 }
+// Calls set ip (or run a native that may abort), so they test for an abort
+// themselves (see vm_abort).
 static VMExecResult op_call(VM* pvm) {
     Object* fn_obj = (Object*)*pvm->ip++;
     int nargs = (int)*pvm->ip++;
     vm_call_procedure(pvm, fn_obj, nargs, "CALL");
-    return VM_CONTINUE;
+    return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;
 }
 static VMExecResult op_icall(VM* pvm) {
     Object* fn_obj = vm_pop(pvm);
+    if (pvm->abort_exec) return VM_ERROR;
     int nargs = (int)*pvm->ip++;
     vm_call_procedure(pvm, fn_obj, nargs, "ICALL");
-    return VM_CONTINUE;
+    return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;
 }
 static VMExecResult op_xcall(VM* pvm) {
     // Function is under the args: stack [fn, arg1, ..., argN]
@@ -875,7 +1030,7 @@ static VMExecResult op_xcall(VM* pvm) {
         pvm->stack[pvm->sp - 1 - i] = pvm->stack[pvm->sp - i];
     pvm->sp--;  // we consumed one extra slot (the fn)
     vm_call_procedure(pvm, fn_obj, nargs, "XCALL");
-    return VM_CONTINUE;
+    return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;
 }
 static VMExecResult op_bra(VM* pvm) { pvm->ip += *pvm->ip; return VM_CONTINUE; }
 static VMExecResult op_bnt(VM* pvm) {
@@ -904,14 +1059,23 @@ static VMExecResult op_list(VM* pvm) {
     vm_push(pvm, (Object*)alist);
     return VM_CONTINUE;
 }
+static VMExecResult op_discard_tos(VM* pvm) {
+    if (pvm->sp)
+        vm_pop(pvm);    // like op_print_tos: some top-level forms (define) leave nothing
+    return VM_CONTINUE;
+}
 static VMExecResult op_print_tos(VM* pvm) {
-    if (pvm->sp) {
+    if (pvm->sp && IS_UNSPEC(vm_peek(pvm, 0))) {
+        vm_pop(pvm);    // nothing worth echoing
+    } else if (pvm->sp) {
         fprintf(stdout, TERM_BRIGHT_BLUE);
         vm_print_object(vm_pop(pvm), VM_PRINT_FANCY, stdout);
         fprintf(stdout, TERM_RESET"\n");
     }
     return VM_CONTINUE;
 }
+// OP_MAKE_CLOSURE n: stack [upvalue0, ..., upvalue(n-1), proc] -> [closure].
+// The upvalues come from OP_CAPTURE_LOCAL / OP_CAPTURE_UPVALUE.
 static VMExecResult op_make_closure(VM* pvm) {
     int upvalue_count = (int)*pvm->ip++;
     Object* proc_obj = vm_pop(pvm);
@@ -919,21 +1083,39 @@ static VMExecResult op_make_closure(VM* pvm) {
     vm_push(pvm, proc_obj);
     Closure* closure = (Closure*)vm_newObject(pvm, sizeof(Closure), OBJ_CLOSURE);
     closure->function = (Procedure*)vm_pop(pvm);
-    closure->upvalue_count = upvalue_count;
-    vm_push(pvm, (Object*)closure);
+    closure->upvalues = NULL;           // nothing for the GC to trace yet
+    closure->upvalue_count = 0;
+    vm_push(pvm, (Object*)closure);     // keep it alive while the array is allocated
     if (upvalue_count > 0) {
-        closure->upvalues = (Object**)vm_alloc(pvm, NULL, 0, sizeof(Object*) * upvalue_count);
+        Upvalue** upvalues = (Upvalue**)vm_alloc(pvm, NULL, 0, sizeof(Upvalue*) * upvalue_count);
         vm_pop(pvm);
-        for (int i = upvalue_count - 1; i >= 0; i--) closure->upvalues[i] = vm_pop(pvm);
-    } else { closure->upvalues = NULL; vm_pop(pvm); }
+        for (int i = upvalue_count - 1; i >= 0; i--) upvalues[i] = (Upvalue*)vm_pop(pvm);
+        closure->upvalues = upvalues;
+        closure->upvalue_count = upvalue_count;
+    } else { vm_pop(pvm); }
     vm_push(pvm, (Object*)closure);
+    return VM_CONTINUE;
+}
+static VMExecResult op_capture_local(VM* pvm) {
+    int slot = pvm->fp - 1 - (int)*pvm->ip++;   // same addressing as OP_GET_LOCAL
+    vm_push(pvm, (Object*)vm_capture_slot(pvm, slot));
+    return VM_CONTINUE;
+}
+static VMExecResult op_capture_upvalue(VM* pvm) {
+    int idx = (int)*pvm->ip++;
+    if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
+        yyerror(pvm->sk_state, "OP_CAPTURE_UPVALUE: invalid upvalue index"); vm_push(pvm, NULL);
+    } else { vm_push(pvm, (Object*)pvm->current_closure->upvalues[idx]); }  // shared, not copied
     return VM_CONTINUE;
 }
 static VMExecResult op_get_upvalue(VM* pvm) {
     int idx = (int)*pvm->ip++;
     if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
         yyerror(pvm->sk_state, "OP_GET_UPVALUE: invalid upvalue index"); vm_push(pvm, NULL);
-    } else { vm_push(pvm, pvm->current_closure->upvalues[idx]); }
+    } else {
+        Upvalue* up = pvm->current_closure->upvalues[idx];
+        vm_push(pvm, up->slot >= 0 ? pvm->stack[up->slot] : up->closed);
+    }
     return VM_CONTINUE;
 }
 static VMExecResult op_set_upvalue(VM* pvm) {
@@ -941,46 +1123,82 @@ static VMExecResult op_set_upvalue(VM* pvm) {
     Object* value = vm_pop(pvm);
     if (!pvm->current_closure || idx < 0 || idx >= pvm->current_closure->upvalue_count) {
         yyerror(pvm->sk_state, "OP_SET_UPVALUE: invalid upvalue index");
-    } else { pvm->current_closure->upvalues[idx] = value; }
+    } else {
+        Upvalue* up = pvm->current_closure->upvalues[idx];
+        if (up->slot >= 0) pvm->stack[up->slot] = value; else up->closed = value;
+    }
     return VM_CONTINUE;
+}
+//---------------------------------------------------------------
+// Tail call: replace the current frame with one for fn_obj instead of
+// pushing a new frame, so tail-recursive loops run in constant stack.
+//
+//   before: [old args (old_arity)][ret][saved_fp][fn]  ...temps  [new args (nargs)]
+//                                                    ^fp                          ^sp
+//   after:  [new args (nargs)][ret][saved_fp][fn_obj]
+//                                                    ^fp = sp
+//
+// The arguments move down to where the old ones started, and the
+// caller's return address and frame pointer are kept, so the callee
+// returns straight to our caller. This works for any arity.
+//---------------------------------------------------------------
+static VMExecResult vm_tail_call(VM* pvm, Object* fn_obj, int nargs, const char* call_type)
+{
+    if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
+        Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
+        if (proc->arity != nargs) { yyerror(pvm->sk_state, "tail call: wrong number of arguments"); return VM_ERROR; }
+
+        if (pvm->fp < 3) {
+            // no frame to replace (not inside a function): an ordinary call
+            vm_call_procedure(pvm, fn_obj, nargs, call_type);
+            return VM_CONTINUE;
+        }
+
+        int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
+        Object* ret_addr = pvm->stack[pvm->fp - 3];     // read the header first: with more
+        Object* saved_fp = pvm->stack[pvm->fp - 2];     // args than before, the move overwrites it
+
+        int base = pvm->fp - 3 - old_arity, src = pvm->sp - nargs;
+        vm_close_upvalues(pvm, base);                   // the old frame's slots are reused
+        for (int i = 0; i < nargs; i++)                 // base <= src, so copying upward is safe
+            pvm->stack[base + i] = pvm->stack[src + i];
+
+        pvm->sp = base + nargs;
+        pvm->stack[pvm->sp++] = ret_addr;
+        pvm->stack[pvm->sp++] = saved_fp;
+        pvm->stack[pvm->sp++] = fn_obj;
+        pvm->fp = pvm->sp;
+
+        if (g_bProfile) proc->call_count++;
+        pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
+        pvm->ip = proc->chunk.code;
+    } else if (IS_NATIVE_FN(fn_obj)) {
+        vm_call_procedure(pvm, fn_obj, nargs, call_type);
+    } else {
+        yyerror(pvm->sk_state, "tail call: not a procedure");
+        return VM_ERROR;
+    }
+    return pvm->abort_exec ? VM_ERROR : VM_CONTINUE;  // see vm_abort
 }
 static VMExecResult op_tailcall(VM* pvm) {
     Object* fn_obj = (Object*)*pvm->ip++;
     int nargs = (int)*pvm->ip++;
-    if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-        Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
-        if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL: wrong number of arguments"); return VM_ERROR; }
-        int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
-        if (nargs == old_arity) {
-            int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
-            for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
-            pvm->stack[pvm->fp - 1] = fn_obj;   // the reused frame now runs fn_obj
-            pvm->sp = pvm->fp;
-            pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
-            pvm->ip = proc->chunk.code;
-        } else { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-FALLBACK"); }
-    } else if (IS_NATIVE_FN(fn_obj)) { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL-NATIVE");
-    } else { yyerror(pvm->sk_state, "TAILCALL: not a procedure"); return VM_ERROR; }
-    return VM_CONTINUE;
+    return vm_tail_call(pvm, fn_obj, nargs, "TAILCALL");
 }
 static VMExecResult op_tailcall_i(VM* pvm) {
     Object* fn_obj = vm_pop(pvm);
+    if (pvm->abort_exec) return VM_ERROR;
     int nargs = (int)*pvm->ip++;
-    if (IS_PROCEDURE(fn_obj) || IS_CLOSURE(fn_obj)) {
-        Procedure* proc = IS_CLOSURE(fn_obj) ? ((Closure*)fn_obj)->function : (Procedure*)fn_obj;
-        if (proc->arity != nargs) { yyerror(pvm->sk_state, "TAILCALL_I: wrong number of arguments"); return VM_ERROR; }
-        int old_arity = frame_arity(pvm->stack[pvm->fp - 1]);
-        if (nargs == old_arity) {
-            int ob = pvm->fp - 3 - old_arity, nb = pvm->sp - nargs;
-            for (int i = 0; i < nargs; i++) pvm->stack[ob + i] = pvm->stack[nb + i];
-            pvm->stack[pvm->fp - 1] = fn_obj;   // the reused frame now runs fn_obj
-            pvm->sp = pvm->fp;
-            pvm->current_closure = IS_CLOSURE(fn_obj) ? (Closure*)fn_obj : NULL;
-            pvm->ip = proc->chunk.code;
-        } else { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-FALLBACK"); }
-    } else if (IS_NATIVE_FN(fn_obj)) { vm_call_procedure(pvm, fn_obj, nargs, "TAILCALL_I-NATIVE");
-    } else { yyerror(pvm->sk_state, "TAILCALL_I: not a procedure"); return VM_ERROR; }
-    return VM_CONTINUE;
+    return vm_tail_call(pvm, fn_obj, nargs, "TAILCALL_I");
+}
+static VMExecResult op_tailcall_x(VM* pvm) {
+    // Function is under the args: stack [fn, arg1, ..., argN], as for OP_XCALL
+    int nargs = (int)*pvm->ip++;
+    Object* fn_obj = vm_peek(pvm, nargs);
+    for (int i = nargs; i > 0; i--)
+        pvm->stack[pvm->sp - 1 - i] = pvm->stack[pvm->sp - i];
+    pvm->sp--;
+    return vm_tail_call(pvm, fn_obj, nargs, "TAILCALL_X");
 }
 static VMExecResult op_unknown(VM* pvm) {
     fprintf(stderr, "Unknown opcode at ip=%p\n", pvm->ip - 1);
@@ -1066,7 +1284,8 @@ static const OpHandler op_dispatch[OP_LAST] = {
     op_get_local, op_set_local, op_print_tos,
     op_add, op_sub, op_mul, op_lt, op_le, op_eq_num,
     op_num_0, op_num_1, op_num_2,
-    op_symbol,
+    op_symbol, op_tailcall_x, op_load_global, op_discard_tos,
+    op_capture_local, op_capture_upvalue,
 };
 
 //---------------------------------------------------------------
@@ -1094,7 +1313,7 @@ static VMExecResult vm_exec_one(VM* pvm)
 //---------------------------------------------------------------
 Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
 {
-    if (!pvm || !fn) return NULL;
+    if (!pvm || !fn || pvm->abort_exec) return NULL;
 
     if (IS_NATIVE_FN(fn))
     {
@@ -1116,11 +1335,14 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         if (native->arity < 0)
             vm_push(pvm, MAKE_NUM(nargs));
 
+        int result_sp = pvm->sp - (native->arity >= 0 ? nargs : nargs + 1) + 1;
+
         // Call the native function
         native->func(pvm->sk_state);
+        vm_native_result(pvm, result_sp);
 
         // Result is on stack
-        Object* result = vm_pop(pvm);
+        Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
         return result;
     }
     else if (IS_CLOSURE(fn))
@@ -1155,7 +1377,8 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         pvm->current_closure = closure;      // set for upvalue access
 
         // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
-        while (pvm->ip != NULL)
+        pvm->exec_depth++;
+        while (pvm->ip != NULL && !pvm->abort_exec)
         {
             VMExecResult result = vm_exec_one(pvm);
             if (result == VM_HALT || result == VM_ERROR)
@@ -1163,13 +1386,14 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         }
 
         // Result is on stack
-        Object* result = vm_pop(pvm);
+        Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
 
         // Restore state
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
         pvm->sp = saved_sp;
         pvm->current_closure = saved_closure;
+        vm_exec_leave(pvm);
 
         return result;
     }
@@ -1204,7 +1428,8 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         pvm->current_closure = NULL;         // not in a closure
 
         // Execute bytecode until ip becomes NULL (from RET with NULL return addr)
-        while (pvm->ip != NULL)
+        pvm->exec_depth++;
+        while (pvm->ip != NULL && !pvm->abort_exec)
         {
             VMExecResult result = vm_exec_one(pvm);
             if (result == VM_HALT || result == VM_ERROR)
@@ -1212,13 +1437,14 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
         }
 
         // Result is on stack
-        Object* result = vm_pop(pvm);
+        Object* result = pvm->abort_exec ? NULL : vm_pop(pvm);
 
         // Restore state
         pvm->ip = saved_ip;
         pvm->fp = saved_fp;
         pvm->sp = saved_sp;
         pvm->current_closure = saved_closure;
+        vm_exec_leave(pvm);
 
         return result;
     }
@@ -1248,9 +1474,11 @@ void vm_exec(VM* pvm, VMCode_t *addr)
 
     double start = g_bProfile ? profile_get_ms() : 0;
 
-    pvm->ip = addr;
+    pvm->ip = pvm->abort_exec ? vm_halt_code : addr;
+    pvm->exec_depth++;
 
-    // Function pointer table dispatch - portable across all compilers
+    // Function pointer table dispatch - portable across all compilers.
+    // An abort (vm_abort) moves ip to OP_HALT, so the loop needs no flag test.
     for (;;)
     {
         VMCode_t opcode = *pvm->ip++;
@@ -1264,6 +1492,8 @@ void vm_exec(VM* pvm, VMCode_t *addr)
         if (result != VM_CONTINUE)
             break;
     }
+
+    vm_exec_leave(pvm);
 
     if (g_bProfile)
         pvm->exec_time_ms += profile_get_ms() - start;
@@ -1402,10 +1632,14 @@ static void markObjects(VM* pvm) {
     }
 
     // mark stack objects
-    for (int i = 0; i < pvm->sp; i++) 
+    for (int i = 0; i < pvm->sp; i++)
     {
         markObject(pvm, pvm->stack[i]);
     }
+
+    // mark open upvalues: the VM still links them, even if no closure does
+    for (Upvalue* up = pvm->open_upvalues; up; up = up->next_open)
+        markObject(pvm, (Object*)up);
 
     // mark environment chain
     Environment* env = pvm->current_scope;
@@ -1479,7 +1713,7 @@ static void freeObject(VM* pvm, Object* object)
     {
         Closure* closure = (Closure*)object;
         if (closure->upvalues) {
-            vm_alloc(pvm, closure->upvalues, sizeof(Object*) * closure->upvalue_count, 0);
+            vm_alloc(pvm, closure->upvalues, sizeof(Upvalue*) * closure->upvalue_count, 0);
             closure->upvalues = NULL;
         }
     }
@@ -1590,10 +1824,15 @@ static void blackenObject(VM* pvm, Object* object)
             // Mark all captured upvalues (check for NULL - upvalues array may not be allocated yet)
             if (closure->upvalues) {
                 for (int i = 0; i < closure->upvalue_count; i++) {
-                    markObject(pvm, closure->upvalues[i]);
+                    markObject(pvm, (Object*)closure->upvalues[i]);
                 }
             }
 		}
+        break;
+
+    case OBJ_UPVALUE:
+        // an open upvalue's value is on the stack, which is marked anyway
+        markObject(pvm, ((Upvalue*)object)->closed);
         break;
 
     case OBJ_ENVIRONMENT:
@@ -1736,6 +1975,52 @@ VMCode_t* vm_pop_ip(VM* pvm)
 // Push an object onto the stack
 //--------------------------------------------------------------
 // vm_push, vm_pop, vm_peek, vm_fp_peek are now static inline in vm.h
+
+//--------------------------------------------------------------
+// A runtime error that cannot be continued from (stack overflow, unbound
+// variable, ...). Report it once and abort the current run; vm_exec
+// unwinds back to the top level.
+//--------------------------------------------------------------
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline, cold))
+#endif
+void vm_stack_overflow(VM* pvm)
+{
+    vm_abort(pvm, "stack overflow (recursion too deep)");
+}
+
+void vm_abort(VM* pvm, const char* msg)
+{
+    if (!pvm->abort_exec)
+        yyerror(pvm->sk_state, msg);
+
+    pvm->abort_exec = 1;
+
+    // Stop at the next dispatch rather than testing abort_exec before every
+    // instruction. Ops that set ip themselves (calls, returns) test it.
+    pvm->ip = vm_halt_code;
+}
+
+//--------------------------------------------------------------
+// Leave a vm_exec / vm_call_function. Once the outermost one finishes
+// after an abort, discard the half-finished computation: clear the
+// stack and frames, and accept new work.
+//--------------------------------------------------------------
+static void vm_exec_leave(VM* pvm)
+{
+    pvm->exec_depth--;
+
+    if (pvm->exec_depth == 0 && pvm->abort_exec)
+    {
+        vm_close_upvalues(pvm, 0);
+        pvm->sp = 0;
+        pvm->fp = 0;
+        pvm->current_closure = NULL;
+        pvm->abort_exec = 0;
+    }
+}
 
 //--------------------------------------------------------------
 // Replace an object on the stack
@@ -2029,6 +2314,8 @@ float vm_get_float(Object* obj)
 //--------------------------------------------------------------
 int vm_define_global(VM *pvm, Object* key, Object *value)
 {
+    pvm->globals_version++;     // invalidate OP_LOAD_GLOBAL caches
+
     // determine if we can redefine a global
 #ifdef VM_NO_REDEFINE
     return ht_insert(pvm->global_table, key, value);
@@ -2043,6 +2330,7 @@ int vm_define_global(VM *pvm, Object* key, Object *value)
 //--------------------------------------------------------------
 int vm_update_global(VM *pvm, Object* key, Object *value)
 {
+    pvm->globals_version++;     // invalidate OP_LOAD_GLOBAL caches
     return ht_add(pvm->global_table, key, value);
 }
 
@@ -2055,6 +2343,15 @@ Object *vm_get_global(VM *pvm, Object* key)
     if (ht_lookup(pvm->global_table, key, &val) == HT_OK)
         return (Object*)val;
     return NULL;
+}
+
+//--------------------------------------------------------------
+// Is there a global table entry (possibly the unbound placeholder) for key?
+//--------------------------------------------------------------
+int vm_has_global(VM *pvm, Object* key)
+{
+    ht_value_t val = NULL;
+    return ht_lookup(pvm->global_table, key, &val) == HT_OK;
 }
 
 //--------------------------------------------------------------

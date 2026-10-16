@@ -82,6 +82,9 @@ struct SKState
     int file_stack_ptr;             // current file stack pointer
     int file_stack_capacity;        // capacity of file stack
     int err_count;                  // number of errors encountered
+    int paren_depth;                // '(' minus ')' tokens lexed (for parse error recovery)
+    int echo_form;                  // echo the current top-level form's value (REPL input only)
+    TokenReplay* replay;            // recorded tokens yylex returns before reading input
     int warn_count;                 // number of warnings encountered
     int parse_log_enabled;          // enable parse logging
     SKErrorHandler error_handler;   // error handler function pointer

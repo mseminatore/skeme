@@ -55,6 +55,23 @@ static void reset_test_context(void)
 }
 
 //--------------------------------------------------------------
+// Compile and run code, then drop anything it left on the stack
+//--------------------------------------------------------------
+static void eval_quietly(SKState* sk, const char* code)
+{
+    sk_eval_string(sk, code);
+    vm_clear_stack(&sk->vm);
+}
+
+//--------------------------------------------------------------
+// The value of a global variable (NULL if there is no such global)
+//--------------------------------------------------------------
+static Object* get_global(SKState* sk, const char* name)
+{
+    return vm_get_global(&sk->vm, vm_new_string(&sk->vm, name));
+}
+
+//--------------------------------------------------------------
 // Run all error tests
 //--------------------------------------------------------------
 void test_error(int argc, char *argv[])
@@ -187,5 +204,114 @@ void test_error(int argc, char *argv[])
         COMMENT("Set NULL handler should not crash...");
         sk_set_error_handler(NULL, test_error_handler);
         TEST(1); // Should not crash
+    }
+
+    // Test: a syntax error drops only the bad top-level form
+    SUITE("Parse Error Recovery");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("Forms after a syntax error still run, the bad form does not...");
+        eval_quietly(&sk, "(define pe-a 1) (define pe-b (car '(1 . 2))) (define pe-c 3)");
+        TEST(g_test_ctx.error_count >= 1);
+        TEST(AS_NUM(get_global(&sk, "pe-a")) == 1);
+        TEST(AS_NUM(get_global(&sk, "pe-c")) == 3);
+        TEST(IS_UNBOUND(get_global(&sk, "pe-b")));    // its define never ran
+        TEST(sk.vm.sp == 0);
+
+        COMMENT("An unclosed form at the end of the input is reported, not looped on...");
+        reset_test_context();
+        eval_quietly(&sk, "(define pe-d 4) (define (pe-f) (display 1)");
+        TEST(g_test_ctx.error_count >= 1);
+        TEST(AS_NUM(get_global(&sk, "pe-d")) == 4);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: running out of stack is a runtime error, not an abort
+    SUITE("Stack Overflow");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        eval_quietly(&sk, "(define (so-deep n) (if (= n 0) 0 (+ 1 (so-deep (- n 1)))))");
+        TEST(g_test_ctx.error_count == 0);
+
+        COMMENT("Deep but bounded recursion fits the default stack...");
+        eval_quietly(&sk, "(define so-ok (so-deep 10000))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "so-ok")) == 10000);
+
+        COMMENT("Unbounded recursion reports stack overflow and unwinds...");
+        eval_quietly(&sk, "(define so-bad (so-deep 10000000))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "stack overflow") != NULL);
+        TEST(sk.vm.sp == 0);
+        TEST(sk.vm.fp == 0);
+        TEST(sk.vm.abort_exec == 0);
+
+        COMMENT("The VM keeps working afterwards...");
+        eval_quietly(&sk, "(define so-after (so-deep 100))");
+        TEST(AS_NUM(get_global(&sk, "so-after")) == 100);
+
+        COMMENT("Overflow inside a native callback (map) unwinds too...");
+        reset_test_context();
+        eval_quietly(&sk, "(define so-map (map (lambda (x) (so-deep 10000000)) (list 1 2 3)))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(sk.vm.sp == 0);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: globals are looked up by name when the code runs
+    SUITE("Unbound Variables");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("A forward reference compiles without error...");
+        eval_quietly(&sk, "(define (ub-g) (ub-h 1))");
+        TEST(g_test_ctx.error_count == 0);
+
+        COMMENT("Calling it before the definition exists is an unbound variable error...");
+        eval_quietly(&sk, "(define ub-r1 (ub-g))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "unbound variable 'ub-h'") != NULL);
+        TEST(sk.vm.sp == 0);
+
+        COMMENT("Once defined, the same code finds it...");
+        eval_quietly(&sk, "(define (ub-h x) (+ x 41)) (define ub-r2 (ub-g))");
+        TEST(AS_NUM(get_global(&sk, "ub-r2")) == 42);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: natives with no result (display, newline) still yield a value
+    SUITE("Unspecified Results");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        eval_quietly(&sk, "(define us-v (display \"\")) (define us-l (list (display \"\") 2))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(IS_UNSPEC(get_global(&sk, "us-v")));
+        Object* l = get_global(&sk, "us-l");
+        TEST(IS_PAIR(l) && IS_UNSPEC(((Pair*)l)->car));
+        TEST(sk.vm.sp == 0);
+
+        sk_shutdown(&sk);
     }
 }

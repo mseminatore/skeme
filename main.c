@@ -184,8 +184,11 @@ int main(int argc, char *argv[])
 
     vm_print_profile(&sk.vm);
 
+    // a script run with errors exits non-zero; the interactive REPL does not
+    int exit_code = (!g_bInteractive && argc != iFirstArg && sk.err_count) ? 1 : 0;
+
     LOG("Shutting down...");
     sk_shutdown(&sk);
     LOG("Done.\n");
-	return 0;
+	return exit_code;
 }

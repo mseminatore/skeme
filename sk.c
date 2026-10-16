@@ -66,6 +66,9 @@ int sk_init(SKState *pSK, int argc, char* argv[])
 
     pSK->file_stack_ptr = 0;  // start at 0 with sentinel entry
     pSK->err_count = 0;
+    pSK->paren_depth = 0;
+    pSK->echo_form = 0;
+    pSK->replay = NULL;
     pSK->warn_count = 0;
     pSK->parse_log_enabled = 0;
     pSK->indent_level = 0;
@@ -185,6 +188,7 @@ int sk_eval_string(SKState *pSK, const char *code)
     int saved_indent = pSK->indent_level;
     const char* saved_eval_input = pSK->eval_input;
     int saved_eval_pos = pSK->eval_pos;
+    int saved_paren_depth = pSK->paren_depth;
 
     // Save current code chunk and create a temporary one for eval
     CodeChunk eval_chunk;
@@ -214,6 +218,7 @@ int sk_eval_string(SKState *pSK, const char *code)
     pSK->indent_level = saved_indent;
     pSK->eval_input = saved_eval_input;
     pSK->eval_pos = saved_eval_pos;
+    pSK->paren_depth = saved_paren_depth;
 
     // Free temporary chunk
     vm_free_chunk(&pSK->vm, &eval_chunk);
