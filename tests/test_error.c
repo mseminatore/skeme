@@ -733,6 +733,64 @@ void test_error(int argc, char *argv[])
         sk_shutdown(&sk);
     }
 
+    // Test: printing, and the intern tables after a collection
+    SUITE("Printing and Interning");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("write quotes strings and writes characters as #\\c; display does not...");
+        eval_quietly(&sk, "(define pr-x (list \"a\\\"b\" #\\c (vector 1 \"s\")))");
+        FILE* tf = tmpfile();
+        TEST(tf != NULL);
+        if (tf)
+        {
+            char buf[128] = { 0 };
+            vm_print_object(get_global(&sk, "pr-x"), VM_PRINT_READABLE, tf);
+            fputc('|', tf);
+            vm_print_object(get_global(&sk, "pr-x"), VM_PRINT_PLAIN, tf);
+            rewind(tf);
+            size_t n = fread(buf, 1, sizeof(buf) - 1, tf);
+            buf[n] = '\0';
+            fclose(tf);
+            TEST(strcmp(buf, "(\"a\\\"b\" #\\c #(1 \"s\"))|(a\"b c #(1 s))") == 0);
+        }
+
+        COMMENT("Vector errors...");
+        reset_test_context();
+        eval_quietly(&sk, "(define pr-e1 (vector-ref '(1 2) 0))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "argument to 'vector-ref' must be a vector") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define pr-e2 (vector-set! (vector 1) 1 0))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "vector-set!: index out of range") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define pr-e3 (make-vector -1))");
+        TEST(g_test_ctx.error_count == 1);
+        reset_test_context();
+        eval_quietly(&sk, "(define pr-e4 (vector->list #(1 2 3) 2 1))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "start is after end") != NULL);
+        reset_test_context();
+
+        COMMENT("The symbol table shrinks back after many symbols die...");
+        eval_quietly(&sk, "(define (pr-churn n) (if (> n 0) (begin (string->symbol (string-append \"pr\" (number->string n))) (pr-churn (- n 1)))))");
+        eval_quietly(&sk, "(pr-churn 20000)");
+        vm_gc(&sk.vm);
+        vm_gc(&sk.vm);
+        TEST(ht_size(sk.vm.interned_symbols) < 1000);
+        TEST(ht_capacity(sk.vm.interned_symbols) < 4096);
+        TEST(g_test_ctx.error_count == 0);
+        eval_quietly(&sk, "(define pr-same (eq? 'pr-keep (string->symbol \"pr-keep\")))");
+        TEST(IS_TRUE(get_global(&sk, "pr-same")));
+
+        sk_shutdown(&sk);
+    }
+
     // Test: what an embedder (a web REPL, say) relies on
     SUITE("Embedding");
     {

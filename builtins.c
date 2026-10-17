@@ -144,68 +144,55 @@ static int sk_eqp(SKState *pSK)
 //-----------------------------------------------
 // built-in function: equal?
 //-----------------------------------------------
+// Are a and b equal: the same object, strings with the same characters, or
+// pairs or vectors whose elements are equal? Loops along lists and
+// recurses only into their elements, so a long list does not use deep C
+// recursion.
+//-----------------------------------------------
+static int objects_equal(Object* a, Object* b)
+{
+    for (;;)
+    {
+        // the same object, which covers nil, booleans, characters, numbers
+        // and (interned) symbols
+        if (a == b)
+            return TRUE;
+
+        if (IS_STRING(a) && IS_STRING(b))
+            return strcmp(((String*)a)->value, ((String*)b)->value) == 0;
+
+        if (IS_FLOAT(a) && IS_FLOAT(b))
+            return AS_DOUBLE(a) == AS_DOUBLE(b);
+
+        if (IS_VECTOR(a) && IS_VECTOR(b))
+        {
+            Vector* va = (Vector*)a;
+            Vector* vb = (Vector*)b;
+            if (va->length != vb->length)
+                return FALSE;
+            for (int i = 0; i < va->length; i++)
+                if (!objects_equal(va->items[i], vb->items[i]))
+                    return FALSE;
+            return TRUE;
+        }
+
+        if (!IS_PAIR(a) || !IS_PAIR(b))
+            return FALSE;
+
+        if (!objects_equal(((Pair*)a)->car, ((Pair*)b)->car))
+            return FALSE;
+        a = ((Pair*)a)->cdr;
+        b = ((Pair*)b)->cdr;
+    }
+}
+
 static int sk_equalp(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* bool = MAKE_FALSE();   // default to false
     Object* obj2 = vm_pop(&pSK->vm);
     Object* obj1 = vm_pop(&pSK->vm);
-
-	// check for pointer equality first, covers nil, boolean, interned string, symbol and number too
-    if (obj1 == obj2)
-    {
-        bool = MAKE_TRUE();
-        vm_push(&pSK->vm, bool);
-		return SK_TRUE;
-    }
-
-	// check for string equality
-    if (IS_STRING(obj1) && IS_STRING(obj2))
-    {
-        String* str1 = (String*)obj1;
-        String* str2 = (String*)obj2;
-        if (strcmp(str1->value, str2->value) == 0)
-        {
-            bool = MAKE_TRUE();
-            vm_push(&pSK->vm, bool);
-            return SK_TRUE;
-        }
-	}
-
-	// checks (pairs, lists, etc.)
-    if (IS_PAIR(obj1) && IS_PAIR(obj2))
-    {
-        Pair* pair1 = (Pair*)obj1;
-        Pair* pair2 = (Pair*)obj2;
-
-        // check car and cdr for equality
-        vm_push(&pSK->vm, pair1->car);
-        vm_push(&pSK->vm, pair2->car);
-        sk_equalp(pSK);
-        Object* car_equal = vm_pop(&pSK->vm);
-
-        if (IS_FALSE(car_equal))
-        {
-            vm_push(&pSK->vm, bool);
-            return SK_TRUE;
-        }
-
-        vm_push(&pSK->vm, pair1->cdr);
-        vm_push(&pSK->vm, pair2->cdr);
-        sk_equalp(pSK);
-        Object* cdr_equal = vm_pop(&pSK->vm);
-        if (IS_FALSE(cdr_equal))
-        {
-            vm_push(&pSK->vm, bool);
-            return SK_TRUE;
-        }
-
-        // both car and cdr are equal
-        bool = MAKE_TRUE();
-	}
-
-    vm_push(&pSK->vm, bool);
+    vm_push(&pSK->vm, objects_equal(obj1, obj2) ? MAKE_TRUE() : MAKE_FALSE());
     return SK_TRUE;
 }
 
@@ -1808,6 +1795,19 @@ static int datum_to_source(SKState* pSK, SrcBuf* b, Object* obj)
         }
         src_add(pSK, b, "\"");
     }
+    else if (IS_VECTOR(obj))
+    {
+        Vector* vec = (Vector*)obj;
+        src_add(pSK, b, "#(");
+        for (int i = 0; i < vec->length; i++)
+        {
+            if (i)
+                src_add(pSK, b, " ");
+            if (!datum_to_source(pSK, b, vec->items[i]))
+                return 0;
+        }
+        src_add(pSK, b, ")");
+    }
     else if (IS_PAIR(obj))
     {
         // the cars recursively, the cdrs in a loop (long lists stay shallow)
@@ -2254,6 +2254,22 @@ static Object* sk_read_datum(SKState* pSK, int tok)
             // keywords and identifiers become symbols
             return vm_new_symbol(&pSK->vm, pSK->yylval.word);
 
+        case VECTOR_OPEN: {
+            // #(a b c): read the elements onto the stack, then make the vector
+            int count = 0;
+            int t;
+            while ((t = yylex(pSK)) != ')' && t != DONE)
+            {
+                vm_push(&pSK->vm, sk_read_datum(pSK, t));
+                count++;
+            }
+            Object* vec = vm_new_vector(&pSK->vm, count, MAKE_UNSPEC());
+            for (int i = 0; i < count; i++)
+                ((Vector*)vec)->items[i] = vm_peek(&pSK->vm, count - 1 - i);
+            vm_pop_n(&pSK->vm, count);
+            return vec;
+        }
+
         case '(': {
             // read list: accumulate elements on the VM stack, then build cons chain
             int count = 0;
@@ -2688,6 +2704,295 @@ static int sk_append(SKState* pSK)
     vm_push(&pSK->vm, result);
     return SK_TRUE;
 }
+
+//-----------------------------------------------
+// Vectors. An index must be an exact integer in range; ranges are
+// [start, end), as in R7RS.
+//-----------------------------------------------
+static Vector* vector_arg(SKState* pSK, Object* obj, const char* name)
+{
+    if (!IS_VECTOR(obj))
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "argument to '%s' must be a vector", name);
+        yyerror(pSK, msg);
+        return NULL;
+    }
+    return (Vector*)obj;
+}
+
+static int index_arg(SKState* pSK, Object* obj, int limit, const char* name, int* out)
+{
+    if (!IS_NUM(obj) || AS_NUM(obj) < 0 || AS_NUM(obj) > limit)
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "%s: index out of range", name);
+        yyerror(pSK, msg);
+        return FALSE;
+    }
+    *out = AS_NUM(obj);
+    return TRUE;
+}
+
+// (vector obj ...); also <vector>, which vector literals use
+static int sk_vector(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+
+    Object* vec = vm_new_vector(pvm, n, MAKE_UNSPEC());     // the elements stay on the stack
+    for (int i = 0; i < n; i++)
+        ((Vector*)vec)->items[i] = vm_peek(pvm, n - 1 - i);
+    vm_pop_n(pvm, n);
+    vm_push(pvm, vec);
+    return SK_TRUE;
+}
+
+// (make-vector k [fill])
+static int sk_make_vector(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n > 2) {
+        yyerror(pSK, "'make-vector' called with too many arguments, expects at most 2");
+        return SK_FALSE;
+    }
+
+    Object* fill = n == 2 ? vm_pop(pvm) : MAKE_UNSPEC();
+    vm_push(pvm, fill);
+    Object* k = vm_peek(pvm, 1);
+    if (!IS_NUM(k) || AS_NUM(k) < 0) {
+        yyerror(pSK, "make-vector: the length must be a non-negative integer");
+        return SK_FALSE;
+    }
+    Object* vec = vm_new_vector(pvm, AS_NUM(k), vm_peek(pvm, 0));
+    vm_pop_n(pvm, 2);
+    vm_push(pvm, vec);
+    return SK_TRUE;
+}
+
+static int sk_vectorp(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, IS_VECTOR(obj) ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+static int sk_vector_length(SKState* pSK)
+{
+    Vector* vec = vector_arg(pSK, vm_pop(&pSK->vm), "vector-length");
+    if (!vec) return SK_FALSE;
+    vm_push(&pSK->vm, MAKE_NUM(vec->length));
+    return SK_TRUE;
+}
+
+static int sk_vector_ref(SKState* pSK)
+{
+    Object* idx = vm_pop(&pSK->vm);
+    Vector* vec = vector_arg(pSK, vm_pop(&pSK->vm), "vector-ref");
+    int i;
+    if (!vec || !index_arg(pSK, idx, vec->length - 1, "vector-ref", &i)) return SK_FALSE;
+    vm_push(&pSK->vm, vec->items[i]);
+    return SK_TRUE;
+}
+
+static int sk_vector_set(SKState* pSK)
+{
+    Object* value = vm_pop(&pSK->vm);
+    Object* idx = vm_pop(&pSK->vm);
+    Vector* vec = vector_arg(pSK, vm_pop(&pSK->vm), "vector-set!");
+    int i;
+    if (!vec || !index_arg(pSK, idx, vec->length - 1, "vector-set!", &i)) return SK_FALSE;
+    vec->items[i] = value;
+    vm_push(&pSK->vm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// The optional [start [end]] of a vector procedure, after its fixed
+// arguments: the n-fixed values on top of the stack (popped here)
+static int range_args(SKState* pSK, int extra, int length, const char* name, int* start, int* end)
+{
+    *start = 0;
+    *end = length;
+    Object* e = extra == 2 ? vm_pop(&pSK->vm) : NULL;
+    Object* s = extra >= 1 ? vm_pop(&pSK->vm) : NULL;
+    if (s && !index_arg(pSK, s, length, name, start)) return FALSE;
+    if (e && !index_arg(pSK, e, length, name, end)) return FALSE;
+    if (*start > *end)
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "%s: start is after end", name);
+        yyerror(pSK, msg);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+// (vector->list v [start [end]])
+static int sk_vector_to_list(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n > 3) { yyerror(pSK, "'vector->list' called with too many arguments, expects at most 3"); return SK_FALSE; }
+
+    Vector* vec = vector_arg(pSK, vm_peek(pvm, n - 1), "vector->list");
+    int start, end;
+    if (!vec || !range_args(pSK, n - 1, vec->length, "vector->list", &start, &end)) return SK_FALSE;
+
+    // cons from the last element, keeping the list built so far on the
+    // stack above the vector (any length: nothing else is pushed)
+    vm_push(pvm, NULL);
+    for (int i = end - 1; i >= start; i--)
+    {
+        Pair* pair = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);    // may GC
+        pair->car = ((Vector*)vm_peek(pvm, 1))->items[i];
+        pair->cdr = vm_peek(pvm, 0);
+        pvm->stack[pvm->sp - 1] = (Object*)pair;
+    }
+    Object* list = vm_pop(pvm);
+    vm_pop(pvm);
+    vm_push(pvm, list);
+    return SK_TRUE;
+}
+
+// (list->vector list); also <list->vector>, for quasiquoted vectors
+static int sk_list_to_vector(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    Object* list = vm_peek(pvm, 0);         // stays on the stack while the vector is made
+    int n = 0;
+    Object* p = list;
+    for (; IS_PAIR(p); p = ((Pair*)p)->cdr)
+        n++;
+    if (p != NULL) {
+        yyerror(pSK, "argument to 'list->vector' must be a list");
+        return SK_FALSE;
+    }
+
+    Object* vec = vm_new_vector(pvm, n, MAKE_UNSPEC());
+    p = vm_peek(pvm, 0);
+    for (int i = 0; i < n; i++, p = ((Pair*)p)->cdr)
+        ((Vector*)vec)->items[i] = ((Pair*)p)->car;
+    vm_pop(pvm);
+    vm_push(pvm, vec);
+    return SK_TRUE;
+}
+
+// (vector-fill! v fill [start [end]])
+static int sk_vector_fill(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n < 2 || n > 4) { yyerror(pSK, "'vector-fill!' expects 2 to 4 arguments"); return SK_FALSE; }
+
+    Vector* vec = vector_arg(pSK, vm_peek(pvm, n - 1), "vector-fill!");
+    Object* fill = vm_peek(pvm, n - 2);
+    int start, end;
+    if (!vec || !range_args(pSK, n - 2, vec->length, "vector-fill!", &start, &end)) return SK_FALSE;
+    for (int i = start; i < end; i++)
+        vec->items[i] = fill;
+    vm_pop_n(pvm, 2);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (vector-copy v [start [end]])
+static int sk_vector_copy(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n > 3) { yyerror(pSK, "'vector-copy' called with too many arguments, expects at most 3"); return SK_FALSE; }
+
+    Vector* vec = vector_arg(pSK, vm_peek(pvm, n - 1), "vector-copy");
+    int start, end;
+    if (!vec || !range_args(pSK, n - 1, vec->length, "vector-copy", &start, &end)) return SK_FALSE;
+
+    Object* copy = vm_new_vector(pvm, end - start, MAKE_UNSPEC());     // vec is on the stack
+    vec = (Vector*)vm_peek(pvm, 0);
+    for (int i = start; i < end; i++)
+        ((Vector*)copy)->items[i - start] = vec->items[i];
+    vm_pop(pvm);
+    vm_push(pvm, copy);
+    return SK_TRUE;
+}
+
+// (vector-append v ...)
+static int sk_vector_append(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+
+    int total = 0;
+    for (int i = 0; i < n; i++)
+    {
+        Vector* vec = vector_arg(pSK, vm_peek(pvm, i), "vector-append");
+        if (!vec) return SK_FALSE;
+        total += vec->length;
+    }
+
+    Object* result = vm_new_vector(pvm, total, MAKE_UNSPEC());     // the arguments are on the stack
+    int at = 0;
+    for (int i = n - 1; i >= 0; i--)
+    {
+        Vector* vec = (Vector*)vm_peek(pvm, i);
+        for (int j = 0; j < vec->length; j++)
+            ((Vector*)result)->items[at++] = vec->items[j];
+    }
+    vm_pop_n(pvm, n);
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+// (vector-map proc v ...) and (vector-for-each proc v ...): proc on the
+// elements at each index, up to the shortest vector's length
+static int vector_map_each(SKState* pSK, int map, const char* name)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    int nvec = n - 1;
+    if (nvec < 1) { yyerror(pSK, "expects a procedure and at least one vector"); return SK_FALSE; }
+
+    int length = -1;
+    for (int i = 0; i < nvec; i++)
+    {
+        Vector* vec = vector_arg(pSK, vm_peek(pvm, i), name);
+        if (!vec) return SK_FALSE;
+        if (length < 0 || vec->length < length)
+            length = vec->length;
+    }
+
+    // the result vector sits on the stack above the arguments (so it is reachable)
+    vm_push(pvm, map ? vm_new_vector(pvm, length, MAKE_UNSPEC()) : MAKE_UNSPEC());
+
+    Object* args[64];
+    if (nvec > 64) { yyerror(pSK, "too many vectors"); return SK_FALSE; }
+    for (int k = 0; k < length; k++)
+    {
+        // argument i is at depth 1 + (nvec - 1 - i); proc is at depth 1 + nvec
+        for (int i = 0; i < nvec; i++)
+            args[i] = ((Vector*)vm_peek(pvm, 1 + (nvec - 1 - i)))->items[k];
+        Object* value = vm_call_function(pvm, vm_peek(pvm, 1 + nvec), nvec, args);
+        if (pvm->abort_exec)
+            return SK_FALSE;
+        if (map)
+            ((Vector*)vm_peek(pvm, 0))->items[k] = value;
+    }
+
+    Object* result = vm_pop(pvm);
+    vm_pop_n(pvm, n);
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+static int sk_vector_map(SKState* pSK) { return vector_map_each(pSK, 1, "vector-map"); }
+static int sk_vector_for_each(SKState* pSK) { return vector_map_each(pSK, 0, "vector-for-each"); }
 
 //-----------------------------------------------
 // built-in function: reverse
@@ -3253,6 +3558,21 @@ static SKFuncSet built_in_funcs[] =
     { "reverse", sk_reverse, 1},
     { "append", sk_append, SK_ARITY_ANY },
     { "<append>", sk_append, SK_ARITY_ANY },     // quasiquote's, which programs cannot redefine
+    { "vector", sk_vector, SK_ARITY_ANY },
+    { "<vector>", sk_vector, SK_ARITY_ANY },     // vector literals' (programs cannot redefine it)
+    { "make-vector", sk_make_vector, SK_ARITY_ONE_OR_MORE },
+    { "vector?", sk_vectorp, 1 },
+    { "vector-length", sk_vector_length, 1 },
+    { "vector-ref", sk_vector_ref, 2 },
+    { "vector-set!", sk_vector_set, 3 },
+    { "vector->list", sk_vector_to_list, SK_ARITY_ONE_OR_MORE },
+    { "list->vector", sk_list_to_vector, 1 },
+    { "<list->vector>", sk_list_to_vector, 1 },     // quasiquoted vectors' (programs cannot redefine it)
+    { "vector-fill!", sk_vector_fill, SK_ARITY_TWO_OR_MORE },
+    { "vector-copy", sk_vector_copy, SK_ARITY_ONE_OR_MORE },
+    { "vector-append", sk_vector_append, SK_ARITY_ANY },
+    { "vector-map", sk_vector_map, SK_ARITY_TWO_OR_MORE },
+    { "vector-for-each", sk_vector_for_each, SK_ARITY_TWO_OR_MORE },
 
     // memory management
     { "gc", sk_gc, 0 },

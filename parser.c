@@ -20,6 +20,7 @@
 static int expr(SKState* pSK);
 static void quote_datum(SKState* pSK);
 static void qq_datum(SKState* pSK, int depth);
+static void quote_vector(SKState* pSK);
 
 #define PARSE_LOG(...) (void)(pSK && pSK->parse_log_enabled && indent(pSK) && fprintf(stderr, __VA_ARGS__))
 
@@ -160,11 +161,28 @@ static Object* global_key(SKState* pSK, const char* name)
 }
 
 //-----------------------------------------------
+// Emit a call of one of the natives that compiled forms use, such as
+// <append> for quasiquote, with nargs arguments already pushed. These
+// names cannot be written in programs, so redefining append (say) does not
+// change what the forms do.
+//-----------------------------------------------
+static void emit_internal_call(SKState* pSK, const char* name, int nargs)
+{
+    Object* fn = vm_get_global(&pSK->vm, vm_new_string(&pSK->vm, name));
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+    vm_emit(&pSK->vm, OP_CALL);
+    vm_emit(&pSK->vm, (VMCode_t)fn);
+    vm_emit(&pSK->vm, (VMCode_t)nargs);
+}
+
+//-----------------------------------------------
 // paren nesting that a single token contributes
 //-----------------------------------------------
 static int token_depth(int token)
 {
-    return token == '(' ? 1 : (token == ')' ? -1 : 0);
+    return (token == '(' || token == VECTOR_OPEN) ? 1 : (token == ')' ? -1 : 0);
 }
 
 //-----------------------------------------------
@@ -300,6 +318,13 @@ static int atom(SKState* pSK)
         // `datum
         match(pSK, QUASIQUOTE);
         qq_datum(pSK, 1);
+        unindent(pSK);
+        break;
+
+    case VECTOR_OPEN:
+        // #(a b c) evaluates to itself
+        match(pSK, VECTOR_OPEN);
+        quote_vector(pSK);
         unindent(pSK);
         break;
 
@@ -872,6 +897,22 @@ static int qq_is_abbreviation(SKState* pSK)
 }
 
 //-----------------------------------------------
+// A vector literal, after its #(: the elements are data, as if quoted
+// (vectors evaluate to themselves), and <vector> builds it
+//-----------------------------------------------
+static void quote_vector(SKState* pSK)
+{
+    int count = 0;
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        quote_datum(pSK);
+        count++;
+    }
+    match(pSK, ')');
+    emit_internal_call(pSK, "<vector>", count);
+}
+
+//-----------------------------------------------
 // quote_datum - recursively emit code to construct a quoted value
 // Numbers, strings, bools, chars are self-evaluating.
 // Identifiers become symbols. Lists become OP_LIST constructions.
@@ -967,6 +1008,11 @@ static void quote_datum(SKState* pSK)
             match(pSK, QUOTE);
         }
     }
+    else if (LOOKAHEAD == VECTOR_OPEN)
+    {
+        match(pSK, VECTOR_OPEN);
+        quote_vector(pSK);
+    }
     else if (LOOKAHEAD == QUASIQUOTE || LOOKAHEAD == UNQUOTE || LOOKAHEAD == UNQUOTE_SPLICING)
     {
         // in quoted data these are just data: `x is (quasiquote x), ,x is
@@ -1047,6 +1093,7 @@ static int quote_expr(SKState* pSK)
 // compiles just like a quoted one.
 //-----------------------------------------------
 static void qq_datum(SKState* pSK, int depth);
+static void quote_vector(SKState* pSK);
 static void qq_list_rest(SKState* pSK, int depth);
 
 // The operand of an unquote ('name' says which), after the unquote itself:
@@ -1082,6 +1129,13 @@ static void qq_datum(SKState* pSK, int depth)
     {
         match(pSK, '(');
         qq_list_rest(pSK, depth);
+    }
+    else if (token == VECTOR_OPEN)
+    {
+        // `#(a ,b ,@c): the elements as a quasiquoted list, made a vector
+        match(pSK, VECTOR_OPEN);
+        qq_list_rest(pSK, depth);
+        emit_internal_call(pSK, "<list->vector>", 1);
     }
     else if ((token == UNQUOTE || token == UNQUOTE_SPLICING || token == QUASIQUOTE) && qq_is_abbreviation(pSK))
     {
@@ -1219,12 +1273,7 @@ static void qq_list_rest(SKState* pSK, int depth)
         pieces++;
     }
 
-    // (append piece ...): the append native itself, so that redefining
-    // append does not change what quasiquote builds
-    Object* append_fn = vm_get_global(&pSK->vm, vm_new_string(&pSK->vm, "<append>"));
-    vm_emit(&pSK->vm, OP_CALL);
-    vm_emit(&pSK->vm, (VMCode_t)append_fn);
-    vm_emit(&pSK->vm, (VMCode_t)pieces);
+    emit_internal_call(pSK, "<append>", pieces);    // (append piece ...)
 }
 
 static int quasiquote_expr(SKState* pSK)
@@ -2324,13 +2373,7 @@ static int guard_expr(SKState* pSK)
     match(pSK, ')');
     let_create_lambda(pSK, NULL, 0, NULL);           // the body thunk, up to guard's ')'
 
-    Object* guard_fn = vm_get_global(&pSK->vm, vm_new_string(&pSK->vm, "<guard>"));
-    CodeChunk* chunk = vm_get_current_chunk();
-    pSK->last_call_offset = (int)chunk->count;
-    pSK->last_call_chunk = chunk;
-    vm_emit(&pSK->vm, OP_CALL);
-    vm_emit(&pSK->vm, (VMCode_t)guard_fn);
-    vm_emit(&pSK->vm, 2);
+    emit_internal_call(pSK, "<guard>", 2);
 
     unindent(pSK);
     return 0;

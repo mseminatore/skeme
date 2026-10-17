@@ -446,7 +446,7 @@ int yylex(SKState* pSK)
     else
         token = next_token(pSK);
 
-    if (token == '(')
+    if (token == '(' || token == VECTOR_OPEN)      // #( opens like (
         pSK->paren_depth++;
     else if (token == ')')
         pSK->paren_depth--;
@@ -626,6 +626,11 @@ yylex01:
                 pSK->yylval.ival = c;
                 return CHAR;
             }
+        }
+        else if (next == '(')
+        {
+            strcpy(pSK->yylval.word, "#(");
+            return VECTOR_OPEN;     // a vector literal, #(a b c)
         }
         else
         {

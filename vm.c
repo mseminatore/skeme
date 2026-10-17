@@ -105,6 +105,11 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
     if (IS_CHAR(obj))
     {
         char c = AS_CHAR(obj);
+        if (flags == VM_PRINT_PLAIN)
+        {
+            fputc(c, stream);       // display shows the character itself
+            return;
+        }
         switch (c)
         {
         case '\n':   fprintf(stream, "#\\newline"); break;
@@ -138,17 +143,28 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
             if (VM_PRINT_PLAIN == flags)
                 fprintf(stream, "%s", strObj->value);
             else
-                fprintf(stream, "\"%s\"", strObj->value);
+            {
+                // quoted, with the escapes the reader understands
+                fputc('"', stream);
+                for (const char* s = strObj->value; *s; s++)
+                {
+                    if (*s == '"' || *s == '\\') { fputc('\\', stream); fputc(*s, stream); }
+                    else if (*s == '\n') fputs("\\n", stream);
+                    else if (*s == '\t') fputs("\\t", stream);
+                    else fputc(*s, stream);
+                }
+                fputc('"', stream);
+            }
         }
         break;
 
         case OBJ_PAIR:
         {
             Pair* pair = (Pair*)obj;
-            if (VM_PRINT_PLAIN == flags)
-                fprintf(stream, "(");
+            if (VM_PRINT_FANCY == flags)
+                fprintf(stream, "'(");      // the REPL marks a list as data
             else
-                fprintf(stream, "'(");
+                fprintf(stream, "(");
 
             vm_print_object(pair->car, flags, stream); // display car
 
@@ -176,6 +192,20 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
 
         case OBJ_NATIVE_FN:
             fprintf(stream, "#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
+            break;
+
+        case OBJ_VECTOR:
+        {
+            Vector* vec = (Vector*)obj;
+            fprintf(stream, "#(");
+            for (int i = 0; i < vec->length; i++)
+            {
+                if (i)
+                    fprintf(stream, " ");
+                vm_print_object(vec->items[i], flags, stream);
+            }
+            fprintf(stream, ")");
+        }
             break;
 
         case OBJ_ERROR:
@@ -2210,6 +2240,14 @@ static void blackenObject(VM* pvm, Object* object)
 		}
         break;
 
+    case OBJ_VECTOR:
+        {
+            Vector* vec = (Vector*)object;
+            for (int i = 0; i < vec->length; i++)
+                markObject(pvm, vec->items[i]);
+        }
+        break;
+
     case OBJ_ERROR:
         markObject(pvm, ((ErrorObject*)object)->message);
         markObject(pvm, ((ErrorObject*)object)->irritants);
@@ -2263,7 +2301,7 @@ static void removeWhiteFromTable(HashTable* table) {
     size_t index = 0;
     ht_key_t key;
     ht_value_t value;
-    int SK_UNUSED removed = 0;
+    int removed = 0;
 
     // only remove unmarked strings
     while(ht_next(table, &index, &key, &value))
@@ -2281,6 +2319,13 @@ static void removeWhiteFromTable(HashTable* table) {
     }
 
     GC_LOG("-- gc removing (%d) white objects from intern table\n", removed);
+
+    // Removed entries leave tombstones, which lengthen lookups, and a table
+    // never shrank. If this collection removed at least as many entries as
+    // remain, compact it to fit (only now: ht_shrink moves entries, so not
+    // during the ht_next loop above).
+    if (removed > 0 && (size_t)removed >= ht_size(table))
+        ht_shrink(table);
 }
 
 // The intern tables are weak: they do not keep strings and symbols alive.
@@ -2454,6 +2499,25 @@ Object* vm_new_error(VM* pvm, Object* message, Object* irritants)
 }
 
 //--------------------------------------------------------------
+// A new vector of 'length' elements, each 'fill' (which must be reachable:
+// the allocation may collect). The elements follow the header in the
+// same allocation.
+//--------------------------------------------------------------
+Object* vm_new_vector(VM* pvm, int length, Object* fill)
+{
+    if (length < 0)
+        length = 0;
+    vm_push(pvm, fill);
+    Vector* vec = (Vector*)vm_newObject(pvm, sizeof(Vector) + sizeof(Object*) * (size_t)length, OBJ_VECTOR);
+    fill = vm_pop(pvm);
+    vec->length = length;
+    vec->items = (Object**)(vec + 1);
+    for (int i = 0; i < length; i++)
+        vec->items[i] = fill;
+    return (Object*)vec;
+}
+
+//--------------------------------------------------------------
 // The printed form of an object, into buf (truncated to fit): as write
 // prints it if 'readable', else as display does. An error object prints
 // as its message followed by its irritants, as an uncaught error reports it.
@@ -2518,6 +2582,19 @@ static void format_object(Object* obj, int readable, char* buf, size_t size, siz
         {
             format_add(buf, size, len, " . ");
             format_object(p, readable, buf, size, len, depth + 1);
+        }
+        format_add(buf, size, len, ")");
+    }
+    else if (IS_VECTOR(obj))
+    {
+        Vector* vec = (Vector*)obj;
+        format_add(buf, size, len, "#(");
+        for (int i = 0; i < vec->length && *len + 1 < size; i++)
+        {
+            if (i)
+                format_add(buf, size, len, " ");
+            if (i >= 50) { format_add(buf, size, len, "..."); break; }
+            format_object(vec->items[i], readable, buf, size, len, depth + 1);
         }
         format_add(buf, size, len, ")");
     }

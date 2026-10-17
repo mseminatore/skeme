@@ -85,9 +85,9 @@ typedef enum {
 //// #   define VM_LOG __noop
 //#endif
 
-#define VM_PRINT_FANCY 0
-#define VM_PRINT_PLAIN 1
-#define VM_PRINT_READABLE 1
+#define VM_PRINT_FANCY 0       // the REPL echo: as write, lists marked with '
+#define VM_PRINT_PLAIN 1       // display: strings and characters as their text
+#define VM_PRINT_READABLE 2    // write: strings quoted, characters as #\c, so it reads back
 
 #define PRINT_TRUE  "true"      // historically this would be #t
 #define PRINT_FALSE "false"     // historically this would be #f
@@ -148,6 +148,7 @@ enum
     OBJ_SYMBOL,
     OBJ_CONTINUATION,
     OBJ_ERROR,          // an error object: (error msg irritant ...), or an error the VM raised
+    OBJ_VECTOR,         // #(a b c)
 
 	// mark the last object type
     OBJ_LAST
@@ -442,6 +443,14 @@ typedef struct Upvalue {
 // An escape continuation, made by call/cc. Calling it returns its value
 // from that call/cc, but only while the call/cc is still running (its
 // "dynamic extent"); afterwards it is invalid. See sk_call_cc.
+// a vector: length elements, stored in the same allocation, after the
+// header (vm_new_vector)
+typedef struct Vector {
+    Object base;
+    int length;
+    Object** items;         // points just past this header
+} Vector;
+
 // an error object (R7RS): what (error message irritant ...) raises, and
 // what a runtime error raises when a handler is installed
 typedef struct ErrorObject {
@@ -586,6 +595,8 @@ void vm_stop(VM* pvm);     // like vm_abort, for an error already reported
 void vm_abort_uncatchable(VM* pvm, const char* msg);   // vm_abort that handlers do not see
 Object* vm_raise(VM* pvm, Object* obj, int continuable);  // raise obj (see VM.handlers)
 Object* vm_new_error(VM* pvm, Object* message, Object* irritants);
+Object* vm_new_vector(VM* pvm, int length, Object* fill);
+#define IS_VECTOR(obj)      (OBJ_TYPE(obj) == OBJ_VECTOR)
 void vm_format_object(Object* obj, int readable, char* buf, size_t size);   // printed form, truncated
 void vm_fatal(VM* pvm, const char* msg);   // an unrecoverable failure (see VM.fatal_handler)
 void* vm_check_alloc(VM* pvm, void* p);     // p, or vm_fatal if an allocation returned NULL

@@ -338,7 +338,7 @@ Checked individually on `main`. Each item below fails today.
 - [x] `guard` / `raise` / `with-exception-handler` (see #21)
 
 **Data**
-- [ ] vectors (`make-vector`, `vector-ref`, `vector-set!`, `vector`, `#(...)`)
+- [x] vectors (`make-vector`, `vector-ref`, `vector-set!`, `vector`, `#(...)`) (see #22)
 - [ ] hash tables
 - [x] dotted-pair literals in quoted data: `'(1 . 2)` (the printer handles `(cons 1 2)` fine; this is a lexer/parser gap and currently also aborts, see the syntax-error issue) (see #14)
 
@@ -719,3 +719,31 @@ The `read` builtin read `'x` as a symbol named `'` followed by `x`, and did not 
 
 ### Verification
 29 new tests in `test.scm` (508 total; the read tests use the fixture `tests/read_abbrev.txt`) and an "Exceptions" suite in `tests/test_error.c` (363 total): caught errors are neither reported nor counted, uncaught raises and errors are reported with the object or message and irritants, an unmatched guard reports the original error, stack overflow is not catchable and leaves no handler installed. Everything passes in Debug and Release, plus `ctest`; `bench.scm` speed is unchanged.
+
+---
+
+## 22. ✅ Vectors; write vs display; equal? on long lists; intern tables shrink
+
+**Labels:** enhancement, bug
+**Status:** Fixed (working tree, not yet committed). Item from #8.
+
+### Vectors
+* A new object type, `Vector`: the elements follow the header in one allocation (`vm_new_vector`), traced by the GC.
+* Literals `#(a b c)`: the lexer returns `VECTOR_OPEN` for `#(`, counted as an open paren (error recovery and token replay track nesting). A literal evaluates to itself, its elements data as if quoted, built by `<vector>`; `'#(...)` is the same. Quasiquoted vectors work: `` `#(1 ,x ,@xs) `` compiles as a quasiquoted list passed to `<list->vector>`. Like `<append>`, these internal names cannot be redefined.
+* Procedures: `vector`, `make-vector`, `vector?`, `vector-length`, `vector-ref`, `vector-set!`, `vector->list` and `vector-copy` (with optional start and end), `list->vector`, `vector-fill!` (optional range), `vector-append`, `vector-map` and `vector-for-each` (one or more vectors, up to the shortest). Indexes are checked: a bad one is a (catchable) error.
+* Vectors print as `#(...)`, `read` reads them, `equal?` compares them element by element, and `eval` accepts expressions containing them.
+
+### write and display were the same
+`VM_PRINT_READABLE` and `VM_PRINT_PLAIN` had the same value, so `write` printed like `display`: strings without quotes, so output did not read back. And `display` printed characters as `#\a`. Now `write` (and the REPL's echo) quotes strings, with `\"`, `\`, `\n` and `\t` escaped, and writes characters as `#\a`; `display` prints both as their text. Only the REPL's echo marks a list with `'`.
+
+### equal?
+`equal?` recursed on every `cdr`, so comparing long lists could exhaust the C stack. It now loops along lists (recursing only into elements), compares floats by value, and compares vectors.
+
+### Intern tables shrink
+The interned string and symbol tables are pruned at every collection, which leaves tombstones, and they never shrank. Using the hash library's `ht_shrink` (from its latest update), a collection that removes at least as many entries as remain now compacts the table; it runs after the pruning loop, since shrinking moves entries.
+
+### Tests under GC stress
+A few tests keep 100,000-element structures alive. Under the GC-stress build, which collects at every allocation and so traces all live data each time, they made the run take hours. They now take their size from `(gc-stress?)`: 100,000 normally, 2,000 under stress.
+
+### Verification
+23 new tests in `test.scm` (531 total) and new C tests in `tests/test_error.c` (376 total): `write` and `display` output, the symbol table shrinking after 20,000 dead symbols, and vector errors. Everything passes in Debug, Release and the GC-stress build (which also covers the hash library update), plus `ctest`; `bench.scm` speed is unchanged.
