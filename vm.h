@@ -510,6 +510,14 @@ typedef struct VM {
     // top-level code being compiled or run (the REPL's, each eval's). A
     // procedure the compiler is still building is a compile root until its
     // parent's code refers to it.
+    // Running out of memory. With a heap limit (bytes, 0 for none), a run
+    // whose live objects outgrow it stops with an "out of memory" error and
+    // the session goes on. If memory really runs out, the VM cannot go on:
+    // vm_fatal calls fatal_handler (sk_set_fatal_handler), which may longjmp
+    // out, or else prints the message and exits.
+    size_t heap_limit;
+    void (*fatal_handler)(struct SKState* sk, const char* msg);
+
     char** source_files;            // file names that code comes from (SourceLine.file)
     int source_file_count;
     int source_file_capacity;
@@ -558,6 +566,8 @@ void vm_format_float(double value, char* buf, size_t size);
 // nothing outside the stack.
 void vm_abort(VM* pvm, const char* msg);
 void vm_stop(VM* pvm);     // like vm_abort, for an error already reported
+void vm_fatal(VM* pvm, const char* msg);   // an unrecoverable failure (see VM.fatal_handler)
+void* vm_check_alloc(VM* pvm, void* p);     // p, or vm_fatal if an allocation returned NULL
 
 void vm_stack_overflow(VM* pvm);
 

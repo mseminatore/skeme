@@ -443,13 +443,15 @@ static int sk_exit(SKState* pSK)
         }
 	}
 
+    // End the session without ending the process: stop the run and let
+    // the host see bDone (main.c then exits with exit_code). A library
+    // must not call exit(); in a browser that ends the whole page.
     pSK->bDone = TRUE;
+    pSK->exit_called = TRUE;
+    pSK->exit_code = exit_code;
+    vm_stop(&pSK->vm);
 
-    printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
-
-    vm_print_profile(&pSK->vm);
-
-    exit(exit_code);
+    vm_push(&pSK->vm, MAKE_UNSPEC());
     return SK_TRUE;
 }
 
@@ -2741,7 +2743,7 @@ static int sk_list_to_string(SKState* pSK)
         len++;
 
     char* buf = (char*)malloc(len + 1);
-    if (!buf) exit(1);
+    vm_check_alloc(&pSK->vm, buf);
 
     size_t i = 0;
     Object* p = list;

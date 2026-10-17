@@ -3,6 +3,7 @@
 //--------------------------------------------------------------
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
 #include "../hash/testy/test.h"
 #include "../error.h"
 #include "../sk.h"
@@ -77,6 +78,19 @@ static Object* get_global(SKState* sk, const char* name)
 static int no_value(Object* value)
 {
     return value == NULL || IS_UNBOUND(value);
+}
+
+//--------------------------------------------------------------
+// A fatal handler as an embedder would write one: back to the host
+//--------------------------------------------------------------
+static jmp_buf g_fatal_jump;
+static char g_fatal_message[128];
+
+static void test_fatal_handler(SKState* sk, const char* msg)
+{
+    (void)sk;
+    strncpy(g_fatal_message, msg, sizeof(g_fatal_message) - 1);
+    longjmp(g_fatal_jump, 1);
 }
 
 //--------------------------------------------------------------
@@ -636,6 +650,59 @@ void test_error(int argc, char *argv[])
         TEST(sk.vm.numObjects < before + 20);
         TEST(AS_NUM(get_global(&sk, "cr-x")) == 1);
         TEST(g_test_ctx.error_count == 0);
+
+        sk_shutdown(&sk);
+    }
+
+    // Test: what an embedder (a web REPL, say) relies on
+    SUITE("Embedding");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("(exit) ends the session, not the process...");
+        eval_quietly(&sk, "(define em-a 1) (exit 5) (define em-b 2)");
+        TEST(sk.bDone);
+        TEST(sk.exit_called);
+        TEST(sk.exit_code == 5);
+        TEST(AS_NUM(get_global(&sk, "em-a")) == 1);
+        TEST(no_value(get_global(&sk, "em-b")));
+        TEST(g_test_ctx.error_count == 0);
+        TEST(sk.vm.sp == 0);
+        sk.bDone = sk.exit_called = 0;          // a host can carry on
+        eval_quietly(&sk, "(define em-c 3)");
+        TEST(AS_NUM(get_global(&sk, "em-c")) == 3);
+
+        COMMENT("A run that outgrows the heap limit stops, and the session goes on...");
+        vm_gc(&sk.vm);
+        sk_set_heap_limit(&sk, sk.vm.allocatedBytes + 256 * 1024);
+        reset_test_context();
+        eval_quietly(&sk, "(define (em-grow l) (em-grow (cons 1 l))) (define em-g (em-grow '()))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "out of memory") != NULL);
+        TEST(no_value(get_global(&sk, "em-g")));
+        TEST(sk.vm.sp == 0);
+        reset_test_context();
+        eval_quietly(&sk, "(define em-after (length (list 1 2 3)))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "em-after")) == 3);
+        vm_gc(&sk.vm);
+        TEST(sk.vm.allocatedBytes <= sk.vm.heap_limit);    // the runaway list was collected
+        sk_set_heap_limit(&sk, 0);
+
+        COMMENT("A fatal failure goes to the embedder's handler...");
+        sk_set_fatal_handler(&sk, test_fatal_handler);
+        g_fatal_message[0] = '\0';
+        if (setjmp(g_fatal_jump) == 0)
+        {
+            vm_fatal(&sk.vm, "out of memory");
+            TEST(0);    // not reached: the handler jumps back
+        }
+        TEST(strcmp(g_fatal_message, "out of memory") == 0);
+        sk_set_fatal_handler(&sk, NULL);
 
         sk_shutdown(&sk);
     }

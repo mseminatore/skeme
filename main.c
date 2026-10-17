@@ -15,11 +15,7 @@
 
 SKState sk;
 
-// globals
-int g_bDebug = FALSE;
-const char * g_szOutputFilename = "a.out";
-int yydebug = FALSE;
-int g_bInteractive = FALSE;
+// command-line settings (g_bDebug and the rest) are defined in sk.c
 extern int g_bProfile;
 
 CodeChunk repl_chunk;
@@ -186,8 +182,14 @@ int main(int argc, char *argv[])
 
     vm_print_profile(&sk.vm);
 
-    // a script run with errors exits non-zero; the interactive REPL does not
+    // (exit code) sets the code; otherwise a script run with errors exits
+    // non-zero, and the interactive REPL does not
     int exit_code = (!g_bInteractive && argc != iFirstArg && sk.err_count) ? 1 : 0;
+    if (sk.exit_called)
+    {
+        exit_code = sk.exit_code;
+        printf(TERM_GREEN"\nExiting skeme interpreter with code (%d). Goodbye!\n\n"TERM_RESET, exit_code);
+    }
 
     LOG("Shutting down...");
     sk_shutdown(&sk);

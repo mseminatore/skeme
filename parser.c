@@ -1460,8 +1460,8 @@ static void replay_record(SKState* pSK, TokenReplay* replay, int* capacity, int 
     if (replay->count == *capacity)
     {
         *capacity = *capacity ? *capacity * 2 : 32;
-        replay->tokens = (int*)realloc(replay->tokens, sizeof(int) * *capacity);
-        replay->values = (YYLVAL*)realloc(replay->values, sizeof(YYLVAL) * *capacity);
+        replay->tokens = (int*)vm_check_alloc(&pSK->vm, realloc(replay->tokens, sizeof(int) * *capacity));
+        replay->values = (YYLVAL*)vm_check_alloc(&pSK->vm, realloc(replay->values, sizeof(YYLVAL) * *capacity));
     }
     replay->tokens[replay->count] = token;
     replay->values[replay->count] = pSK->yylval;
@@ -1535,7 +1535,7 @@ static int body_defines(SKState* pSK)
 
     // record the leading define forms, and the two tokens after them that
     // show the next form is not a define
-    TokenReplay* replay = (TokenReplay*)calloc(1, sizeof(TokenReplay));
+    TokenReplay* replay = (TokenReplay*)vm_check_alloc(&pSK->vm, calloc(1, sizeof(TokenReplay)));
     int capacity = 0;
     int depth_before = pSK->paren_depth - token_depth(LOOKAHEAD);
     int token = LOOKAHEAD;
@@ -1651,7 +1651,7 @@ static int letrec_expr(SKState* pSK)
     else
     {
         // record the binding list, from LOOKAHEAD's '(' through its ')'
-        TokenReplay* replay = (TokenReplay*)calloc(1, sizeof(TokenReplay));
+        TokenReplay* replay = (TokenReplay*)vm_check_alloc(&pSK->vm, calloc(1, sizeof(TokenReplay)));
         int capacity = 0, depth = 0, prev = 0;
         int depth_before = pSK->paren_depth - token_depth(LOOKAHEAD);
         int token = LOOKAHEAD;

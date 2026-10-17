@@ -329,6 +329,9 @@ int vm_init(VM* pvm) {
     pvm->compile_roots = NULL;
     pvm->compile_root_count = pvm->compile_root_capacity = 0;
 
+    pvm->heap_limit = 0;                // none (sk_set_heap_limit)
+    pvm->fatal_handler = NULL;          // print and exit (sk_set_fatal_handler)
+
     pvm->source_files = NULL;
     pvm->source_file_count = pvm->source_file_capacity = 0;
 
@@ -456,10 +459,8 @@ VMCode_t* vm_get_chunk_ip()
 //--------------------------------------------------------------
 int vm_emit(VM* pvm, VMCode_t opcode)
 {
-    if (g_current_chunk == NULL) {
-		fprintf(stderr, "No current code chunk set for VM emit!\n");
-		exit(1);
-	}
+    if (g_current_chunk == NULL)
+        vm_fatal(pvm, "no current code chunk to emit into");
 
     CodeChunk* chunk = g_current_chunk;
 
@@ -497,9 +498,9 @@ static int source_file_id(VM* pvm, const char* name)
     {
         pvm->source_file_capacity = GROW_CAPACITY(pvm->source_file_capacity);
         pvm->source_files = (char**)realloc(pvm->source_files, sizeof(char*) * pvm->source_file_capacity);
-        if (!pvm->source_files) exit(1);
+        vm_check_alloc(pvm, pvm->source_files);
     }
-    pvm->source_files[pvm->source_file_count] = sk_strdup(name);
+    pvm->source_files[pvm->source_file_count] = (char*)vm_check_alloc(pvm, sk_strdup(name));
     return pvm->source_file_count++;
 }
 
@@ -526,7 +527,7 @@ static void chunk_add_line(VM* pvm, CodeChunk* chunk, size_t offset)
     {
         chunk->line_capacity = GROW_CAPACITY(chunk->line_capacity);
         chunk->lines = (SourceLine*)realloc(chunk->lines, sizeof(SourceLine) * chunk->line_capacity);
-        if (!chunk->lines) exit(1);
+        vm_check_alloc(pvm, chunk->lines);
     }
     SourceLine* entry = &chunk->lines[chunk->line_count++];
     entry->offset = offset;
@@ -600,7 +601,7 @@ void vm_emit_number(VM* pvm, int val)
 void vm_emit_string(VM* pvm, const char* str)
 {
     vm_emit(pvm, OP_STRING);
-    vm_emit(pvm, (VMCode_t)sk_strdup(str));
+    vm_emit(pvm, (VMCode_t)vm_check_alloc(pvm, sk_strdup(str)));
 }
 
 void vm_emit_symbol(VM* pvm, const char* name)
@@ -608,7 +609,7 @@ void vm_emit_symbol(VM* pvm, const char* name)
     // strdup the name so the bytecode pointer remains valid
     // (yylval.word is a temp buffer that gets overwritten)
     vm_emit(pvm, OP_SYMBOL);
-    vm_emit(pvm, (VMCode_t)sk_strdup(name));
+    vm_emit(pvm, (VMCode_t)vm_check_alloc(pvm, sk_strdup(name)));
 }
 
 //--------------------------------------------------------------
@@ -1647,7 +1648,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
             // the native requested a call (apply): make it from here, with
             // its arguments taken off the stack. Nothing allocates between
             // the pops and vm_call_function pushing them back.
-            Object** next_args = (Object**)malloc(sizeof(Object*) * (next_nargs ? next_nargs : 1));
+            Object** next_args = (Object**)vm_check_alloc(pvm, malloc(sizeof(Object*) * (next_nargs ? next_nargs : 1)));
             pvm->call_root = next;
             for (int i = next_nargs - 1; i >= 0; i--)
                 next_args[i] = vm_pop(pvm);
@@ -1927,7 +1928,7 @@ static void markObject(VM* pvm, Object* object) {
         pvm->grayStack = (Object**)realloc(pvm->grayStack, sizeof(Object*) * pvm->grayCapacity);
 
         // fatal error
-        if (pvm->grayStack == NULL) exit(1);
+        vm_check_alloc(pvm, pvm->grayStack);
     }
 
     pvm->grayStack[pvm->grayCount++] = object;
@@ -2369,6 +2370,28 @@ void vm_stop(VM* pvm)
     pvm->ip = vm_halt_code;
 }
 
+//--------------------------------------------------------------
+// A failure the VM cannot recover from, such as memory running out. The
+// embedder's fatal handler may longjmp back to its own loop (and should
+// then reset or recreate the interpreter); without one, or if it returns,
+// print the message and exit.
+//--------------------------------------------------------------
+void vm_fatal(VM* pvm, const char* msg)
+{
+    if (pvm && pvm->fatal_handler)
+        pvm->fatal_handler(pvm->sk_state, msg);
+
+    fprintf(stderr, "FATAL: %s\n", msg);
+    exit(1);
+}
+
+void* vm_check_alloc(VM* pvm, void* p)
+{
+    if (!p)
+        vm_fatal(pvm, "out of memory");
+    return p;
+}
+
 void vm_abort(VM* pvm, const char* msg)
 {
     if (!pvm->abort_exec)
@@ -2464,10 +2487,13 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     // Allocate more or less memory
     void *new_ptr = realloc(ptr, new_size);
 
-    if (!new_ptr) {
-        fprintf(stderr, "Memory allocation failed!\n");
-        exit(1);
+    if (!new_ptr && new_size > old_size) {
+        // collect and try once more before giving up
+        vm_gc(pvm);
+        new_ptr = realloc(ptr, new_size);
     }
+    if (!new_ptr)
+        vm_fatal(pvm, "out of memory");
 
     // Update allocated and peak bytes
     pvm->allocatedBytes += new_size - old_size;
@@ -2479,6 +2505,17 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     if (pvm->allocatedBytes > pvm->nextGC) {
         vm_gc(pvm);
         pvm->nextGC = pvm->allocatedBytes * VM_GC_HEAP_GROWTH_FACTOR;
+    }
+
+    // Over the heap limit even after collecting: stop the run, like a stack
+    // overflow, so the session goes on (the allocation itself succeeds).
+    // Only while code runs: an abort outside a run would cancel the next one.
+    if (pvm->heap_limit && pvm->allocatedBytes > pvm->heap_limit &&
+        pvm->exec_depth > 0 && !pvm->abort_exec)
+    {
+        vm_gc(pvm);
+        if (pvm->allocatedBytes > pvm->heap_limit)
+            vm_abort(pvm, "out of memory (heap limit reached)");
     }
 
     // return the new pointer
@@ -2678,7 +2715,7 @@ void vm_push_root_chunk(VM* pvm, CodeChunk* chunk)
     {
         pvm->root_chunk_capacity = GROW_CAPACITY(pvm->root_chunk_capacity);
         pvm->root_chunks = (CodeChunk**)realloc(pvm->root_chunks, sizeof(CodeChunk*) * pvm->root_chunk_capacity);
-        if (!pvm->root_chunks) exit(1);
+        vm_check_alloc(pvm, pvm->root_chunks);
     }
     pvm->root_chunks[pvm->root_chunk_count++] = chunk;
 }
@@ -2695,7 +2732,7 @@ void vm_push_compile_root(VM* pvm, Object* obj)
     {
         pvm->compile_root_capacity = GROW_CAPACITY(pvm->compile_root_capacity);
         pvm->compile_roots = (Object**)realloc(pvm->compile_roots, sizeof(Object*) * pvm->compile_root_capacity);
-        if (!pvm->compile_roots) exit(1);
+        vm_check_alloc(pvm, pvm->compile_roots);
     }
     pvm->compile_roots[pvm->compile_root_count++] = obj;
 }

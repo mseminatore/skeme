@@ -644,3 +644,24 @@ A built-in that reported an error (`car` of a non-pair, say) returned a made-up 
 
 ### Verification
 35 new tests in `test.scm` (451 total) and new C tests in `tests/test_error.c` (319 total): runtime error lines in a loaded file and in an eval string (including after a dropped form), a native's error stopping the run, and the library's type errors. Everything passes in Debug, Release and the GC-stress build, plus `ctest`. The oversized-form stack test turns stress collection off while it runs: re-tracing its 130,000-word chunk at every allocation made the stress suite take far too long.
+
+---
+
+## 19. ✅ Embedding: no `exit()` from the library, out-of-memory handling, command-line globals
+
+**Labels:** bug
+**Status:** Fixed (working tree, not yet committed). Reported while building a web REPL.
+
+### The library called `exit()`
+Allocation failures called `exit(1)` (`vm_alloc`, `vm_emit`, the GC's gray stack, the root and line tables, `list->string`), and several allocations were not checked at all (token replay buffers, `vm_call_function`'s argument array, `strdup`ed operands). The `exit` builtin called `exit()` too. In a browser, either ends the whole session.
+* **Heap limit** (`sk_set_heap_limit`; none by default, so the command line behaves as before). When a run's live data outgrows the limit even after a collection, the allocation still succeeds, but the run stops with an ordinary `out of memory (heap limit reached)` error, like a stack overflow, and the interpreter carries on; the runaway data is collected. It is checked only while code runs, since an abort outside a run would cancel the next one.
+* **Real allocation failures** go to one place, `vm_fatal` (`vm_check_alloc` wraps each allocation). `vm_alloc` first collects and retries once. `vm_fatal` calls the embedder's handler (`sk_set_fatal_handler`), which may `longjmp` back to the host, which should then shut down and re-initialize the interpreter, because the failure may have come in the middle of a collection. Without a handler, or if it returns, skeme prints `FATAL: out of memory` and exits, as before.
+* **`(exit code)`** sets `bDone`, `exit_called` and `exit_code` on the `SKState` and stops the run; it no longer ends the process. `main.c` prints the goodbye message and exits with that code, so scripts (and `skunit`'s `(exit err_count)`) behave as before. An embedder sees the run end and decides what to do.
+
+### Command-line globals were defined in `main.c`
+`g_bDebug` (which the lexer reads), `g_bInteractive`, `yydebug` and `g_szOutputFilename` were defined in `main.c`, so anything embedding the library had to define them itself (`skeme_web.c` did, and so did the test program, in `tests/test_helpers.c`). They are now defined in `sk.c` and declared in `sk.h`. `tests/test_helpers.c` held nothing else (and an unused `g_bDone`), so it is removed, from `CMakeLists.txt` and the `Makefile` too. `skeme_web.c` can drop its copies.
+
+### Verification
+An "Embedding" suite in `tests/test_error.c` (335 total): `(exit 5)` in a string stops the run and records the code without ending the process, and the interpreter carries on; a run that outgrows a heap limit stops with an error, the session goes on, and the runaway data is collected; a fatal failure reaches the embedder's handler, which `longjmp`s back. Everything passes in Debug and Release, plus `ctest`.
+
+Note: since the hash library update (`1f25eb4`), Debug builds print `ht_free: table ... freed with N entries` when skeme frees a non-empty table (environments during collection, the globals at shutdown). skeme does this on purpose; defining `HT_WARN_FREE_NONEMPTY=0` for the hash library would silence it. Release builds are unaffected.

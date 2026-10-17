@@ -11,7 +11,29 @@
 // These public API functions don't accept SKState* parameter, so they need this global
 SKState* g_current_sk = NULL;
 
+// Settings that the skeme command line sets (main.c). They are defined here,
+// in the library, so a program that embeds skeme need not define them.
+int g_bDebug = FALSE;                       // debug output (the lexer reads it)
+int g_bInteractive = FALSE;                 // stay in the REPL after running a file
+int yydebug = FALSE;                        // parser debugging
+const char* g_szOutputFilename = "a.out";   // -o output file name
+
 int sk_init_builtins(SKState* pSK);
+
+//-----------------------------------------------
+// Memory limits for embedding (see sk.h and VM.heap_limit)
+//-----------------------------------------------
+void sk_set_heap_limit(SKState *pSK, size_t bytes)
+{
+    if (pSK)
+        pSK->vm.heap_limit = bytes;
+}
+
+void sk_set_fatal_handler(SKState *pSK, SKFatalHandler handler)
+{
+    if (pSK)
+        pSK->vm.fatal_handler = handler;
+}
 
 //-----------------------------------------------
 // built-in function: display

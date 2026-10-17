@@ -101,6 +101,8 @@ struct SKState
     int parse_depth;                // nesting of yyparse: errors while it is 0 come from running code
     Object* define_name;            // name a top-level define bound while compiling (see definition)
     int bDone;                      // flag to signal interpreter shutdown
+    int exit_called;                // (exit) ran: it set bDone and stopped the run
+    int exit_code;                  // the code it gave
     int lookahead;                  // current lookahead token
     YYLVAL yylval;                  // current token value
     int lineno;                     // current line number

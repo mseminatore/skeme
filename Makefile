@@ -3,7 +3,7 @@ TEST_TARGET = skeme_tests
 DEPS	= parser.h lexer.h vm.h term_colors.h platform.h error.h sk.h modules.h
 OBJS	= main.o parser.o lexer.o vm.o builtins.o io.o platform.o error.o sk.o modules.o mod_math.o
 TEST_OBJS = tests/test_main.o tests/test_vm.o tests/test_gc.o tests/test_lexer.o \
-            tests/test_parser.o tests/test_builtins.o tests/test_helpers.o tests/test_error.o \
+            tests/test_parser.o tests/test_builtins.o tests/test_error.o \
             parser.o lexer.o vm.o builtins.o io.o platform.o error.o sk.o modules.o mod_math.o \
             hash/testy/test_main.o
 CFLAGS	+= -I. -I./hash/testy -g -Wall
