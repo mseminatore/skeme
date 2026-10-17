@@ -334,7 +334,7 @@ Checked individually on `main`. Each item below fails today.
 - [x] `call/cc`: escape-only (see #14)
 - [ ] `define-syntax` / `syntax-rules`
 - [ ] quasiquote / unquote
-- [ ] `when`, `unless`
+- [x] `when`, `unless` (see #18)
 - [ ] `guard` / `raise` / `with-exception-handler`
 
 **Data**
@@ -343,15 +343,15 @@ Checked individually on `main`. Each item below fails today.
 - [x] dotted-pair literals in quoted data: `'(1 . 2)` (the printer handles `(cons 1 2)` fine; this is a lexer/parser gap and currently also aborts, see the syntax-error issue) (see #14)
 
 **Strings and characters**
-- [ ] `string=?`, `string<?` and friends
-- [ ] `string->list`, `list->string`
-- [ ] `char-alphabetic?` and other char predicates
+- [x] `string=?`, `string<?` and friends (see #18)
+- [x] `string->list`, `list->string` (see #18)
+- [x] `char-alphabetic?` and other char predicates (see #18)
 
 **Library**
-- [ ] `sort`, `iota`
-- [ ] `exact->inexact`
+- [x] `sort`, `iota` (see #18)
+- [x] `exact->inexact` (see #18)
 - [x] operators as values (see #14): `(map + '(1 2) '(3 4))` is a syntax error because `+` (and `-`, `*`, `<`, ...) is only accepted in call position. Multi-list `map` itself works: `(map (lambda (a b) (+ a b)) (list 1 2) (list 3 4))` gives `(4 6)`.
-- [ ] n-ary `min` / `max` / `append` in `stdlib.scm` (two arguments only)
+- [x] n-ary `min` / `max` / `append` in `stdlib.scm` (two arguments only) (see #18)
 
 **Eval**
 - [ ] `eval` takes a *string* (`(eval "(+ 1 2)")` works) but not a datum: `(eval '(+ 1 2))` gives `eval: expected a string argument`. R5RS `eval` takes an expression and an environment.
@@ -613,3 +613,34 @@ It gained only about 2% on `fib(34)` (2487 vs 2533 ms, min of 9 interleaved runs
 
 ### Verification
 New C tests in `tests/test_error.c` (295 total): native arity messages, `<eval>` locations, inline arithmetic type errors, a "Compiled Code Roots" suite (nothing left on the stack after compiling a lambda, a procedure reachable only from another's code survives a collection, procedures compiled by `eval` are collected), and stack overflow with wide frames and with one oversized top-level form. One new `test.scm` test (416 total) for `string-append` with zero or one strings. Everything passes in Debug, Release and the GC-stress build, plus `ctest` in Debug and Release.
+
+---
+
+## 18. ✅ Runtime errors name their source line; common library procedures
+
+**Labels:** bug, enhancement
+**Status:** Fixed (working tree, not yet committed).
+
+### Runtime errors had no source location
+A script is compiled whole before it runs, so a runtime error reported the lexer's position, the end of the file (or nothing at all, once the input stack was back to its base entry). Compiled code carried no line numbers.
+* Each `CodeChunk` has a line table, `SourceLine` entries `{offset, file, line}` recorded only where the location changes (`chunk_add_line`, called from `vm_emit`, with the position from the lexer's new `sk_source_location`: the file and line, or `<eval>` and the line in the string). File names are kept once in `VM.source_files`. Discarding a form or clearing the REPL's code trims the table (`vm_chunk_truncate`); freeing a procedure or chunk frees it.
+* `vm_current_location` finds the running instruction's location: in the current procedure's chunk (the callee in the frame header) or a top-level root chunk, by binary search.
+* `sk_log` reports a runtime error (the VM running, not parsing: `SKState.parse_depth`, counted by `yyparse`) at the running code's location, and a parse error at the lexer's, as before. So `(f "a")` reports the line inside `f` where `+` fails, in the file `f` came from, even after a `load`. The REPL still shows no location for its own input.
+
+### A native's runtime error did not stop the run
+A built-in that reported an error (`car` of a non-pair, say) returned a made-up value and the program went on, so one mistake produced a cascade of misleading errors. Errors from the VM itself (`vm_abort`) already stopped the run. Now `sk_log` stops it (`vm_stop`) for any runtime error, so both behave the same: one error, then back to the top level.
+
+### Library (from #8)
+* `when` and `unless` special forms (new tokens; ordinary symbols inside quoted data). The body is in tail position.
+* `min` and `max` take one or more arguments; `append` any number of lists (the last is shared, not copied; built with `reverse`, so long lists use constant stack); new `append-reverse`.
+* `(iota count [start [step]])` and `(sort list less?)`, a stable merge sort (the Racket/Guile argument order). All in `stdlib.scm`.
+* Built-ins: `string=? string<? string>? string<=? string>=?` and `char=? char<? char>? char<=? char>=?` (one or more arguments, each compared with the next), `string->list`, `list->string`, `char-alphabetic? char-numeric? char-whitespace? char-upper-case? char-lower-case?`, `char-upcase`, `char-downcase`, `exact->inexact` / `inexact` and `inexact->exact` / `exact`. skeme has no rationals, so `(exact 2.5)` is an error that suggests `round`.
+
+### Bugs found along the way
+* `(length '())` returned `()`, not `0`.
+* `write` required a port; it now takes one optionally, as in Scheme, and returns the unspecified value (it returned `#t`, which the REPL echoed).
+* Whole-number floats printed like integers: `(exact->inexact 3)` printed `3`. They now print as `3.0` (`vm_format_float`, used by the printer, `float->string` and `number->string`).
+* `number->string` rejected floats.
+
+### Verification
+35 new tests in `test.scm` (451 total) and new C tests in `tests/test_error.c` (319 total): runtime error lines in a loaded file and in an eval string (including after a dropped form), a native's error stopping the run, and the library's type errors. Everything passes in Debug, Release and the GC-stress build, plus `ctest`. The oversized-form stack test turns stress collection off while it runs: re-tracing its 130,000-word chunk at every allocation made the stress suite take far too long.

@@ -39,6 +39,8 @@ Tokens tokens[] =
     { "letrec",  LETREC },
     { "quote",   QUOTE },
     { "do",      DO },
+    { "when",    WHEN },
+    { "unless",  UNLESS },
     // { "eval",    EVAL },
     { NULL, 0}
 };
@@ -163,6 +165,29 @@ int pop_file_stack(SKState* pSK)
 int sk_reading_string(SKState* pSK)
 {
     return pSK->eval_input && pSK->file_stack_ptr == pSK->eval_file_depth;
+}
+
+//-----------------------------------
+// Where the lexer is: the eval string (by its name and its own lines), or
+// the file on top of the input stack. Returns 0 if neither has a name.
+//-----------------------------------
+int sk_source_location(SKState* pSK, const char** file, int* line)
+{
+    if (sk_reading_string(pSK) && pSK->eval_name)
+    {
+        *file = pSK->eval_name;
+        *line = pSK->eval_lineno;
+        return 1;
+    }
+
+    // a do loop's step code, re-read from a string, names its file
+    if (pSK->file_stack && pSK->file_stack_ptr >= 0 && pSK->file_stack[pSK->file_stack_ptr].filename)
+    {
+        *file = pSK->file_stack[pSK->file_stack_ptr].filename;
+        *line = pSK->file_stack[pSK->file_stack_ptr].yylineno;
+        return 1;
+    }
+    return 0;
 }
 
 //-----------------------------------

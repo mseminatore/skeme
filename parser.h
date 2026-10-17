@@ -98,6 +98,7 @@ struct SKState
 
     int indent_level;               // current parse indent level
     int expr_level;                 // current expression nesting level
+    int parse_depth;                // nesting of yyparse: errors while it is 0 come from running code
     Object* define_name;            // name a top-level define bound while compiling (see definition)
     int bDone;                      // flag to signal interpreter shutdown
     int lookahead;                  // current lookahead token

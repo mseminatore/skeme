@@ -55,6 +55,18 @@ static VM* g_vm_instance = NULL;  // set during vm_init, used by vm_print_object
 
 static int op_operand_words(VMCode_t op);
 static void free_chunk_strings(CodeChunk* chunk);
+static void chunk_add_line(VM* pvm, CodeChunk* chunk, size_t offset);
+
+//-----------------------------------------------
+// Format a float as Scheme writes one: %g, with ".0" added when that
+// looks like an integer, so 3.0 prints as 3.0, not 3 (which is exact)
+//-----------------------------------------------
+void vm_format_float(double value, char* buf, size_t size)
+{
+    snprintf(buf, size, "%g", value);
+    if (!strpbrk(buf, ".eEnN") && strlen(buf) + 2 < size)     // not 2.5, 1e+10, inf or nan
+        strcat(buf, ".0");
+}
 
 //-----------------------------------------------
 // print an object
@@ -109,7 +121,9 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
     // Handle tagged floats (64-bit only)
     if (IS_TAGGED_FLOAT(obj))
     {
-        fprintf(stream, "%g", AS_TAGGED_FLOAT(obj));
+        char buf[32];
+        vm_format_float(AS_TAGGED_FLOAT(obj), buf, sizeof(buf));
+        fputs(buf, stream);
         return;
     }
 #endif
@@ -182,7 +196,9 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
         case OBJ_FLOAT:
         {
             Float* flt = (Float*)obj;
-            fprintf(stream, "%g", flt->value);
+            char buf[32];
+            vm_format_float(flt->value, buf, sizeof(buf));
+            fputs(buf, stream);
         }
         break;
 
@@ -313,6 +329,9 @@ int vm_init(VM* pvm) {
     pvm->compile_roots = NULL;
     pvm->compile_root_count = pvm->compile_root_capacity = 0;
 
+    pvm->source_files = NULL;
+    pvm->source_file_count = pvm->source_file_capacity = 0;
+
 	// TODO - pair object pool init
 #ifdef VM_USE_FREE_LIST
     pvm->freeObjects = 0;
@@ -350,6 +369,12 @@ int vm_shutdown(VM* pvm)
     free(pvm->compile_roots);
     pvm->compile_roots = NULL;
     pvm->compile_root_count = pvm->compile_root_capacity = 0;
+
+    for (int i = 0; i < pvm->source_file_count; i++)
+        free(pvm->source_files[i]);
+    free(pvm->source_files);
+    pvm->source_files = NULL;
+    pvm->source_file_count = pvm->source_file_capacity = 0;
 
 	ht_free(pvm->global_table);
 	pvm->global_table = NULL;
@@ -455,17 +480,109 @@ int vm_emit(VM* pvm, VMCode_t opcode)
 	}
 
 	chunk->code[chunk->count++] = opcode;
+    chunk_add_line(pvm, chunk, chunk->count - 1);
     return (int)chunk->count-1;
+}
 
-	// TODO - line number tracking
-	/*
-	if (chunk->lines.capacity < chunk->count + 1) {
-		int old_capacity = chunk->lines.capacity;
-		chunk->lines.capacity = GROW_CAPACITY(old_capacity);
-		chunk->lines.data = (int*)realloc(chunk->lines.data, sizeof(int) * chunk->lines.capacity);
-	}
-	chunk->lines.data[chunk->count - 1] = line;
-	*/
+//--------------------------------------------------------------
+// The index of a source file name in VM.source_files, adding it if new
+//--------------------------------------------------------------
+static int source_file_id(VM* pvm, const char* name)
+{
+    for (int i = pvm->source_file_count - 1; i >= 0; i--)
+        if (strcmp(pvm->source_files[i], name) == 0)
+            return i;
+
+    if (pvm->source_file_count == pvm->source_file_capacity)
+    {
+        pvm->source_file_capacity = GROW_CAPACITY(pvm->source_file_capacity);
+        pvm->source_files = (char**)realloc(pvm->source_files, sizeof(char*) * pvm->source_file_capacity);
+        if (!pvm->source_files) exit(1);
+    }
+    pvm->source_files[pvm->source_file_count] = sk_strdup(name);
+    return pvm->source_file_count++;
+}
+
+//--------------------------------------------------------------
+// Record the source location of the code word at 'offset', just emitted,
+// where it differs from the previous word's (runtime error messages)
+//--------------------------------------------------------------
+static void chunk_add_line(VM* pvm, CodeChunk* chunk, size_t offset)
+{
+    const char* file;
+    int line;
+    if (!pvm->sk_state || !sk_source_location(pvm->sk_state, &file, &line))
+        return;
+
+    if (chunk->line_count > 0)
+    {
+        SourceLine* last = &chunk->lines[chunk->line_count - 1];
+        if (last->line == line && strcmp(pvm->source_files[last->file], file) == 0)
+            return;     // same place as the code before it
+    }
+    int file_id = source_file_id(pvm, file);
+
+    if (chunk->line_count == chunk->line_capacity)
+    {
+        chunk->line_capacity = GROW_CAPACITY(chunk->line_capacity);
+        chunk->lines = (SourceLine*)realloc(chunk->lines, sizeof(SourceLine) * chunk->line_capacity);
+        if (!chunk->lines) exit(1);
+    }
+    SourceLine* entry = &chunk->lines[chunk->line_count++];
+    entry->offset = offset;
+    entry->file = file_id;
+    entry->line = line;
+}
+
+//--------------------------------------------------------------
+// Drop a chunk's code from 'count' on (a discarded form, a cleared REPL line)
+//--------------------------------------------------------------
+void vm_chunk_truncate(CodeChunk* chunk, size_t count)
+{
+    chunk->count = count;
+    while (chunk->line_count > 0 && chunk->lines[chunk->line_count - 1].offset >= count)
+        chunk->line_count--;
+}
+
+//--------------------------------------------------------------
+// The source location of the instruction running now, for a runtime
+// error: in the current procedure's code, or in top-level code (a root
+// chunk). Returns 0 if not known.
+//--------------------------------------------------------------
+int vm_current_location(VM* pvm, const char** file, int* line)
+{
+    VMCode_t* ip = pvm->ip;
+    if (!ip || ip == vm_halt_code)
+        return 0;
+
+    // ip has moved past at least the opcode, so ip - 1 is in the instruction
+    CodeChunk* chunk = NULL;
+    if (pvm->fp > 0)
+    {
+        Object* fn = pvm->stack[pvm->fp - 1];
+        Procedure* proc = IS_CLOSURE(fn) ? ((Closure*)fn)->function : (IS_PROCEDURE(fn) ? (Procedure*)fn : NULL);
+        if (proc && ip > proc->chunk.code && ip <= proc->chunk.code + proc->chunk.count)
+            chunk = &proc->chunk;
+    }
+    for (int i = pvm->root_chunk_count - 1; i >= 0 && !chunk; i--)
+    {
+        CodeChunk* root = pvm->root_chunks[i];
+        if (ip > root->code && ip <= root->code + root->count)
+            chunk = root;
+    }
+    if (!chunk || chunk->line_count == 0)
+        return 0;
+
+    size_t offset = (size_t)(ip - 1 - chunk->code);
+    size_t lo = 0, hi = chunk->line_count;     // the last entry at or before offset
+    while (hi - lo > 1)
+    {
+        size_t mid = (lo + hi) / 2;
+        if (chunk->lines[mid].offset <= offset) lo = mid; else hi = mid;
+    }
+    *file = pvm->source_files[chunk->lines[lo].file];
+    *line = chunk->lines[lo].line;
+    return 1;
 }
 
 //--------------------------------------------------------------
@@ -508,7 +625,7 @@ void vm_emit_push_object(VM* pvm, Object* obj)
 //--------------------------------------------------------------
 void vm_clear_code(VM* pvm)
 {
-    g_current_chunk->count = 0;
+    vm_chunk_truncate(g_current_chunk, 0);
 }
 
 //--------------------------------------------------------------
@@ -1924,6 +2041,7 @@ static void freeObject(VM* pvm, Object* object)
             GC_LOG("-- gc freeing proc: '%s'\n", ((String*)proc->name)->value);
             free_chunk_strings(&proc->chunk);
             vm_alloc(pvm, proc->chunk.code, proc->chunk.capacity * sizeof(VMCode_t), 0);
+            free(proc->chunk.lines);
             if (proc->upvalues) {
                 vm_alloc(pvm, proc->upvalues, sizeof(UpvalueDesc) * proc->upvalue_count, 0);
                 proc->upvalues = NULL;
@@ -2241,6 +2359,16 @@ void vm_stack_overflow(VM* pvm)
     vm_abort(pvm, "stack overflow (recursion too deep)");
 }
 
+//--------------------------------------------------------------
+// Stop the run, as vm_abort does, after an error that was already
+// reported: a native's runtime error (see sk_log)
+//--------------------------------------------------------------
+void vm_stop(VM* pvm)
+{
+    pvm->abort_exec = 1;
+    pvm->ip = vm_halt_code;
+}
+
 void vm_abort(VM* pvm, const char* msg)
 {
     if (!pvm->abort_exec)
@@ -2496,7 +2624,9 @@ void vm_init_chunk(CodeChunk* chunk)
     chunk->count = 0;
     chunk->capacity = 0;
     chunk->code = NULL;
-    //chunk->lines = NULL;
+    chunk->lines = NULL;
+    chunk->line_count = 0;
+    chunk->line_capacity = 0;
 }
 
 //--------------------------------------------------------------
@@ -2586,6 +2716,9 @@ void vm_free_chunk(VM* pvm, CodeChunk* chunk)
 	chunk->code = NULL;
 	chunk->count = 0;
 	chunk->capacity = 0;
+    free(chunk->lines);
+    chunk->lines = NULL;
+    chunk->line_count = chunk->line_capacity = 0;
 }
 
 //--------------------------------------------------------------

@@ -406,7 +406,10 @@ void test_error(int argc, char *argv[])
                 }
                 strcpy(code + len, "))");
                 reset_test_context();
+                int old_stress = g_bGCStress;   // this checks the stack, not the GC: under a stress
+                g_bGCStress = FALSE;            // build, collecting at every allocation of this form is very slow
                 eval_quietly(&sk, code);
+                g_bGCStress = old_stress;
                 free(code);
                 TEST(g_test_ctx.error_count == 1);
                 TEST(strstr(g_test_ctx.last_message, "stack overflow") != NULL);
@@ -501,6 +504,68 @@ void test_error(int argc, char *argv[])
         TEST(g_test_ctx.error_count >= 1);
         TEST(g_test_ctx.last_file != NULL && strcmp(g_test_ctx.last_file, "<eval>") == 0);
         TEST(g_test_ctx.last_line == 2);
+        reset_test_context();
+
+        COMMENT("Runtime errors name the line of the running code...");
+        eval_quietly(&sk, "(define (ei-rf x)\n\n  (car x))");
+        reset_test_context();
+        eval_quietly(&sk, "(ei-rf 1)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(g_test_ctx.last_file != NULL && strcmp(g_test_ctx.last_file, "<eval>") == 0);
+        TEST(g_test_ctx.last_line == 3);
+        {
+            FILE* rf = fopen("ei_rt_test.scm", "w");
+            TEST(rf != NULL);
+            if (rf)
+            {
+                fputs("; runtime error locations\n(define (ei-rg x)\n  (+ 1\n     (car x)))\n", rf);
+                fclose(rf);
+            }
+            eval_quietly(&sk, "(load \"ei_rt_test.scm\")");
+            reset_test_context();
+            eval_quietly(&sk, "(ei-rg 5)");
+            TEST(g_test_ctx.error_count == 1);
+            TEST(g_test_ctx.last_file != NULL && strstr(g_test_ctx.last_file, "ei_rt_test.scm") != NULL);
+            TEST(g_test_ctx.last_line == 4);
+            remove("ei_rt_test.scm");
+        }
+        reset_test_context();
+        eval_quietly(&sk, "(define (ei-d1) (display \"\") (define ei-z 2) ei-z)\n(define ei-d2 2)\n(car ei-d2)");     // first form dropped
+        TEST(g_test_ctx.error_count == 2);
+        TEST(g_test_ctx.last_file != NULL && strcmp(g_test_ctx.last_file, "<eval>") == 0);
+        TEST(g_test_ctx.last_line == 3);
+        reset_test_context();
+
+        COMMENT("An error from a native stops the run (no follow-on errors)...");
+        eval_quietly(&sk, "(define ei-s1 (+ 1 (car 5))) (define ei-s2 2)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'car'") != NULL);
+        TEST(no_value(get_global(&sk, "ei-s1")));
+        TEST(no_value(get_global(&sk, "ei-s2")));
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-s3 3)");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(AS_NUM(get_global(&sk, "ei-s3")) == 3);
+        reset_test_context();
+
+        COMMENT("Library type errors...");
+        eval_quietly(&sk, "(define ei-e1 (string<? \"a\" 1))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "arguments to 'string<?' must be strings") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-e2 (inexact->exact 2.5))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "no exact integer") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-e3 (list->string (list #\\a 1)))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "list of characters") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-e4 (char-upcase \"a\"))");
+        TEST(g_test_ctx.error_count == 1);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-e5 (write 1 2 3))");
+        TEST(g_test_ctx.error_count == 1);
         reset_test_context();
 
         COMMENT("Inline arithmetic checks its operands...");

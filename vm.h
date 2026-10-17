@@ -343,11 +343,22 @@ enum {
 typedef intptr_t VMCode_t;
 
 // code chunk structure
+// Where code came from: one entry where the source location changes, for
+// the code words from 'offset' up to the next entry's (see vm_emit)
+typedef struct SourceLine {
+    size_t offset;      // first code word at this location
+    int file;           // index into VM.source_files
+    int line;
+} SourceLine;
+
 typedef struct CodeChunk {
     Object base;    // base object - not used presently!
     VMCode_t* code;
     size_t count;
     size_t capacity;
+    SourceLine* lines;  // source locations, by offset (runtime error messages)
+    size_t line_count;
+    size_t line_capacity;
 } CodeChunk;
 
 // pair object
@@ -499,6 +510,10 @@ typedef struct VM {
     // top-level code being compiled or run (the REPL's, each eval's). A
     // procedure the compiler is still building is a compile root until its
     // parent's code refers to it.
+    char** source_files;            // file names that code comes from (SourceLine.file)
+    int source_file_count;
+    int source_file_capacity;
+
     CodeChunk** root_chunks;
     int root_chunk_count;
     int root_chunk_capacity;
@@ -535,12 +550,14 @@ int vm_init(VM* pvm);
 int vm_shutdown(VM* pvm);
 void vm_gc(VM* pvm);
 void vm_print_object(Object* obj, int flags, FILE *stream);
+void vm_format_float(double value, char* buf, size_t size);
 
 // stack management - inlined for performance
 // Out-of-range accesses are runtime errors in every build: they report the
 // error, set abort_exec so execution unwinds to the top level, and touch
 // nothing outside the stack.
 void vm_abort(VM* pvm, const char* msg);
+void vm_stop(VM* pvm);     // like vm_abort, for an error already reported
 
 void vm_stack_overflow(VM* pvm);
 
@@ -607,8 +624,13 @@ void vm_push_root_chunk(VM* pvm, CodeChunk* chunk);
 void vm_pop_root_chunk(VM* pvm);
 void vm_push_compile_root(VM* pvm, Object* obj);
 void vm_pop_compile_root(VM* pvm);
+void vm_chunk_truncate(CodeChunk* chunk, size_t count);
+int vm_current_location(VM* pvm, const char** file, int* line);
 void vm_free_chunk(VM* pvm, CodeChunk* chunk);
 VMCode_t* vm_get_chunk_ip();
+
+// the lexer's position, for the code being compiled (lexer.c); 0 if none
+int sk_source_location(struct SKState* pSK, const char** file, int* line);
 
 // execution
 void vm_exec(VM* pvm, VMCode_t *addr);

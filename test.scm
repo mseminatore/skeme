@@ -1049,6 +1049,54 @@
 ((cadr lf-dc))
 (test-case "internal defines share captured state" (= ((car lf-dc)) 11))
 
+; when / unless
+(test-case "when true" (= (when (> 2 1) 'ignored 5) 5))
+(test-case "when false is unspecified" (not (equal? (when #f 1) 1)))
+(test-case "unless false" (eq? (unless #f 'yes) 'yes))
+(test-case "unless true is unspecified" (not (equal? (unless #t 1) 1)))
+(define (lf-when-loop n) (when (> n 0) (lf-when-loop (- n 1))))
+(test-case "when body in tail position" (begin (lf-when-loop 100000) #t))
+(test-case "when and unless as quoted symbols" (equal? '(when unless) (list 'when 'unless)))
+
+; min, max, append, iota, sort
+(test-case "n-ary min and max" (equal? (list (min 3 1 2) (max 3 1 2) (min 7) (max 7)) '(1 3 7 7)))
+(test-case "append of any number of lists" (equal? (append '(1 2) '(3) '() '(4 5)) '(1 2 3 4 5)))
+(test-case "append of none or one" (and (null? (append)) (equal? (append '(1)) '(1))))
+(test-case "append shares the last list" (let ((tail '(3 4))) (eq? (cdr (cdr (append '(1 2) tail))) tail)))
+(test-case "append onto a non-list" (equal? (append '(1) 2) (cons 1 2)))
+(test-case "append a long list in constant stack" (= (length (append (iota 100000) '(x))) 100001))
+(test-case "iota" (equal? (list (iota 4) (iota 3 1) (iota 3 0 5) (iota 0)) '((0 1 2 3) (1 2 3) (0 5 10) ())))
+(test-case "sort numbers" (equal? (sort '(3 1 4 1 5 9 2 6) <) '(1 1 2 3 4 5 6 9)))
+(test-case "sort descending" (equal? (sort '(3 1 2) >) '(3 2 1)))
+(test-case "sort empty and single" (and (null? (sort '() <)) (equal? (sort '(1) <) '(1))))
+(test-case "sort strings" (equal? (sort (list "pear" "apple" "fig") string<?) '("apple" "fig" "pear")))
+(test-case "sort is stable" (equal? (sort '((1 . a) (0 . b) (1 . c) (0 . d)) (lambda (x y) (< (car x) (car y))))
+                                    '((0 . b) (0 . d) (1 . a) (1 . c))))
+(test-case "sort a long list" (equal? (list-tail (sort (iota 10000) >) 9997) '(2 1 0)))
+(test-case "length of the empty list" (= (length '()) 0))
+
+; strings and characters
+(test-case "string=?" (and (string=? "ab" "ab") (string=? "a" "a" "a") (not (string=? "a" "b"))))
+(test-case "string<? and string>?" (and (string<? "a" "b" "c") (not (string<? "a" "c" "b")) (string>? "b" "a")))
+(test-case "string<=? and string>=?" (and (string<=? "a" "a" "b") (string>=? "b" "b" "a") (not (string<=? "b" "a"))))
+(test-case "char comparisons" (and (char=? #\a #\a) (char<? #\a #\b #\c) (char>? #\b #\a) (char<=? #\a #\a) (char>=? #\b #\a)))
+(test-case "string->list" (equal? (string->list "abc") (list #\a #\b #\c)))
+(test-case "string->list of empty" (null? (string->list "")))
+(test-case "list->string" (equal? (list->string (list #\h #\i)) "hi"))
+(test-case "list->string round trip" (equal? (list->string (string->list "hello")) "hello"))
+(test-case "char predicates" (and (char-alphabetic? #\a) (not (char-alphabetic? #\1)) (char-numeric? #\5)
+                                  (char-whitespace? #\space) (char-upper-case? #\A) (char-lower-case? #\a)
+                                  (not (char-upper-case? #\a))))
+(test-case "char case conversion" (and (char=? (char-upcase #\a) #\A) (char=? (char-downcase #\Q) #\q)
+                                       (char=? (char-upcase #\1) #\1)))
+
+; exact and inexact
+(test-case "exact->inexact" (and (float? (exact->inexact 3)) (= (exact->inexact 3) 3.0) (float? (inexact 1))))
+(test-case "inexact->exact" (and (= (inexact->exact 4.0) 4) (not (float? (inexact->exact 4.0))) (= (exact (round 2.6)) 3)))
+(test-case "exact of an integer is itself" (= (exact 5) 5))
+(test-case "a whole float prints with .0" (equal? (number->string 3.0) "3.0"))
+(test-case "number->string of a float" (equal? (number->string 2.5) "2.5"))
+
 ; report test results
 ;----------------------
 (test-end)

@@ -11,6 +11,7 @@
 #include <math.h>
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 #include "sk.h"
 #include "term_colors.h"
 #include "platform.h"
@@ -1068,7 +1069,7 @@ static int sk_length(SKState* pSK)
     Object* obj = vm_pop(&pSK->vm);
     if (!obj)
     {
-        vm_push(&pSK->vm, NULL); // length 0
+        vm_push(&pSK->vm, MAKE_NUM(0));  // the empty list
         return SK_TRUE;
     }
 
@@ -1629,16 +1630,18 @@ static int sk_number_to_string(SKState* pSK)
     if (!pSK) return SK_FALSE;
 
     Object* obj = vm_pop(&pSK->vm);
-    if (!IS_NUM(obj))
+    if (!IS_NUMERIC(obj))
     {
-        yyerror(pSK, "number-to-string expects a number");
+        yyerror(pSK, "number->string expects a number");
         vm_push(&pSK->vm, NULL);
         return SK_FALSE;
     }
 
-    int num = AS_NUM(obj);
     char buffer[SMALL_BUFFER];
-    snprintf(buffer, sizeof(buffer), "%d", num);
+    if (IS_FLOAT(obj))
+        vm_format_float(AS_DOUBLE(obj), buffer, sizeof(buffer));
+    else
+        snprintf(buffer, sizeof(buffer), "%d", AS_NUM(obj));
     vm_push_string(&pSK->vm, buffer);
 
     return SK_TRUE;
@@ -1715,7 +1718,7 @@ static int sk_float_to_string(SKState* pSK)
 
     float val = vm_get_float(obj);
     char buf[32];
-    snprintf(buf, sizeof(buf), "%g", val);
+    vm_format_float(val, buf, sizeof(buf));
     
     Object* str = vm_new_string(&pSK->vm, buf);
     vm_push(&pSK->vm, str);
@@ -1960,7 +1963,7 @@ static Object* sk_read_datum(SKState* pSK, int tok)
         case DEFINE: case LAMBDA: case IF: case ELSE: case COND:
         case LET: case LET_STAR: case LETREC: case BEGIN: case SET:
         case LIST: case CASE_TOKEN: case AND: case OR: case LOAD:
-        case IMPORT: case DO: case QUOTE:
+        case IMPORT: case DO: case QUOTE: case WHEN: case UNLESS:
             // keywords and identifiers become symbols
             return vm_new_symbol(&pSK->vm, pSK->yylval.word);
 
@@ -2083,20 +2086,30 @@ static int sk_write(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
     
-    Port* port = (Port*)vm_pop(&pSK->vm);
-    if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
+    // (write obj [port]): the port is optional, standard output by default
+    int n = AS_NUM(vm_peek(&pSK->vm, 0));
+    vm_pop(&pSK->vm);
+    if (n > 2)
     {
-        yyerror(pSK, "write expects a valid port object");
-        
-        // replace output object with return value
-        vm_stack_replace_n(&pSK->vm, 0, NULL);
-
+        yyerror(pSK, "'write' called with too many arguments, expects at most 2");
         return SK_FALSE;
     }
 
-	vm_print_object(vm_pop(&pSK->vm), VM_PRINT_READABLE, port->fptr);
+    FILE* out = stdout;
+    if (n == 2)
+    {
+        Port* port = (Port*)vm_pop(&pSK->vm);
+        if (!IS_OBJ(port) || !IS_PORT(port) || !port->fptr)
+        {
+            yyerror(pSK, "write expects a valid port object");
+            return SK_FALSE;
+        }
+        out = port->fptr;
+    }
 
-    vm_push(&pSK->vm, MAKE_TRUE());
+	vm_print_object(vm_pop(&pSK->vm), VM_PRINT_READABLE, out);
+
+    vm_push(&pSK->vm, MAKE_UNSPEC());
     return SK_TRUE;
 }
 
@@ -2640,6 +2653,196 @@ static int sk_string_copy(SKState* pSK)
 }
 
 //-----------------------------------------------
+// The comparisons string=? string<? ... and char=? char<? ...: true if
+// each argument compares with the next as 'op' says ('=', '<', '>', and
+// 'l' for <=, 'g' for >=). Strings compare by their bytes.
+//-----------------------------------------------
+static int sk_compare_chain(SKState* pSK, const char* name, int strings, char op)
+{
+    int n = AS_NUM(vm_peek(&pSK->vm, 0));
+    vm_pop(&pSK->vm);
+
+    int result = TRUE;
+    for (int i = n - 1; i >= 0; i--)
+    {
+        Object* obj = vm_peek(&pSK->vm, i);
+        if (strings ? !IS_STRING(obj) : !IS_CHAR(obj))
+        {
+            char msg[80];
+            snprintf(msg, sizeof(msg), "arguments to '%s' must be %s", name, strings ? "strings" : "characters");
+            yyerror(pSK, msg);
+            vm_pop_n(&pSK->vm, n);
+            vm_push(&pSK->vm, MAKE_FALSE());
+            return SK_FALSE;
+        }
+        if (i == n - 1)
+            continue;
+
+        Object* prev = vm_peek(&pSK->vm, i + 1);
+        int cmp = strings ? strcmp(((String*)prev)->value, ((String*)obj)->value)
+                          : (int)(unsigned char)AS_CHAR(prev) - (int)(unsigned char)AS_CHAR(obj);
+        int ok = op == '=' ? cmp == 0 : op == '<' ? cmp < 0 : op == '>' ? cmp > 0 : op == 'l' ? cmp <= 0 : cmp >= 0;
+        if (!ok)
+            result = FALSE;
+    }
+
+    vm_pop_n(&pSK->vm, n);
+    vm_push(&pSK->vm, result ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+static int sk_string_eq(SKState* pSK) { return sk_compare_chain(pSK, "string=?", 1, '='); }
+static int sk_string_lt(SKState* pSK) { return sk_compare_chain(pSK, "string<?", 1, '<'); }
+static int sk_string_gt(SKState* pSK) { return sk_compare_chain(pSK, "string>?", 1, '>'); }
+static int sk_string_le(SKState* pSK) { return sk_compare_chain(pSK, "string<=?", 1, 'l'); }
+static int sk_string_ge(SKState* pSK) { return sk_compare_chain(pSK, "string>=?", 1, 'g'); }
+static int sk_char_eq(SKState* pSK) { return sk_compare_chain(pSK, "char=?", 0, '='); }
+static int sk_char_lt(SKState* pSK) { return sk_compare_chain(pSK, "char<?", 0, '<'); }
+static int sk_char_gt(SKState* pSK) { return sk_compare_chain(pSK, "char>?", 0, '>'); }
+static int sk_char_le(SKState* pSK) { return sk_compare_chain(pSK, "char<=?", 0, 'l'); }
+static int sk_char_ge(SKState* pSK) { return sk_compare_chain(pSK, "char>=?", 0, 'g'); }
+
+//-----------------------------------------------
+// built-in function: string->list
+//-----------------------------------------------
+static int sk_string_to_list(SKState* pSK)
+{
+    Object* obj = vm_peek(&pSK->vm, 0);     // stays on the stack while the list is built
+    if (!IS_STRING(obj)) {
+        yyerror(pSK, "argument to 'string->list' must be a string");
+        return SK_FALSE;
+    }
+
+    // cons the characters from the last, keeping the list built so far on the stack
+    vm_push(&pSK->vm, NULL);
+    for (int i = (int)strlen(((String*)obj)->value) - 1; i >= 0; i--)
+    {
+        Pair* pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);
+        pair->car = MAKE_CHAR(((String*)vm_peek(&pSK->vm, 1))->value[i]);
+        pair->cdr = vm_peek(&pSK->vm, 0);
+        pSK->vm.stack[pSK->vm.sp - 1] = (Object*)pair;
+    }
+
+    Object* list = vm_pop(&pSK->vm);
+    vm_pop(&pSK->vm);                       // the string
+    vm_push(&pSK->vm, list);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: list->string
+//-----------------------------------------------
+static int sk_list_to_string(SKState* pSK)
+{
+    Object* list = vm_pop(&pSK->vm);
+
+    size_t len = 0;
+    for (Object* p = list; IS_PAIR(p); p = ((Pair*)p)->cdr)
+        len++;
+
+    char* buf = (char*)malloc(len + 1);
+    if (!buf) exit(1);
+
+    size_t i = 0;
+    Object* p = list;
+    for (; IS_PAIR(p); p = ((Pair*)p)->cdr)
+    {
+        Object* c = ((Pair*)p)->car;
+        if (!IS_CHAR(c))
+            break;
+        buf[i++] = AS_CHAR(c);
+    }
+    buf[i] = '\0';
+
+    if (p != NULL)      // a non-character, or not a proper list
+    {
+        free(buf);
+        yyerror(pSK, "argument to 'list->string' must be a list of characters");
+        vm_push(&pSK->vm, MAKE_FALSE());
+        return SK_FALSE;
+    }
+
+    vm_push_string(&pSK->vm, buf);
+    free(buf);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// Character tests and case conversions, by the C library's ctype in the
+// "C" locale
+//-----------------------------------------------
+static int sk_char_test(SKState* pSK, const char* name, int (*test)(int))
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_CHAR(obj)) {
+        char msg[80];
+        snprintf(msg, sizeof(msg), "argument to '%s' must be a character", name);
+        yyerror(pSK, msg);
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, test((unsigned char)AS_CHAR(obj)) ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+static int sk_char_alphabetic(SKState* pSK) { return sk_char_test(pSK, "char-alphabetic?", isalpha); }
+static int sk_char_numeric(SKState* pSK) { return sk_char_test(pSK, "char-numeric?", isdigit); }
+static int sk_char_whitespace(SKState* pSK) { return sk_char_test(pSK, "char-whitespace?", isspace); }
+static int sk_char_upper_case(SKState* pSK) { return sk_char_test(pSK, "char-upper-case?", isupper); }
+static int sk_char_lower_case(SKState* pSK) { return sk_char_test(pSK, "char-lower-case?", islower); }
+
+static int sk_char_convert(SKState* pSK, const char* name, int (*convert)(int))
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_CHAR(obj)) {
+        char msg[80];
+        snprintf(msg, sizeof(msg), "argument to '%s' must be a character", name);
+        yyerror(pSK, msg);
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, MAKE_CHAR(convert((unsigned char)AS_CHAR(obj))));
+    return SK_TRUE;
+}
+
+static int sk_char_upcase(SKState* pSK) { return sk_char_convert(pSK, "char-upcase", toupper); }
+static int sk_char_downcase(SKState* pSK) { return sk_char_convert(pSK, "char-downcase", tolower); }
+
+//-----------------------------------------------
+// built-in functions: exact->inexact (inexact), inexact->exact (exact).
+// skeme has no rationals, so only a float with an integer value has an
+// exact equivalent: (exact 2.0) is 2, (exact 2.5) is an error.
+//-----------------------------------------------
+static int sk_exact_to_inexact(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'exact->inexact' must be a number");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, IS_FLOAT(obj) ? obj : vm_new_float(&pSK->vm, (float)AS_NUM(obj)));
+    return SK_TRUE;
+}
+
+static int sk_inexact_to_exact(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (!IS_NUMERIC(obj)) {
+        yyerror(pSK, "argument to 'inexact->exact' must be a number");
+        return SK_FALSE;
+    }
+    if (IS_FLOAT(obj))
+    {
+        double d = AS_DOUBLE(obj);
+        if (d != floor(d) || d > INT_MAX || d < INT_MIN) {
+            yyerror(pSK, "inexact->exact: no exact integer equals this number (try round first)");
+            return SK_FALSE;
+        }
+        obj = MAKE_NUM((int)d);
+    }
+    vm_push(&pSK->vm, obj);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
 // built-in functions
 //-----------------------------------------------
 static SKFuncSet built_in_funcs[] =
@@ -2660,7 +2863,7 @@ static SKFuncSet built_in_funcs[] =
     { "read-char", sk_read_char, SK_ARITY_ZERO_OR_ONE },
     { "write-char", sk_write_char, SK_ARITY_ONE_OR_MORE },
     { "write-line", sk_write_line, 2 },
-    { "write", sk_write, 2 },
+    { "write", sk_write, SK_ARITY_ONE_OR_MORE },
     // { "print", sk_print },
     
     { "string-append", sk_string_append, SK_ARITY_ANY },
@@ -2763,6 +2966,29 @@ static SKFuncSet built_in_funcs[] =
     { "string-ref", sk_string_ref, 2 },
     { "substring", sk_substring, 3 },
     { "string-copy", sk_string_copy, 1 },
+    { "string=?", sk_string_eq, SK_ARITY_ONE_OR_MORE },
+    { "string<?", sk_string_lt, SK_ARITY_ONE_OR_MORE },
+    { "string>?", sk_string_gt, SK_ARITY_ONE_OR_MORE },
+    { "string<=?", sk_string_le, SK_ARITY_ONE_OR_MORE },
+    { "string>=?", sk_string_ge, SK_ARITY_ONE_OR_MORE },
+    { "string->list", sk_string_to_list, 1 },
+    { "list->string", sk_list_to_string, 1 },
+    { "char=?", sk_char_eq, SK_ARITY_ONE_OR_MORE },
+    { "char<?", sk_char_lt, SK_ARITY_ONE_OR_MORE },
+    { "char>?", sk_char_gt, SK_ARITY_ONE_OR_MORE },
+    { "char<=?", sk_char_le, SK_ARITY_ONE_OR_MORE },
+    { "char>=?", sk_char_ge, SK_ARITY_ONE_OR_MORE },
+    { "char-alphabetic?", sk_char_alphabetic, 1 },
+    { "char-numeric?", sk_char_numeric, 1 },
+    { "char-whitespace?", sk_char_whitespace, 1 },
+    { "char-upper-case?", sk_char_upper_case, 1 },
+    { "char-lower-case?", sk_char_lower_case, 1 },
+    { "char-upcase", sk_char_upcase, 1 },
+    { "char-downcase", sk_char_downcase, 1 },
+    { "exact->inexact", sk_exact_to_inexact, 1 },
+    { "inexact", sk_exact_to_inexact, 1 },
+    { "inexact->exact", sk_inexact_to_exact, 1 },
+    { "exact", sk_inexact_to_exact, 1 },
 
 	// debugging functions
     { "disasm", sk_disasm, 1 },

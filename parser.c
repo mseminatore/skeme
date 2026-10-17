@@ -956,7 +956,8 @@ static void quote_datum(SKState* pSK)
              LOOKAHEAD == OR || LOOKAHEAD == COND || LOOKAHEAD == ELSE ||
              LOOKAHEAD == LOAD || LOOKAHEAD == BEGIN || LOOKAHEAD == CASE_TOKEN ||
              LOOKAHEAD == IMPORT || LOOKAHEAD == LET || LOOKAHEAD == LET_STAR ||
-             LOOKAHEAD == LETREC || LOOKAHEAD == DO)
+             LOOKAHEAD == LETREC || LOOKAHEAD == DO || LOOKAHEAD == WHEN ||
+             LOOKAHEAD == UNLESS)
     {
         // language keywords are ordinary symbols inside quoted data,
         // e.g. '(if a b) or '(define (f x) x)
@@ -1899,6 +1900,45 @@ static int if_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// (when test body ...) runs the body, like begin, if test is true;
+// (unless test body ...) runs it if test is false. Otherwise the value
+// is unspecified.
+//-----------------------------------------------
+static int when_expr(SKState* pSK, int token)
+{
+    PARSE_LOG("when_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, token);
+
+    expr(pSK);                                              // test
+    vm_emit(&pSK->vm, token == WHEN ? OP_BNT : OP_BNF);     // skip the body
+    int skip_addr = vm_emit(&pSK->vm, 0);
+
+    if (LOOKAHEAD == ')')
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());       // no body
+    else
+    {
+        expr(pSK);
+        while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+        {
+            vm_emit(&pSK->vm, OP_POP);                      // all but the last value
+            expr(pSK);
+        }
+    }
+    vm_emit(&pSK->vm, OP_BRA);
+    int end_addr = vm_emit(&pSK->vm, 0);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    chunk->code[skip_addr] = chunk->count - skip_addr;
+    vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());           // the body did not run
+    chunk = vm_get_current_chunk();
+    chunk->code[end_addr] = chunk->count - end_addr;
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
 // cond_expr := '(' 'cond' ( expr expr )* ')'
 //-----------------------------------------------
 static int cond_expr(SKState* pSK)
@@ -2276,6 +2316,11 @@ static int expr(SKState* pSK)
             if_expr(pSK);
             break;
 
+        case WHEN:
+        case UNLESS:
+            when_expr(pSK, LOOKAHEAD);
+            break;
+
         case AND:
             and_expr(pSK);
             break;
@@ -2478,7 +2523,7 @@ static int expr(SKState* pSK)
 static void discard_form(SKState* pSK, CodeChunk* chunk, int form_start,
                          int saved_expr_level, Environment* saved_scope)
 {
-    chunk->count = form_start;
+    vm_chunk_truncate(chunk, form_start);
     vm_set_current_chunk(&pSK->vm, chunk);
     pSK->expr_level = saved_expr_level;
     pSK->vm.current_scope = saved_scope;
@@ -2518,6 +2563,8 @@ int yyparse(SKState *pSK)
     if (pSK->yyin == NULL && pSK->eval_input == NULL)
         return 0;
 
+    pSK->parse_depth++;     // errors now are parse errors (see sk_log)
+
     // prime the pump
     LOOKAHEAD = yylex(pSK);
 
@@ -2550,6 +2597,7 @@ int yyparse(SKState *pSK)
         finish_define(pSK, dropped);
     }
 
+    pSK->parse_depth--;
     return 0;
 }
 

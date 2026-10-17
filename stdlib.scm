@@ -50,23 +50,54 @@
 ;----------------------
 ; define min/max
 ;----------------------
-(define (min a b)
-    (if (< a b) a b)
-)
+(define (min x . rest)
+  (let loop ((m x) (l rest))
+    (if (null? l) m (loop (if (< (car l) m) (car l) m) (cdr l)))))
 
-(define (max a b)
-    (if (> a b) a b)
-)
+(define (max x . rest)
+  (let loop ((m x) (l rest))
+    (if (null? l) m (loop (if (> (car l) m) (car l) m) (cdr l)))))
 
 ;----------------------
-; define append
+; (append-reverse rev tail): the reverse of rev, followed by tail
 ;----------------------
-(define (append lst1 lst2)
-  (if (null? lst1)
-      lst2
-      (cons (car lst1) (append (cdr lst1) lst2))
-  )
-)
+(define (append-reverse rev tail)
+  (if (null? rev) tail (append-reverse (cdr rev) (cons (car rev) tail))))
+
+;----------------------
+; define append: (append list ...); the last list is shared, not copied
+;----------------------
+(define (append . lists)
+  (let loop ((ls lists))
+    (cond ((null? ls) '())
+          ((null? (cdr ls)) (car ls))
+          (else (append-reverse (reverse (car ls)) (loop (cdr ls)))))))
+
+;----------------------
+; (iota count [start [step]]): count numbers from start (0), by step (1)
+;----------------------
+(define (iota count . args)
+  (let ((start (if (null? args) 0 (car args)))
+        (step (if (or (null? args) (null? (cdr args))) 1 (car (cdr args)))))
+    (let loop ((i (- count 1)) (acc '()))
+      (if (< i 0) acc (loop (- i 1) (cons (+ start (* i step)) acc))))))
+
+;----------------------
+; (sort list less?): a new list of the elements in order; a stable merge
+; sort, so equal elements keep their order
+;----------------------
+(define (sort lst less?)
+  (define (merge a b acc)
+    (cond ((null? a) (append-reverse acc b))
+          ((null? b) (append-reverse acc a))
+          ((less? (car b) (car a)) (merge a (cdr b) (cons (car b) acc)))
+          (else (merge (cdr a) b (cons (car a) acc)))))
+  (define (msort l n)       ; the first n elements of l, sorted
+    (cond ((= n 0) '())
+          ((= n 1) (list (car l)))
+          (else (let ((half (quotient n 2)))
+                  (merge (msort l half) (msort (list-tail l half) (- n half)) '())))))
+  (msort lst (length lst)))
 
 ;----------------------
 ; define map

@@ -86,14 +86,19 @@ void sk_log(SKState* sk, SKLogLevel level, const char* fmt, ...)
     const char* file = NULL;
     int line = 0;
 
-    if (sk_reading_string(sk) && sk->eval_name) {
-        // code from a string (sk_eval_string): its name and the line in it
-        file = sk->eval_name;
-        line = sk->eval_lineno;
-    } else if (sk->file_stack_ptr >= 0 && sk->file_stack) {
-        file = sk->file_stack[sk->file_stack_ptr].filename;
-        line = sk->file_stack[sk->file_stack_ptr].yylineno;
+    int runtime = (sk->parse_depth == 0 && sk->vm.exec_depth > 0);
+    if (runtime) {
+        // a runtime error: where the running instruction was compiled from
+        if (!vm_current_location(&sk->vm, &file, &line))
+            file = NULL;
+    } else if (!sk_source_location(sk, &file, &line)) {
+        // a parse error: where the lexer is (a file, or <eval> for a string)
+        file = NULL;
     }
+
+    // the REPL's input needs no location
+    if (file && strcmp(file, "stdin") == 0)
+        file = NULL;
 
     // Call the error handler
     if (sk->error_handler) {
@@ -103,6 +108,11 @@ void sk_log(SKState* sk, SKLogLevel level, const char* fmt, ...)
     // Update error/warning counts
     if (level == SK_LOG_ERROR) {
         sk->err_count++;
+
+        // a runtime error stops the run, so a native that reports one does
+        // not go on with a made-up result (vm_abort does this for the VM's own)
+        if (runtime)
+            vm_stop(&sk->vm);
     } else if (level == SK_LOG_WARNING) {
         sk->warn_count++;
     }
