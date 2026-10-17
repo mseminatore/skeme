@@ -128,6 +128,10 @@ int sk_init(SKState *pSK, int argc, char* argv[])
     // set back-pointer from VM to SKState
     pSK->vm.sk_state = pSK;
 
+    // what a guard's clauses return when none applies: a symbol programs
+    // cannot write (identifiers do not start with <); a GC root
+    pSK->vm.guard_unhandled = vm_new_symbol(&pSK->vm, "<unhandled>");
+
     // register built-in functions
     if (SK_TRUE != sk_init_builtins(pSK))
     {

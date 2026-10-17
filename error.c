@@ -87,6 +87,19 @@ void sk_log(SKState* sk, SKLogLevel level, const char* fmt, ...)
     int line = 0;
 
     int runtime = (sk->parse_depth == 0 && sk->vm.exec_depth > 0);
+
+    // A runtime error while an exception handler is installed is raised,
+    // as an error object, instead of reported: a guard can catch it. If no
+    // handler takes it, vm_raise reports it after all.
+    if (runtime && level == SK_LOG_ERROR && sk->vm.handlers && !sk->vm.uncatchable && !sk->vm.abort_exec) {
+        Object* message = vm_new_string(&sk->vm, msg);
+        Object* err = vm_new_error(&sk->vm, message, NULL);
+        vm_raise(&sk->vm, err, 0);
+        if (!sk->vm.abort_exec)
+            vm_stop(&sk->vm);       // (vm_raise always unwinds; this is a backstop)
+        return;
+    }
+
     if (runtime) {
         // a runtime error: where the running instruction was compiled from
         if (!vm_current_location(&sk->vm, &file, &line))

@@ -1006,7 +1006,7 @@ static void quote_datum(SKState* pSK)
              LOOKAHEAD == LOAD || LOOKAHEAD == BEGIN || LOOKAHEAD == CASE_TOKEN ||
              LOOKAHEAD == IMPORT || LOOKAHEAD == LET || LOOKAHEAD == LET_STAR ||
              LOOKAHEAD == LETREC || LOOKAHEAD == DO || LOOKAHEAD == WHEN ||
-             LOOKAHEAD == UNLESS)
+             LOOKAHEAD == UNLESS || LOOKAHEAD == GUARD)
     {
         // language keywords are ordinary symbols inside quoted data,
         // e.g. '(if a b) or '(define (f x) x)
@@ -2188,15 +2188,33 @@ static int when_expr(SKState* pSK, int token)
 }
 
 //-----------------------------------------------
-// cond_expr := '(' 'cond' ( expr expr )* ')'
+// The body of a cond clause: expressions up to its ')', like begin; the
+// value is the last one's
 //-----------------------------------------------
-static int cond_expr(SKState* pSK)
+static void cond_body(SKState* pSK)
 {
-    PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
-    int addr_list[MAX_REL_CLAUSES];
-    int terms = 0;
+    expr(pSK);
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        vm_emit(&pSK->vm, OP_POP);
+        expr(pSK);
+    }
+}
 
-    match(pSK, COND);
+//-----------------------------------------------
+// cond clauses, up to (not including) the ')' that ends them:
+//   (test expr ...)     the value of the last expr, if test is true
+//   (test => receiver)  (receiver v) where v is test's value, if true
+//   (test)              test's value, if true
+//   (else expr ...)     the value of the last expr
+// The first clause whose test is true is used; if none is, and there is
+// no else, the value is 'otherwise'. guard's clauses compile here too.
+//-----------------------------------------------
+static void cond_clauses(SKState* pSK, Object* otherwise)
+{
+    int* ends = NULL;       // the BRA operands that jump to the end
+    int nends = 0, cap = 0;
+    int has_else = 0;
 
     while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
@@ -2205,37 +2223,114 @@ static int cond_expr(SKState* pSK)
         if (LOOKAHEAD == ELSE)
         {
             match(pSK, ELSE);
-            expr(pSK);                                // action/consequence
+            if (has_else)
+                yyerror(pSK, "cond: more than one else clause");
+            has_else = 1;
+            cond_body(pSK);
         }
         else
         {
-            expr(pSK);                                // test/condition
-            vm_emit(&pSK->vm, OP_BNT);                  // branch if not true
-            int next_addr = vm_emit(&pSK->vm, 0);       // reserve space for next clause address
+            expr(pSK);                                      // the test
+            int arrow = (LOOKAHEAD == ID && strcmp(pSK->yylval.word, "=>") == 0);
+            int keep = arrow || LOOKAHEAD == ')';
+            if (keep)
+                vm_emit(&pSK->vm, OP_DUP);                  // its value is the result
+            vm_emit(&pSK->vm, OP_BNT);
+            int next_addr = vm_emit(&pSK->vm, 0);
 
-            expr(pSK);                                // action/consequence
-
-            // return last expr value
-            vm_emit(&pSK->vm, OP_BRA);                  // jump to end
-            addr_list[terms++] = vm_emit(&pSK->vm, 0);  // reserve space for endif address
-            if (terms >= MAX_REL_CLAUSES)
+            if (arrow)
             {
-                yyerror(pSK, "too many terms in 'and' expression");
-                break;
+                match(pSK, ID);                             // =>
+                expr(pSK);                                  // the receiver
+                CodeChunk* chunk = vm_get_current_chunk();
+                pSK->last_call_offset = (int)chunk->count;
+                pSK->last_call_chunk = chunk;
+                vm_emit(&pSK->vm, OP_ICALL);                // (receiver value)
+                vm_emit(&pSK->vm, 1);
             }
+            else if (!keep)
+                cond_body(pSK);
 
-            // backpatch BNT address
+            vm_emit(&pSK->vm, OP_BRA);                      // to the end
+            if (nends == cap)
+            {
+                cap = cap ? cap * 2 : 16;
+                ends = (int*)vm_check_alloc(&pSK->vm, realloc(ends, sizeof(int) * cap));
+            }
+            ends[nends++] = vm_emit(&pSK->vm, 0);
+
+            // the next clause; a kept test value that was false is dropped
             vm_get_current_chunk()->code[next_addr] = vm_get_current_chunk()->count - next_addr;
+            if (keep)
+                vm_emit(&pSK->vm, OP_POP);
         }
 
         match(pSK, ')');
     }
 
-    // backpatch GOTO address
-    for (int i = 0; i < terms; i++)
-    {
-        vm_get_current_chunk()->code[addr_list[i]] = vm_get_current_chunk()->count - addr_list[i];
-    }
+    if (!has_else)
+        vm_emit_push_object(&pSK->vm, otherwise);
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    for (int i = 0; i < nends; i++)
+        chunk->code[ends[i]] = chunk->count - ends[i];
+    free(ends);
+}
+
+//-----------------------------------------------
+// cond_expr := '(' 'cond' clause* ')'; with no clause true and no else,
+// the value is unspecified
+//-----------------------------------------------
+static int cond_expr(SKState* pSK)
+{
+    PARSE_LOG("cond_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, COND);
+    cond_clauses(pSK, MAKE_UNSPEC());
+
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// guard := '(' 'guard' '(' var clause* ')' body ... ')'
+// The body runs; if it raises, var is bound to the condition and the
+// clauses (as for cond) are tried; if none applies, the condition is raised
+// again. It compiles to (<guard> handler body-thunk), with
+//   handler = (lambda (var) (cond clause ... (else <unhandled>)))
+//   body-thunk = (lambda () body ...)
+// and <guard> runs them (see sk_guard in builtins.c).
+//-----------------------------------------------
+static void guard_clauses(SKState* pSK)
+{
+    cond_clauses(pSK, pSK->vm.guard_unhandled);    // leaves LOOKAHEAD at the ')'
+}
+
+static int guard_expr(SKState* pSK)
+{
+    PARSE_LOG("guard_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    match(pSK, GUARD);
+    match(pSK, '(');
+
+    char var[1][64];
+    strncpy(var[0], pSK->yylval.word, 63);
+    var[0][63] = '\0';
+    if (LOOKAHEAD != ID)
+        yyerror(pSK, "guard: expected a variable for the condition");
+    match(pSK, ID);
+
+    let_create_lambda(pSK, var, 1, guard_clauses);  // the handler
+    match(pSK, ')');
+    let_create_lambda(pSK, NULL, 0, NULL);           // the body thunk, up to guard's ')'
+
+    Object* guard_fn = vm_get_global(&pSK->vm, vm_new_string(&pSK->vm, "<guard>"));
+    CodeChunk* chunk = vm_get_current_chunk();
+    pSK->last_call_offset = (int)chunk->count;
+    pSK->last_call_chunk = chunk;
+    vm_emit(&pSK->vm, OP_CALL);
+    vm_emit(&pSK->vm, (VMCode_t)guard_fn);
+    vm_emit(&pSK->vm, 2);
 
     unindent(pSK);
     return 0;
@@ -2563,6 +2658,10 @@ static int expr(SKState* pSK)
 
         case QUASIQUOTE:
             quasiquote_expr(pSK);       // (quasiquote datum)
+            break;
+
+        case GUARD:
+            guard_expr(pSK);
             break;
 
         case UNQUOTE:

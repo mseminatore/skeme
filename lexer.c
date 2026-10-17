@@ -44,6 +44,7 @@ Tokens tokens[] =
     { "quasiquote", QUASIQUOTE },
     { "unquote", UNQUOTE },
     { "unquote-splicing", UNQUOTE_SPLICING },
+    { "guard",   GUARD },
     // { "eval",    EVAL },
     { NULL, 0}
 };
@@ -700,6 +701,14 @@ yylex01:
         if (follow(pSK, '=', TRUE, FALSE))
         {
             strcpy(pSK->yylval.word, ">=");
+            return ID;
+        }
+        break;
+
+    case '=':
+        if (follow(pSK, '>', TRUE, FALSE))
+        {
+            strcpy(pSK->yylval.word, "=>");     // cond's (test => receiver)
             return ID;
         }
         break;

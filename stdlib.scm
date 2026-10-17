@@ -154,6 +154,21 @@
     (else (assq key (cdr alist)))))
 
 ;----------------------
+; assv, memv: find by key using eqv?
+;----------------------
+(define (assv key alist)
+  (cond
+    ((null? alist) #f)
+    ((eqv? key (car (car alist))) (car alist))
+    (else (assv key (cdr alist)))))
+
+(define (memv x lst)
+  (cond
+    ((null? lst) #f)
+    ((eqv? x (car lst)) lst)
+    (else (memv x (cdr lst)))))
+
+;----------------------
 ; for-each: apply fn to each element for side effects
 ;----------------------
 (define (for-each fn lst)

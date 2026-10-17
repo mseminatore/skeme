@@ -147,6 +147,7 @@ enum
     OBJ_PORT,
     OBJ_SYMBOL,
     OBJ_CONTINUATION,
+    OBJ_ERROR,          // an error object: (error msg irritant ...), or an error the VM raised
 
 	// mark the last object type
     OBJ_LAST
@@ -441,6 +442,14 @@ typedef struct Upvalue {
 // An escape continuation, made by call/cc. Calling it returns its value
 // from that call/cc, but only while the call/cc is still running (its
 // "dynamic extent"); afterwards it is invalid. See sk_call_cc.
+// an error object (R7RS): what (error message irritant ...) raises, and
+// what a runtime error raises when a handler is installed
+typedef struct ErrorObject {
+    Object base;
+    Object* message;        // usually a string
+    Object* irritants;      // a list
+} ErrorObject;
+
 typedef struct Continuation {
     Object base;
     int valid;              // 1 while its call/cc has not returned
@@ -505,6 +514,14 @@ typedef struct VM {
     Object* escape_to;              // continuation being escaped to (see vm_escape), or NULL
     Object* escape_value;           // the value it returns
 
+    // Exception handlers (R7RS raise, guard, with-exception-handler): a list,
+    // innermost first, of handler procedures and, for guard, escape
+    // continuations. vm_raise calls or escapes to the first. 'uncatchable'
+    // marks an error a handler must not see (stack overflow, heap limit).
+    Object* handlers;
+    int uncatchable;
+    Object* guard_unhandled;        // what a guard's clauses return when none matched
+
     // GC roots outside the object graph. The GC traces the objects that
     // bytecode refers to (see markChunk), starting from these chunks: the
     // top-level code being compiled or run (the REPL's, each eval's). A
@@ -566,6 +583,10 @@ void vm_format_float(double value, char* buf, size_t size);
 // nothing outside the stack.
 void vm_abort(VM* pvm, const char* msg);
 void vm_stop(VM* pvm);     // like vm_abort, for an error already reported
+void vm_abort_uncatchable(VM* pvm, const char* msg);   // vm_abort that handlers do not see
+Object* vm_raise(VM* pvm, Object* obj, int continuable);  // raise obj (see VM.handlers)
+Object* vm_new_error(VM* pvm, Object* message, Object* irritants);
+void vm_format_object(Object* obj, int readable, char* buf, size_t size);   // printed form, truncated
 void vm_fatal(VM* pvm, const char* msg);   // an unrecoverable failure (see VM.fatal_handler)
 void* vm_check_alloc(VM* pvm, void* p);     // p, or vm_fatal if an allocation returned NULL
 

@@ -335,7 +335,7 @@ Checked individually on `main`. Each item below fails today.
 - [ ] `define-syntax` / `syntax-rules`
 - [x] quasiquote / unquote (see #20)
 - [x] `when`, `unless` (see #18)
-- [ ] `guard` / `raise` / `with-exception-handler`
+- [x] `guard` / `raise` / `with-exception-handler` (see #21)
 
 **Data**
 - [ ] vectors (`make-vector`, `vector-ref`, `vector-set!`, `vector`, `#(...)`)
@@ -689,4 +689,33 @@ Note: since the hash library update (`1f25eb4`), Debug builds print `ht_free: ta
 `getString` reported "missing end quote" at the end of the input but kept looping, once per remaining buffer slot, then wrote its terminator one byte past the buffer; an unterminated string in a file or an eval string could hang the interpreter. It now reports the error once and stops, and reports a too-long string instead of overrunning. A string may now span lines, as in Scheme, and the line count stays right (before, each newline inside a string was a "missing end quote" error).
 
 ### Verification
-28 new tests in `test.scm` (479 total) and new C tests in `tests/test_error.c` (345 total). Everything passes in Debug and Release, plus `ctest`.
+28 new tests in `test.scm` (479 total) and new C tests in `tests/test_error.c` (345 total). Everything passes in Debug, Release and the GC-stress build, plus `ctest`.
+
+---
+
+## 21. ✅ Exceptions: raise, guard, error objects, with-exception-handler; full cond; read of 'x
+
+**Labels:** enhancement, bug
+**Status:** Fixed (working tree, not yet committed). Items from #8.
+
+### Exceptions (R7RS)
+* `(raise obj)`, `(raise-continuable obj)`, `(with-exception-handler handler thunk)`, `(error message irritant ...)`, `error-object?`, `error-object-message`, `error-object-irritants`, and the `guard` form: `(guard (var clause ...) body ...)`, whose clauses are `cond` clauses (`else` and `=>` included). If no clause applies, the condition is raised again, to the handlers outside the guard.
+* The VM keeps the installed handlers in `VM.handlers`, innermost first (a GC root). `vm_raise` gives the condition to the innermost: a guard's escape continuation is escaped to (the existing `call/cc` unwinding), and a procedure is called with the outer handlers installed. After `raise-continuable`, its result is the result; after `raise`, a handler that returns is itself an error, raised to the outer handlers. With no handler, the condition is reported as errors always were (an error object as its message and irritants, anything else as `uncaught exception: obj`), and the run stops.
+* **Runtime errors are catchable.** While a handler is installed, an error the VM or a built-in reports (`car` of a non-pair, an unbound variable, a wrong argument count, `(+ 1 "x")`, division by zero, ...) is raised as an error object whose message is the error message, so `guard` can catch it; `sk_log` does this. A caught error is not reported and does not count toward the exit status. Stack overflow, the heap limit and too-deep native nesting stay uncatchable (`vm_abort_uncatchable`), since a handler could not run safely after them.
+* `guard` compiles to `(<guard> handler body-thunk)`: the handler is a lambda holding the clauses, which returns a marker symbol programs cannot write if none applies. `<guard>` (`sk_guard`), like `<append>`, cannot be redefined.
+* `error` now raises an error object. Before, it only printed `Error: ...` to stderr and the program carried on; uncaught, it is now reported like any runtime error, with its location, and the run stops.
+* Error objects print as `#<error message irritant ...>`.
+* Like `map` and `call/cc`, `guard` and `with-exception-handler` run their bodies in a nested VM loop, so they count toward the native nesting limit (500) when nested inside one another through recursion; in a loop they do not.
+
+### cond
+`cond` supported only one expression per clause, with no `=>`, no test-only clauses and at most 16 clauses; and when no clause applied and there was no `else`, it left no value at all, which unbalanced the stack (`(list 1 (cond (#f 2)) 3)` built a two-element list). It now has R7RS clauses: `(test expr ...)`, `(test => receiver)`, `(test)` and `(else expr ...)`, any number of them, and is unspecified when none applies. `guard` shares the clause compiler (`cond_clauses`).
+* `=>` lexes as one identifier, as `<=` does.
+
+### read
+The `read` builtin read `'x` as a symbol named `'` followed by `x`, and did not know `` ` `` `,` `,@`. They now read as `(quote x)`, `(quasiquote x)`, `(unquote x)` and `(unquote-splicing x)`.
+
+### Also
+`assv` and `memv` in `stdlib.scm`.
+
+### Verification
+29 new tests in `test.scm` (508 total; the read tests use the fixture `tests/read_abbrev.txt`) and an "Exceptions" suite in `tests/test_error.c` (363 total): caught errors are neither reported nor counted, uncaught raises and errors are reported with the object or message and irritants, an unmatched guard reports the original error, stack overflow is not catchable and leaves no handler installed. Everything passes in Debug and Release, plus `ctest`; `bench.scm` speed is unchanged.

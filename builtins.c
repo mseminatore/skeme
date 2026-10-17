@@ -483,15 +483,152 @@ static void error_helper(SKState* pSK)
 }
 
 //-----------------------------------------------
-// built-in function: error
+// built-in function: error. (error message irritant ...) raises an error
+// object; uncaught, it is reported as "message irritant ..." and the run
+// stops.
 //-----------------------------------------------
 static int sk_error(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
+    VM* pvm = &pSK->vm;
 
-    fprintf(stderr, TERM_RED"Error: ");
-    error_helper(pSK);
-    
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+
+    vm_build_list(pvm, n - 1, NULL);        // the irritants, a list on top of the message
+    Object* err = vm_new_error(pvm, vm_peek(pvm, 1), vm_peek(pvm, 0));
+    vm_pop_n(pvm, 2);
+    vm_push(pvm, err);                      // the result slot, and keeps err alive
+
+    vm_raise(pvm, err, 0);
+    return SK_FALSE;                        // raise does not return here
+}
+
+//-----------------------------------------------
+// built-in functions: raise, raise-continuable
+//-----------------------------------------------
+static int sk_raise(SKState* pSK)
+{
+    vm_raise(&pSK->vm, vm_peek(&pSK->vm, 0), 0);   // stays on the stack meanwhile
+    return SK_FALSE;
+}
+
+static int sk_raise_continuable(SKState* pSK)
+{
+    Object* result = vm_raise(&pSK->vm, vm_peek(&pSK->vm, 0), 1);
+    vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, result ? result : MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: with-exception-handler. (with-exception-handler
+// handler thunk) calls thunk with handler installed (see vm_raise).
+//-----------------------------------------------
+static int sk_with_exception_handler(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    Object* handler = vm_peek(pvm, 1);
+    Object* thunk = vm_peek(pvm, 0);
+    if (!IS_FUNCTION(handler) && !IS_CLOSURE(handler)) {
+        yyerror(pSK, "with-exception-handler: the handler must be a procedure");
+        return SK_FALSE;
+    }
+
+    Object* saved = pvm->handlers;
+    vm_push(pvm, handler);
+    vm_build_list(pvm, 1, saved);           // (handler . saved)
+    pvm->handlers = vm_pop(pvm);
+
+    Object* result = vm_call_function(pvm, thunk, 0, NULL);
+    pvm->handlers = saved;                  // also when unwinding past
+
+    vm_pop_n(pvm, 2);
+    if (pvm->abort_exec)
+        return SK_FALSE;
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// The guard form compiles to (<guard> handler body-thunk). The body runs
+// with an escape continuation installed as the innermost handler, so a
+// raise inside it unwinds to here (vm_raise). Then handler, a procedure of
+// the condition that holds the guard's clauses, runs; if none of them
+// matched it returns VM.guard_unhandled, and the condition is raised again
+// (continuably, from the guard's place).
+//-----------------------------------------------
+static int sk_guard(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    Object* handler = vm_peek(pvm, 1);
+    Object* body = vm_peek(pvm, 0);
+
+    Continuation* k = (Continuation*)vm_newObject(pvm, sizeof(Continuation), OBJ_CONTINUATION);
+    k->valid = 1;
+    vm_push(pvm, (Object*)k);               // keep k reachable while the body runs
+
+    Object* saved = pvm->handlers;
+    vm_push(pvm, (Object*)k);
+    vm_build_list(pvm, 1, saved);           // (k . saved)
+    pvm->handlers = vm_pop(pvm);
+
+    Object* result = vm_call_function(pvm, body, 0, NULL);
+    k->valid = 0;
+    pvm->handlers = saved;
+
+    if (pvm->escape_to == (Object*)k)
+    {
+        // a raise: run the clauses, with the condition kept on the stack
+        Object* condition = pvm->escape_value;
+        pvm->escape_to = NULL;
+        pvm->escape_value = NULL;
+        pvm->abort_exec = 0;
+
+        vm_push(pvm, condition);
+        result = vm_call_function(pvm, handler, 1, &condition);
+        if (!pvm->abort_exec && result == pvm->guard_unhandled)
+            result = vm_raise(pvm, condition, 1);   // no clause matched
+        vm_pop(pvm);
+    }
+
+    vm_pop_n(pvm, 3);                       // k, body, handler
+    if (pvm->abort_exec)
+        return SK_FALSE;                    // an error, or an escape to an outer handler
+    vm_push(pvm, result ? result : MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in functions: error-object?, error-object-message,
+// error-object-irritants
+//-----------------------------------------------
+static int sk_error_objectp(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, OBJ_TYPE(obj) == OBJ_ERROR ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+static int sk_error_object_message(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (OBJ_TYPE(obj) != OBJ_ERROR) {
+        yyerror(pSK, "argument to 'error-object-message' must be an error object");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, ((ErrorObject*)obj)->message);
+    return SK_TRUE;
+}
+
+static int sk_error_object_irritants(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    if (OBJ_TYPE(obj) != OBJ_ERROR) {
+        yyerror(pSK, "argument to 'error-object-irritants' must be an error object");
+        return SK_FALSE;
+    }
+    vm_push(&pSK->vm, ((ErrorObject*)obj)->irritants);
     return SK_TRUE;
 }
 
@@ -2101,7 +2238,19 @@ static Object* sk_read_datum(SKState* pSK, int tok)
         case LET: case LET_STAR: case LETREC: case BEGIN: case SET:
         case LIST: case CASE_TOKEN: case AND: case OR: case LOAD:
         case IMPORT: case DO: case QUOTE: case WHEN: case UNLESS:
-        case QUASIQUOTE: case UNQUOTE: case UNQUOTE_SPLICING:
+        case QUASIQUOTE: case UNQUOTE: case UNQUOTE_SPLICING: case GUARD:
+            if ((tok == QUOTE || tok == QUASIQUOTE || tok == UNQUOTE || tok == UNQUOTE_SPLICING) &&
+                !isalpha((unsigned char)pSK->yylval.word[0]))
+            {
+                // 'x ` , ,@ abbreviate (quote x) (quasiquote x) (unquote x)
+                // (unquote-splicing x)
+                const char* name = tok == QUOTE ? "quote" : tok == QUASIQUOTE ? "quasiquote" :
+                                   tok == UNQUOTE ? "unquote" : "unquote-splicing";
+                vm_push(&pSK->vm, vm_new_symbol(&pSK->vm, name));
+                vm_push(&pSK->vm, sk_read_datum(pSK, yylex(pSK)));
+                vm_build_list(&pSK->vm, 2, NULL);
+                return vm_pop(&pSK->vm);
+            }
             // keywords and identifiers become symbols
             return vm_new_symbol(&pSK->vm, pSK->yylval.word);
 
@@ -3050,6 +3199,13 @@ static SKFuncSet built_in_funcs[] =
     { "display", sk_display, 1 },
     { "newline", sk_newline, 0 },
 	{ "error", sk_error, SK_ARITY_ONE_OR_MORE },
+    { "raise", sk_raise, 1 },
+    { "raise-continuable", sk_raise_continuable, 1 },
+    { "with-exception-handler", sk_with_exception_handler, 2 },
+    { "<guard>", sk_guard, 2 },     // the guard form's, which programs cannot redefine
+    { "error-object?", sk_error_objectp, 1 },
+    { "error-object-message", sk_error_object_message, 1 },
+    { "error-object-irritants", sk_error_object_irritants, 1 },
 	{ "warn", sk_warn, SK_ARITY_ONE_OR_MORE },
 	{ "info", sk_info, SK_ARITY_ONE_OR_MORE },
 	{ "cls", sk_cls, 0 },

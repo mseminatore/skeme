@@ -178,6 +178,15 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
             fprintf(stream, "#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
+        case OBJ_ERROR:
+        {
+            // #<error message irritant ...>
+            char buf[512];
+            vm_format_object(obj, 0, buf, sizeof(buf));
+            fprintf(stream, "#<error %s>", buf);
+        }
+            break;
+
         case OBJ_CONTINUATION:
             fprintf(stream, "#<continuation>");
             break;
@@ -328,6 +337,10 @@ int vm_init(VM* pvm) {
     pvm->root_chunk_count = pvm->root_chunk_capacity = 0;
     pvm->compile_roots = NULL;
     pvm->compile_root_count = pvm->compile_root_capacity = 0;
+
+    pvm->handlers = NULL;
+    pvm->uncatchable = 0;
+    pvm->guard_unhandled = NULL;        // made by sk_init
 
     pvm->heap_limit = 0;                // none (sk_set_heap_limit)
     pvm->fatal_handler = NULL;          // print and exit (sk_set_fatal_handler)
@@ -1622,7 +1635,7 @@ Object* vm_call_function(VM* pvm, Object* fn, int nargs, Object** args)
     if (pvm->exec_depth >= VM_MAX_NATIVE_DEPTH)
     {
         // each level nests C calls; stop before the C stack runs out
-        vm_abort(pvm, "native calls nested too deeply (recursion through map, apply or call/cc)");
+        vm_abort_uncatchable(pvm, "native calls nested too deeply (recursion through map, apply or call/cc)");
         return NULL;
     }
 
@@ -1995,6 +2008,10 @@ static void markObjects(VM* pvm) {
     markObject(pvm, pvm->escape_to);
     markObject(pvm, pvm->escape_value);
 
+    // installed exception handlers, and guard's no-clause-matched marker
+    markObject(pvm, pvm->handlers);
+    markObject(pvm, pvm->guard_unhandled);
+
     // top-level code being compiled or run, and procedures being compiled
     for (int i = 0; i < pvm->root_chunk_count; i++)
         markChunk(pvm, pvm->root_chunks[i]);
@@ -2193,6 +2210,11 @@ static void blackenObject(VM* pvm, Object* object)
 		}
         break;
 
+    case OBJ_ERROR:
+        markObject(pvm, ((ErrorObject*)object)->message);
+        markObject(pvm, ((ErrorObject*)object)->irritants);
+        break;
+
     case OBJ_UPVALUE:
         // an open upvalue's value is on the stack, which is marked anyway
         markObject(pvm, ((Upvalue*)object)->closed);
@@ -2357,7 +2379,7 @@ __attribute__((noinline, cold))
 #endif
 void vm_stack_overflow(VM* pvm)
 {
-    vm_abort(pvm, "stack overflow (recursion too deep)");
+    vm_abort_uncatchable(pvm, "stack overflow (recursion too deep)");
 }
 
 //--------------------------------------------------------------
@@ -2394,6 +2416,8 @@ void* vm_check_alloc(VM* pvm, void* p)
 
 void vm_abort(VM* pvm, const char* msg)
 {
+    // With a handler installed, reporting the error raises it (see sk_log),
+    // and the handler may escape to a guard: that unwinds like an abort too
     if (!pvm->abort_exec)
         yyerror(pvm->sk_state, msg);
 
@@ -2402,6 +2426,192 @@ void vm_abort(VM* pvm, const char* msg)
     // Stop at the next dispatch rather than testing abort_exec before every
     // instruction. Ops that set ip themselves (calls, returns) test it.
     pvm->ip = vm_halt_code;
+}
+
+//--------------------------------------------------------------
+// An error no handler may see, because one could not run safely after it
+// (the stack is full, the heap limit was reached, C calls nested too deep)
+//--------------------------------------------------------------
+void vm_abort_uncatchable(VM* pvm, const char* msg)
+{
+    pvm->uncatchable++;
+    vm_abort(pvm, msg);
+    pvm->uncatchable--;
+}
+
+//--------------------------------------------------------------
+// A new error object
+//--------------------------------------------------------------
+Object* vm_new_error(VM* pvm, Object* message, Object* irritants)
+{
+    // message and irritants must be reachable: the allocation may collect
+    vm_push(pvm, message);
+    vm_push(pvm, irritants);
+    ErrorObject* err = (ErrorObject*)vm_newObject(pvm, sizeof(ErrorObject), OBJ_ERROR);
+    err->irritants = vm_pop(pvm);
+    err->message = vm_pop(pvm);
+    return (Object*)err;
+}
+
+//--------------------------------------------------------------
+// The printed form of an object, into buf (truncated to fit): as write
+// prints it if 'readable', else as display does. An error object prints
+// as its message followed by its irritants, as an uncaught error reports it.
+//--------------------------------------------------------------
+static void format_add(char* buf, size_t size, size_t* len, const char* s)
+{
+    while (*s && *len + 1 < size)
+        buf[(*len)++] = *s++;
+    buf[*len] = '\0';
+}
+
+static void format_object(Object* obj, int readable, char* buf, size_t size, size_t* len, int depth)
+{
+    char tmp[64];
+
+    if (*len + 1 >= size)
+        return;
+    if (depth > 20) { format_add(buf, size, len, "..."); return; }
+
+    if (obj == NULL)
+        format_add(buf, size, len, "()");
+    else if (IS_NUM(obj))
+    {
+        snprintf(tmp, sizeof(tmp), "%d", AS_NUM(obj));
+        format_add(buf, size, len, tmp);
+    }
+    else if (IS_FLOAT(obj))
+    {
+        vm_format_float(AS_DOUBLE(obj), tmp, sizeof(tmp));
+        format_add(buf, size, len, tmp);
+    }
+    else if (IS_TRUE(obj))
+        format_add(buf, size, len, "#t");
+    else if (IS_FALSE(obj))
+        format_add(buf, size, len, "#f");
+    else if (IS_CHAR(obj))
+    {
+        snprintf(tmp, sizeof(tmp), readable ? "#\\%c" : "%c", AS_CHAR(obj));
+        format_add(buf, size, len, tmp);
+    }
+    else if (IS_STRING(obj))
+    {
+        if (readable) format_add(buf, size, len, "\"");
+        format_add(buf, size, len, ((String*)obj)->value);
+        if (readable) format_add(buf, size, len, "\"");
+    }
+    else if (IS_SYMBOL(obj))
+        format_add(buf, size, len, ((String*)obj)->value);
+    else if (IS_PAIR(obj))
+    {
+        format_add(buf, size, len, "(");
+        int count = 0;
+        Object* p = obj;
+        for (; IS_PAIR(p) && *len + 1 < size; p = ((Pair*)p)->cdr)
+        {
+            if (count++)
+                format_add(buf, size, len, " ");
+            if (count > 50) { format_add(buf, size, len, "..."); p = NULL; break; }
+            format_object(((Pair*)p)->car, readable, buf, size, len, depth + 1);
+        }
+        if (p != NULL && !IS_PAIR(p))
+        {
+            format_add(buf, size, len, " . ");
+            format_object(p, readable, buf, size, len, depth + 1);
+        }
+        format_add(buf, size, len, ")");
+    }
+    else if (OBJ_TYPE(obj) == OBJ_ERROR)
+    {
+        // the message as text, then each irritant as write prints it
+        ErrorObject* err = (ErrorObject*)obj;
+        format_object(err->message, 0, buf, size, len, depth + 1);
+        for (Object* p = err->irritants; IS_PAIR(p); p = ((Pair*)p)->cdr)
+        {
+            format_add(buf, size, len, " ");
+            format_object(((Pair*)p)->car, 1, buf, size, len, depth + 1);
+        }
+    }
+    else if (IS_UNSPEC(obj))
+        format_add(buf, size, len, "#<unspecified>");
+    else if (IS_PROCEDURE(obj) || IS_CLOSURE(obj) || IS_NATIVE_FN(obj))
+        format_add(buf, size, len, "#<procedure>");
+    else
+        format_add(buf, size, len, "#<object>");
+}
+
+void vm_format_object(Object* obj, int readable, char* buf, size_t size)
+{
+    size_t len = 0;
+    if (size == 0) return;
+    buf[0] = '\0';
+    format_object(obj, readable, buf, size, &len, 0);
+}
+
+//--------------------------------------------------------------
+// Raise obj (R7RS raise, raise-continuable, and every runtime error while
+// a handler is installed). The innermost handler gets it:
+// - a guard's escape continuation: escape to the guard (see sk_guard);
+// - a procedure: call it with obj, with the outer handlers installed. For
+//   raise-continuable ('continuable') its result is raise's result. After
+//   a plain raise it must not return: that is a new error, raised to the
+//   outer handlers.
+// With no handler, the error is reported, as errors always were, and the
+// run stops. Returns NULL unless a continuable raise was handled.
+//--------------------------------------------------------------
+Object* vm_raise(VM* pvm, Object* obj, int continuable)
+{
+    if (pvm->abort_exec)
+        return NULL;    // already unwinding
+
+    if (pvm->handlers == NULL)
+    {
+        char msg[512];
+        if (OBJ_TYPE(obj) == OBJ_ERROR)
+            vm_format_object(obj, 0, msg, sizeof(msg));
+        else
+        {
+            char what[480];
+            vm_format_object(obj, 1, what, sizeof(what));
+            snprintf(msg, sizeof(msg), "uncaught exception: %s", what);
+        }
+        vm_abort_uncatchable(pvm, msg);
+        return NULL;
+    }
+
+    Object* handler = ((Pair*)pvm->handlers)->car;
+    if (IS_CONTINUATION(handler))
+    {
+        vm_escape(pvm, handler, obj);       // to a guard
+        return NULL;
+    }
+
+    // run the handler with the outer handlers; obj is on the stack while it runs
+    Object* saved = pvm->handlers;
+    pvm->handlers = ((Pair*)saved)->cdr;
+    Object* result = vm_call_function(pvm, handler, 1, &obj);
+
+    if (pvm->abort_exec)
+    {
+        pvm->handlers = saved;
+        return NULL;                        // the handler escaped, or failed
+    }
+    if (continuable)
+    {
+        pvm->handlers = saved;
+        return result;
+    }
+
+    // a handler returned from a plain raise: an error, raised to the
+    // outer handlers (still installed)
+    vm_push(pvm, obj);
+    vm_build_list(pvm, 1, NULL);            // irritants: (obj), kept on the stack
+    Object* message = vm_new_string(pvm, "exception handler returned from a non-continuable raise");
+    Object* err = vm_new_error(pvm, message, vm_peek(pvm, 0));
+    vm_pop(pvm);
+    vm_raise(pvm, err, 0);
+    pvm->handlers = saved;
+    return NULL;
 }
 
 //--------------------------------------------------------------
@@ -2420,6 +2630,7 @@ static void vm_exec_leave(VM* pvm)
         pvm->sp = 0;
         pvm->fp = 0;
         pvm->current_closure = NULL;
+        pvm->handlers = NULL;       // (each installer restores its own; this is a backstop)
         pvm->abort_exec = 0;
     }
 }
@@ -2515,7 +2726,7 @@ void *vm_alloc(VM* pvm, void *ptr, size_t old_size, size_t new_size) {
     {
         vm_gc(pvm);
         if (pvm->allocatedBytes > pvm->heap_limit)
-            vm_abort(pvm, "out of memory (heap limit reached)");
+            vm_abort_uncatchable(pvm, "out of memory (heap limit reached)");
     }
 
     // return the new pointer

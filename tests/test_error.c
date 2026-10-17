@@ -678,6 +678,61 @@ void test_error(int argc, char *argv[])
         sk_shutdown(&sk);
     }
 
+    // Test: raise, guard and the error path
+    SUITE("Exceptions");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("A caught error is not reported and does not count...");
+        int errors_before = sk.err_count;
+        eval_quietly(&sk, "(define ex-a (guard (e (#t 'caught)) (car 5)))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(sk.err_count == errors_before);
+        TEST(get_global(&sk, "ex-a") == vm_new_symbol(&sk.vm, "caught"));
+
+        COMMENT("An uncaught raise is reported, with the object...");
+        reset_test_context();
+        eval_quietly(&sk, "(define ex-b (raise 'boom))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "uncaught exception: boom") != NULL);
+        TEST(no_value(get_global(&sk, "ex-b")));
+
+        COMMENT("An uncaught error reports its message and irritants...");
+        reset_test_context();
+        eval_quietly(&sk, "(error \"bad value:\" 42 \"s\")");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "bad value: 42 \"s\"") != NULL);
+        TEST(sk.vm.handlers == NULL);
+
+        COMMENT("An unmatched guard reports the original error...");
+        reset_test_context();
+        eval_quietly(&sk, "(guard (e ((string? e) 'no)) (car 5))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'car'") != NULL);
+
+        COMMENT("Stack overflow is not catchable...");
+        reset_test_context();
+        eval_quietly(&sk, "(define (ex-deep n) (+ 1 (ex-deep n)))");
+        eval_quietly(&sk, "(define ex-c (guard (e (#t 'caught)) (ex-deep 1)))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "stack overflow") != NULL);
+        TEST(no_value(get_global(&sk, "ex-c")));
+        TEST(sk.vm.handlers == NULL);
+        TEST(sk.vm.sp == 0);
+
+        COMMENT("Afterwards, guards work as before...");
+        reset_test_context();
+        eval_quietly(&sk, "(define ex-d (guard (e ((symbol? e) e)) (raise 'again)))");
+        TEST(g_test_ctx.error_count == 0);
+        TEST(get_global(&sk, "ex-d") == vm_new_symbol(&sk.vm, "again"));
+
+        sk_shutdown(&sk);
+    }
+
     // Test: what an embedder (a web REPL, say) relies on
     SUITE("Embedding");
     {

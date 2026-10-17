@@ -1138,6 +1138,59 @@
 (test-case "a string literal over two lines" (= (string-length "a
 b") 3))
 
+; cond clauses (R7RS)
+(test-case "cond body of several expressions" (= (cond (#f 1) (else 2 3)) 3))
+(test-case "cond =>" (eq? (cond ((assq 'b '((a . 1) (b . 2))) => (lambda (p) (if (= (cdr p) 2) 'two 'other))) (else 'no)) 'two))
+(test-case "cond test-only clause" (= (cond (#f) ((+ 1 1)) (else 9)) 2))
+(test-case "cond with no match keeps the stack" (let ((l (list 1 (cond (#f 2)) 3))) (and (= (length l) 3) (= (car (cdr (cdr l))) 3))))
+(define (lf-cond-n n) (cond ((= n 0) 'zero) ((= n 1) 'one) ((= n 2) 'two) ((= n 3) 'three) ((= n 4) 'four)
+                            ((= n 5) 'five) ((= n 6) 'six) ((= n 7) 'seven) ((= n 8) 'eight) ((= n 9) 'nine)
+                            ((= n 10) 'ten) ((= n 11) 'eleven) ((= n 12) 'twelve) ((= n 13) 'thirteen)
+                            ((= n 14) 'fourteen) ((= n 15) 'fifteen) ((= n 16) 'sixteen) ((= n 17) 'seventeen)
+                            (else 'many)))
+(test-case "cond with more than 16 clauses" (equal? (map lf-cond-n '(0 16 17 18)) '(zero sixteen seventeen many)))
+(test-case "assv and memv" (and (equal? (assv 2 '((1 . a) (2 . b))) '(2 . b)) (equal? (memv 3 '(1 3 4)) '(3 4))))
+
+; exceptions: raise, error, guard, with-exception-handler
+(test-case "guard catches raise" (equal? (guard (e (#t (list 'caught e))) (raise 'boom)) '(caught boom)))
+(test-case "guard picks the matching clause" (eq? (guard (e ((symbol? e) 'sym) ((string? e) 'str)) (raise "x")) 'str))
+(test-case "guard clause with =>" (= (guard (e ((assq 'code e) => cdr)) (raise '((code . 42)))) 42))
+(test-case "guard body value when nothing is raised" (= (guard (e (#t 0)) (+ 1 2)) 3))
+(test-case "error object" (equal? (guard (e ((error-object? e) (list (error-object-message e) (error-object-irritants e))))
+                                     (error "bad thing:" 1 'x))
+                              '("bad thing:" (1 x))))
+(test-case "guard catches a built-in error" (equal? (guard (e ((error-object? e) (error-object-message e))) (car 5))
+                                                   "argument to 'car' is not a pair"))
+(test-case "guard catches an unbound variable" (eq? (guard (e ((error-object? e) 'unbound)) (lf-no-such-variable)) 'unbound))
+(test-case "guard catches an arithmetic error" (eq? (guard (e (#t 'caught)) (+ 1 "x")) 'caught))
+(test-case "guard catches a wrong argument count" (eq? (guard (e (#t 'caught)) ((lambda (a) a))) 'caught))
+(test-case "guard catches division by zero" (eq? (guard (e (#t 'div)) (/ 1 0)) 'div))
+(test-case "unmatched guard re-raises to the outer one"
+    (eq? (guard (e ((string? e) 'outer)) (guard (e2 ((number? e2) 'inner)) (raise "s"))) 'outer))
+(test-case "a raise from inside map" (eq? (guard (e ((symbol? e) e)) (map (lambda (x) (if (= x 2) (raise 'two) x)) '(1 2 3))) 'two))
+(define (lf-guard-loop n) (if (= n 0) 'done (begin (guard (e (#t #f)) (raise 'x)) (lf-guard-loop (- n 1)))))
+(test-case "guard in a loop" (eq? (lf-guard-loop 10000) 'done))
+(test-case "raise-continuable" (= (with-exception-handler (lambda (c) 10) (lambda () (+ 1 (raise-continuable 'c)))) 11))
+(test-case "a handler returning from raise is an error"
+    (guard (e ((error-object? e) (equal? (error-object-irritants e) '(x))))
+      (with-exception-handler (lambda (c) 'ignored) (lambda () (raise 'x)))))
+(test-case "a handler can escape with call/cc"
+    (equal? (call/cc (lambda (k) (with-exception-handler (lambda (c) (k (list 'escaped c))) (lambda () (raise 'oops)))))
+            '(escaped oops)))
+(test-case "a handler runs with the outer handlers"
+    (eq? (guard (e ((eq? e 'second) 'outer-saw-second))
+           (with-exception-handler (lambda (c) (raise 'second)) (lambda () (raise 'first))))
+         'outer-saw-second))
+(test-case "handlers are uninstalled after the body" (begin (guard (e (#t #f)) 1) (guard (e (#t 'fresh)) (raise 'y))))
+(test-case "error objects print readably" (error-object? (guard (e (#t e)) (error "m" 1))))
+
+; read abbreviations
+(define lf-read-port (open-input-file "tests/read_abbrev.txt"))
+(test-case "read 'x" (equal? (read lf-read-port) ''x))
+(test-case "read quasiquote and unquotes" (equal? (read lf-read-port) '(quasiquote (a (unquote b) (unquote-splicing c)))))
+(test-case "read (quote y)" (equal? (read lf-read-port) ''y))
+(test-case "read nested quotes" (equal? (read lf-read-port) '(quote (1 (quote 2)))))
+
 ; report test results
 ;----------------------
 (test-end)
