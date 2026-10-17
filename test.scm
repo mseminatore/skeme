@@ -1097,6 +1097,47 @@
 (test-case "a whole float prints with .0" (equal? (number->string 3.0) "3.0"))
 (test-case "number->string of a float" (equal? (number->string 2.5) "2.5"))
 
+; quasiquote
+(define qq-x 5)
+(define qq-l '(1 2 3))
+(test-case "quasiquote without unquotes is quote" (equal? `(a (b c) "s" 1) '(a (b c) "s" 1)))
+(test-case "unquote" (equal? `(a ,qq-x b) '(a 5 b)))
+(test-case "unquote an expression" (equal? `(sum ,(+ 1 2)) '(sum 3)))
+(test-case "unquote-splicing" (equal? `(a ,@qq-l b) '(a 1 2 3 b)))
+(test-case "splicing at the start, alone and at the end"
+    (and (equal? `(,@qq-l x) '(1 2 3 x)) (equal? `(,@qq-l) '(1 2 3)) (equal? `(x ,@qq-l) '(x 1 2 3))))
+(test-case "splicing the empty list" (equal? `(a ,@'() b) '(a b)))
+(test-case "several splices" (equal? `(,@qq-l ,@qq-l) '(1 2 3 1 2 3)))
+(test-case "splices are copied, except the last piece"
+    (let ((r `(,@qq-l 0)))
+      (and (not (eq? r qq-l)) (equal? qq-l '(1 2 3)) (eq? (cdr `(0 ,@qq-l)) qq-l))))
+(test-case "dotted quasiquote" (and (equal? `(a . ,qq-x) (cons 'a 5)) (equal? `(,@qq-l . t) '(1 2 3 . t))))
+(test-case "quasiquote an atom" (and (eq? `sym 'sym) (= `,qq-x 5) (null? `())))
+(test-case "nested lists" (equal? `((x ,qq-x) (y (,@qq-l))) '((x 5) (y (1 2 3)))))
+(test-case "nested quasiquote keeps inner unquotes"
+    (equal? `(a `(b ,(c ,qq-x))) '(a (quasiquote (b (unquote (c 5)))))))
+(test-case "nested quasiquote ,,x" (equal? `(a `(b ,,qq-x)) '(a (quasiquote (b (unquote 5))))))
+(test-case "long forms" (equal? (quasiquote (a (unquote qq-x) (unquote-splicing qq-l))) '(a 5 1 2 3)))
+(test-case "quote inside quasiquote" (equal? `(a '(b ,qq-x)) '(a (quote (b 5)))))
+(test-case "unquote as quoted data" (equal? '(a ,b ,@c `d) '(a (unquote b) (unquote-splicing c) (quasiquote d))))
+(define (qq-build n) `(n ,n ,@(iota n)))
+(test-case "quasiquote in a procedure" (equal? (qq-build 3) '(n 3 0 1 2)))
+(define (qq-loop n acc) (if (= n 0) acc (qq-loop (- n 1) `(,n ,@acc))))
+(test-case "quasiquote in a tail-recursive loop" (= (length (qq-loop 10000 '())) 10000))
+(test-case "append is a procedure value" (equal? (apply append '((1) (2 3) (4))) '(1 2 3 4)))
+
+; eval of an expression
+(test-case "eval a quoted expression" (= (eval '(+ 1 2)) 3))
+(test-case "eval a quasiquoted expression" (= (eval `(* ,qq-x 2)) 10))
+(test-case "eval a symbol" (= (eval 'qq-x) 5))
+(test-case "eval a define" (begin (eval '(define eval-datum-var 42)) (= eval-datum-var 42)))
+(test-case "eval with an environment" (equal? (eval '(list 1 "two" #\3 4.5) (interaction-environment)) (list 1 "two" #\3 4.5)))
+(test-case "eval quoted data" (equal? (eval ''(a b . c)) '(a b . c)))
+(test-case "eval a lambda call" (= (eval '((lambda (a b) (- a b)) 10 4)) 6))
+(test-case "eval builds code" (= (eval (list '+ 1 2 3)) 6))
+(test-case "a string literal over two lines" (= (string-length "a
+b") 3))
+
 ; report test results
 ;----------------------
 (test-end)

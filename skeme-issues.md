@@ -333,7 +333,7 @@ Checked individually on `main`. Each item below fails today.
 - [x] named `let`: `(let loop ((i 0)) ...)` (see #14)
 - [x] `call/cc`: escape-only (see #14)
 - [ ] `define-syntax` / `syntax-rules`
-- [ ] quasiquote / unquote
+- [x] quasiquote / unquote (see #20)
 - [x] `when`, `unless` (see #18)
 - [ ] `guard` / `raise` / `with-exception-handler`
 
@@ -354,7 +354,7 @@ Checked individually on `main`. Each item below fails today.
 - [x] n-ary `min` / `max` / `append` in `stdlib.scm` (two arguments only) (see #18)
 
 **Eval**
-- [ ] `eval` takes a *string* (`(eval "(+ 1 2)")` works) but not a datum: `(eval '(+ 1 2))` gives `eval: expected a string argument`. R5RS `eval` takes an expression and an environment.
+- [x] (see #20) `eval` takes a *string* (`(eval "(+ 1 2)")` works) but not a datum: `(eval '(+ 1 2))` gives `eval: expected a string argument`. R5RS `eval` takes an expression and an environment.
 
 Already fine: `do`, `case`, `cond`, `let`, tail calls between equal-arity functions, `assq`/`assoc` and friends via `stdlib.scm`.
 
@@ -665,3 +665,28 @@ Allocation failures called `exit(1)` (`vm_alloc`, `vm_emit`, the GC's gray stack
 An "Embedding" suite in `tests/test_error.c` (335 total): `(exit 5)` in a string stops the run and records the code without ending the process, and the interpreter carries on; a run that outgrows a heap limit stops with an error, the session goes on, and the runaway data is collected; a fatal failure reaches the embedder's handler, which `longjmp`s back. Everything passes in Debug and Release, plus `ctest`.
 
 Note: since the hash library update (`1f25eb4`), Debug builds print `ht_free: table ... freed with N entries` when skeme frees a non-empty table (environments during collection, the globals at shutdown). skeme does this on purpose; defining `HT_WARN_FREE_NONEMPTY=0` for the hash library would silence it. Release builds are unaffected.
+
+---
+
+## 20. ✅ Quasiquote; `eval` of an expression; a C `append`; unterminated strings
+
+**Labels:** enhancement, bug
+**Status:** Fixed (working tree, not yet committed). Items from #8.
+
+### Quasiquote
+`` `datum `` builds `datum` like `'datum`, except that `,expr` inserts the value of `expr` and `,@expr` splices in the elements of the list `expr` returns. The long forms `(quasiquote x)`, `(unquote x)` and `(unquote-splicing x)` work too, as do dotted lists (`` `(a . ,b) ``), `'` inside a quasiquote (whose unquotes still count), and nesting: as R7RS specifies, an unquote is evaluated only at the outermost level, so `` `(a `(b ,(c ,x))) `` evaluates only the inner `,x`.
+* The lexer returns `QUASIQUOTE`, `UNQUOTE` and `UNQUOTE_SPLICING` for `` ` ``, `,` and `,@` (and the words). Inside plain quoted data they are just data: `'(a ,b)` is `(a (unquote b))`.
+* `qq_datum` in `parser.c` compiles quasiquoted data the way `quote_datum` compiles quoted data, into code that builds it. A list with splices compiles to groups of plain elements (`OP_LIST`) and spliced values, joined by one call to the `append` native under the name `<append>`, which programs cannot redefine; a list without splices compiles exactly like a quoted one. Splices are copied, except a splice or tail in the last position, which the result shares, as R7RS allows.
+* `,x` or `,@x` outside a quasiquote, and `,@x` not inside a list, are syntax errors.
+
+### `eval` of an expression
+`(eval expr [env])` now takes an expression, as in Scheme: `(eval '(+ 1 2))`, `` (eval `(* ,x 2)) ``, `(eval (list '+ 1 2))`. The expression is written back out as source text (`datum_to_source`) and compiled like an eval string; one that contains a value with no source form, such as a procedure, is an error. The optional environment argument is accepted and ignored, since skeme has one environment, and `(interaction-environment)` is defined. As before, a string is source text to evaluate (a skeme extension), so `(eval "(+ 1 2)")` is 3, not the string.
+
+### `append` in C
+`append` is now a native: any number of lists, all but the last copied, the last shared (and allowed to be a non-list). It replaces the version in `stdlib.scm` (`append-reverse` stays there, for `sort`).
+
+### Unterminated string literals hung the lexer
+`getString` reported "missing end quote" at the end of the input but kept looping, once per remaining buffer slot, then wrote its terminator one byte past the buffer; an unterminated string in a file or an eval string could hang the interpreter. It now reports the error once and stops, and reports a too-long string instead of overrunning. A string may now span lines, as in Scheme, and the line count stays right (before, each newline inside a string was a "missing end quote" error).
+
+### Verification
+28 new tests in `test.scm` (479 total) and new C tests in `tests/test_error.c` (345 total). Everything passes in Debug and Release, plus `ctest`.

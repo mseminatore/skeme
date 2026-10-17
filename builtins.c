@@ -1596,15 +1596,150 @@ static int sk_map(SKState* pSK)
 //-----------------------------------------------
 // built-in function: eval
 //-----------------------------------------------
+//-----------------------------------------------
+// A growable string, for writing a datum out as source text
+//-----------------------------------------------
+typedef struct SrcBuf
+{
+    char* data;
+    size_t len;
+    size_t cap;
+} SrcBuf;
+
+static void src_add(SKState* pSK, SrcBuf* b, const char* s)
+{
+    size_t n = strlen(s);
+    if (b->len + n + 1 > b->cap)
+    {
+        while (b->len + n + 1 > b->cap)
+            b->cap = b->cap ? b->cap * 2 : 256;
+        b->data = (char*)vm_check_alloc(&pSK->vm, realloc(b->data, b->cap));
+    }
+    memcpy(b->data + b->len, s, n + 1);
+    b->len += n;
+}
+
+//-----------------------------------------------
+// Write a datum as source text that reads back as the same datum, so eval
+// can compile it. Returns 0 for a value that has no source form (a
+// procedure, a port, the unspecified value).
+//-----------------------------------------------
+static int datum_to_source(SKState* pSK, SrcBuf* b, Object* obj)
+{
+    char buf[64];
+
+    if (obj == NULL)
+        src_add(pSK, b, "()");
+    else if (IS_NUM(obj))
+    {
+        snprintf(buf, sizeof(buf), "%d", AS_NUM(obj));
+        src_add(pSK, b, buf);
+    }
+    else if (IS_FLOAT(obj))
+    {
+        vm_format_float(AS_DOUBLE(obj), buf, sizeof(buf));
+        src_add(pSK, b, buf);
+    }
+    else if (IS_TRUE(obj))
+        src_add(pSK, b, "#t");
+    else if (IS_FALSE(obj))
+        src_add(pSK, b, "#f");
+    else if (IS_CHAR(obj))
+    {
+        char c = AS_CHAR(obj);
+        if (c == ' ') src_add(pSK, b, "#\\space");
+        else if (c == '\n') src_add(pSK, b, "#\\newline");
+        else if (c == '\t') src_add(pSK, b, "#\\tab");
+        else if (c == '\r') src_add(pSK, b, "#\\return");
+        else
+        {
+            snprintf(buf, sizeof(buf), "#\\%c", c);
+            src_add(pSK, b, buf);
+        }
+    }
+    else if (IS_SYMBOL(obj))
+        src_add(pSK, b, ((String*)obj)->value);
+    else if (IS_STRING(obj))
+    {
+        src_add(pSK, b, "\"");
+        for (const char* s = ((String*)obj)->value; *s; s++)
+        {
+            char esc[3] = { *s, 0, 0 };
+            if (*s == '"' || *s == '\\') { esc[0] = '\\'; esc[1] = *s; }
+            else if (*s == '\n') { esc[0] = '\\'; esc[1] = 'n'; }
+            src_add(pSK, b, esc);
+        }
+        src_add(pSK, b, "\"");
+    }
+    else if (IS_PAIR(obj))
+    {
+        // the cars recursively, the cdrs in a loop (long lists stay shallow)
+        src_add(pSK, b, "(");
+        Object* p = obj;
+        for (int first = 1; IS_PAIR(p); p = ((Pair*)p)->cdr, first = 0)
+        {
+            if (!first)
+                src_add(pSK, b, " ");
+            if (!datum_to_source(pSK, b, ((Pair*)p)->car))
+                return 0;
+        }
+        if (p != NULL)
+        {
+            src_add(pSK, b, " . ");
+            if (!datum_to_source(pSK, b, p))
+                return 0;
+        }
+        src_add(pSK, b, ")");
+    }
+    else
+        return 0;
+
+    return 1;
+}
+
+//-----------------------------------------------
+// built-in function: interaction-environment, for (eval expr env): skeme
+// has one environment, so eval accepts and ignores its second argument
+//-----------------------------------------------
+static int sk_interaction_environment(SKState* pSK)
+{
+    vm_push(&pSK->vm, vm_new_symbol(&pSK->vm, "interaction-environment"));
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: eval. (eval expr [env]) evaluates the expression
+// expr, e.g. (eval '(+ 1 2)) or (eval `(* ,x 2)), in the one (global)
+// environment. As a skeme extension, a string is source text to read and
+// evaluate: (eval "(+ 1 2)").
+//-----------------------------------------------
 static int sk_eval(SKState* pSK)
 {
     if (!pSK) return SK_FALSE;
 
-    Object* obj = vm_pop(&pSK->vm);
-    if (!IS_STRING(obj)) {
-        yyerror(pSK, "eval: expected a string argument");
-        vm_push(&pSK->vm, MAKE_FALSE());
+    int n = AS_NUM(vm_peek(&pSK->vm, 0));
+    vm_pop(&pSK->vm);
+    if (n > 2) {
+        yyerror(pSK, "'eval' called with too many arguments, expects at most 2");
         return SK_FALSE;
+    }
+    if (n == 2)
+        vm_pop(&pSK->vm);       // the environment
+
+    Object* obj = vm_pop(&pSK->vm);
+    char* source = NULL;
+    if (!IS_STRING(obj))
+    {
+        SrcBuf b = { NULL, 0, 0 };
+        if (!datum_to_source(pSK, &b, obj))
+        {
+            free(b.data);
+            yyerror(pSK, "eval: the expression contains a value with no source form (such as a procedure)");
+            return SK_FALSE;
+        }
+        source = b.data;
+        obj = vm_new_string(&pSK->vm, source);
+        free(source);
     }
 
     // keep the string on the stack while it is parsed: the lexer reads it in
@@ -1966,6 +2101,7 @@ static Object* sk_read_datum(SKState* pSK, int tok)
         case LET: case LET_STAR: case LETREC: case BEGIN: case SET:
         case LIST: case CASE_TOKEN: case AND: case OR: case LOAD:
         case IMPORT: case DO: case QUOTE: case WHEN: case UNLESS:
+        case QUASIQUOTE: case UNQUOTE: case UNQUOTE_SPLICING:
             // keywords and identifiers become symbols
             return vm_new_symbol(&pSK->vm, pSK->yylval.word);
 
@@ -2340,6 +2476,67 @@ static int sk_close_file(SKState* pSK)
 	}
 
     vm_push(&pSK->vm, MAKE_TRUE());
+    return SK_TRUE;
+}
+
+//-----------------------------------------------
+// built-in function: append. (append list ... last) copies each list but
+// the last, which the result shares (and which need not be a list:
+// (append '(1) 2) is (1 . 2)). Quasiquote's ,@ uses it too, under the name
+// <append>, which programs cannot redefine.
+//-----------------------------------------------
+static int sk_append(SKState* pSK)
+{
+    int n = AS_NUM(vm_peek(&pSK->vm, 0));
+    vm_pop(&pSK->vm);
+    if (n == 0)
+    {
+        vm_push(&pSK->vm, NULL);
+        return SK_TRUE;
+    }
+
+    // the result so far, starting with the last argument, kept on the stack
+    // above the arguments (argument i is at depth 1 + n-1-i)
+    vm_push(&pSK->vm, vm_peek(&pSK->vm, 0));
+
+    for (int i = n - 2; i >= 0; i--)
+    {
+        Object* list = vm_peek(&pSK->vm, 1 + (n - 1 - i));
+        Object* p = list;
+        while (IS_PAIR(p))
+            p = ((Pair*)p)->cdr;
+        if (p != NULL)
+        {
+            yyerror(pSK, "arguments to 'append' must be lists (all but the last)");
+            vm_pop_n(&pSK->vm, n + 1);
+            vm_push(&pSK->vm, NULL);
+            return SK_FALSE;
+        }
+
+        // copy it, front to back; the copy's head is kept on the stack
+        vm_push(&pSK->vm, NULL);
+        Pair* last = NULL;
+        for (p = list; IS_PAIR(p); p = ((Pair*)p)->cdr)
+        {
+            Pair* pair = (Pair*)vm_newObject(&pSK->vm, sizeof(Pair), OBJ_PAIR);   // may GC
+            pair->car = ((Pair*)p)->car;
+            if (last)
+                last->cdr = (Object*)pair;
+            else
+                pSK->vm.stack[pSK->vm.sp - 1] = (Object*)pair;
+            last = pair;
+        }
+        Object* copy = vm_pop(&pSK->vm);
+        if (last)
+        {
+            last->cdr = vm_peek(&pSK->vm, 0);           // then the result so far
+            pSK->vm.stack[pSK->vm.sp - 1] = copy;
+        }
+    }
+
+    Object* result = vm_pop(&pSK->vm);
+    vm_pop_n(&pSK->vm, n);
+    vm_push(&pSK->vm, result);
     return SK_TRUE;
 }
 
@@ -2898,7 +3095,8 @@ static SKFuncSet built_in_funcs[] =
     { "car", sk_car, 1 },
     { "cdr", sk_cdr, 1 },
     { "reverse", sk_reverse, 1},
-    //{ "append", sk_append, SK_ARITY_TWO_OR_MORE },
+    { "append", sk_append, SK_ARITY_ANY },
+    { "<append>", sk_append, SK_ARITY_ANY },     // quasiquote's, which programs cannot redefine
 
     // memory management
     { "gc", sk_gc, 0 },
@@ -2913,7 +3111,8 @@ static SKFuncSet built_in_funcs[] =
     { "list", sk_list, SK_ARITY_ANY },
     { "call/cc", sk_call_cc, 1 },
     { "call-with-current-continuation", sk_call_cc, 1 },
-    { "eval", sk_eval, 1 },
+    { "eval", sk_eval, SK_ARITY_ONE_OR_MORE },
+    { "interaction-environment", sk_interaction_environment, 0 },
 
     // system/environment functions
 	{ "pwd", sk_pwd, 0 },

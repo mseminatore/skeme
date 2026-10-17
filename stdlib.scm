@@ -65,15 +65,6 @@
   (if (null? rev) tail (append-reverse (cdr rev) (cons (car rev) tail))))
 
 ;----------------------
-; define append: (append list ...); the last list is shared, not copied
-;----------------------
-(define (append . lists)
-  (let loop ((ls lists))
-    (cond ((null? ls) '())
-          ((null? (cdr ls)) (car ls))
-          (else (append-reverse (reverse (car ls)) (loop (cdr ls)))))))
-
-;----------------------
 ; (iota count [start [step]]): count numbers from start (0), by step (1)
 ;----------------------
 (define (iota count . args)

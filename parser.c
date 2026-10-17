@@ -19,6 +19,7 @@
 // forward declarations
 static int expr(SKState* pSK);
 static void quote_datum(SKState* pSK);
+static void qq_datum(SKState* pSK, int depth);
 
 #define PARSE_LOG(...) (void)(pSK && pSK->parse_log_enabled && indent(pSK) && fprintf(stderr, __VA_ARGS__))
 
@@ -292,6 +293,21 @@ static int atom(SKState* pSK)
         // 'datum shorthand — QUOTE token comes from lexer when ' is seen
         match(pSK, QUOTE);
         quote_datum(pSK);
+        unindent(pSK);
+        break;
+
+    case QUASIQUOTE:
+        // `datum
+        match(pSK, QUASIQUOTE);
+        qq_datum(pSK, 1);
+        unindent(pSK);
+        break;
+
+    case UNQUOTE:
+    case UNQUOTE_SPLICING:
+        yyerror(pSK, "unquote (, or ,@) outside a quasiquote");
+        match(pSK, LOOKAHEAD);
+        expr(pSK);
         unindent(pSK);
         break;
 
@@ -842,6 +858,20 @@ static int load_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
+// The symbol a quasiquote token stands for, and whether LOOKAHEAD is its
+// abbreviation (` , ,@) rather than the word (quasiquote unquote ...)
+//-----------------------------------------------
+static const char* qq_name(int token)
+{
+    return token == QUASIQUOTE ? "quasiquote" : token == UNQUOTE ? "unquote" : "unquote-splicing";
+}
+
+static int qq_is_abbreviation(SKState* pSK)
+{
+    return !isalpha((unsigned char)pSK->yylval.word[0]);
+}
+
+//-----------------------------------------------
 // quote_datum - recursively emit code to construct a quoted value
 // Numbers, strings, bools, chars are self-evaluating.
 // Identifiers become symbols. Lists become OP_LIST constructions.
@@ -937,6 +967,25 @@ static void quote_datum(SKState* pSK)
             match(pSK, QUOTE);
         }
     }
+    else if (LOOKAHEAD == QUASIQUOTE || LOOKAHEAD == UNQUOTE || LOOKAHEAD == UNQUOTE_SPLICING)
+    {
+        // in quoted data these are just data: `x is (quasiquote x), ,x is
+        // (unquote x), ,@x is (unquote-splicing x); the words are symbols
+        const char* name = qq_name(LOOKAHEAD);
+        if (qq_is_abbreviation(pSK))
+        {
+            match(pSK, LOOKAHEAD);
+            vm_emit_symbol(&pSK->vm, name);
+            quote_datum(pSK);
+            vm_emit(&pSK->vm, OP_LIST);
+            vm_emit(&pSK->vm, 2);
+        }
+        else
+        {
+            vm_emit_symbol(&pSK->vm, name);
+            match(pSK, LOOKAHEAD);
+        }
+    }
     else if (LOOKAHEAD == ID || LOOKAHEAD == '+' || LOOKAHEAD == '-' ||
              LOOKAHEAD == '*' || LOOKAHEAD == '/' || LOOKAHEAD == '<' ||
              LOOKAHEAD == '>' || LOOKAHEAD == '=')
@@ -982,6 +1031,206 @@ static int quote_expr(SKState* pSK)
     match(pSK, QUOTE);
     quote_datum(pSK);
 
+    unindent(pSK);
+    return 0;
+}
+
+//-----------------------------------------------
+// Quasiquote: `datum builds datum like 'datum, except that ,expr inserts
+// the value of expr, and ,@expr inside a list splices in the elements of
+// the list expr returns. Inside a nested quasiquote, unquotes belong to
+// the inner one: 'depth' counts the quasiquotes, and only an unquote at
+// depth 1 is evaluated; deeper ones are kept as (unquote ...) data.
+//
+// A list compiles to groups of plain elements (OP_LIST) and spliced
+// values, joined by one call to the append native; a list without ,@
+// compiles just like a quoted one.
+//-----------------------------------------------
+static void qq_datum(SKState* pSK, int depth);
+static void qq_list_rest(SKState* pSK, int depth);
+
+// The operand of an unquote ('name' says which), after the unquote itself:
+// at depth 1 its value; deeper, the list (name operand) one level out
+static void qq_unquote_operand(SKState* pSK, int depth, const char* name)
+{
+    if (depth == 1)
+        expr(pSK);
+    else
+    {
+        vm_emit_symbol(&pSK->vm, name);
+        qq_datum(pSK, depth - 1);
+        vm_emit(&pSK->vm, OP_LIST);
+        vm_emit(&pSK->vm, 2);
+    }
+}
+
+// (name datum), for a quasiquote or quote inside quasiquoted data
+static void qq_wrap(SKState* pSK, const char* name, int depth)
+{
+    vm_emit_symbol(&pSK->vm, name);
+    qq_datum(pSK, depth);
+    vm_emit(&pSK->vm, OP_LIST);
+    vm_emit(&pSK->vm, 2);
+}
+
+static void qq_datum(SKState* pSK, int depth)
+{
+    PARSE_LOG("qq_datum(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
+
+    int token = LOOKAHEAD;
+    if (token == '(')
+    {
+        match(pSK, '(');
+        qq_list_rest(pSK, depth);
+    }
+    else if ((token == UNQUOTE || token == UNQUOTE_SPLICING || token == QUASIQUOTE) && qq_is_abbreviation(pSK))
+    {
+        match(pSK, token);
+        if (token == QUASIQUOTE)
+            qq_wrap(pSK, "quasiquote", depth + 1);
+        else if (token == UNQUOTE || depth > 1)
+            qq_unquote_operand(pSK, depth, qq_name(token));
+        else
+        {
+            yyerror(pSK, "unquote-splicing (,@) is only allowed inside a list");
+            expr(pSK);
+        }
+    }
+    else if (token == QUOTE && strcmp(pSK->yylval.word, "'") == 0)
+    {
+        // '(a ,b) inside a quasiquote: (quote ...), with unquotes still active
+        match(pSK, QUOTE);
+        qq_wrap(pSK, "quote", depth);
+    }
+    else
+        quote_datum(pSK);       // atoms are as in quoted data
+}
+
+// A quasiquoted list, after its '('
+static void qq_list_rest(SKState* pSK, int depth)
+{
+    // a long form: (quasiquote x), (unquote x), (unquote-splicing x)
+    int head = LOOKAHEAD;
+    if ((head == QUASIQUOTE || head == UNQUOTE || head == UNQUOTE_SPLICING) && !qq_is_abbreviation(pSK))
+    {
+        match(pSK, head);
+        if (head == QUASIQUOTE)
+            qq_wrap(pSK, "quasiquote", depth + 1);
+        else if (head == UNQUOTE || depth > 1)
+            qq_unquote_operand(pSK, depth, qq_name(head));
+        else
+        {
+            yyerror(pSK, "unquote-splicing is only allowed inside a list");
+            expr(pSK);
+        }
+        match(pSK, ')');
+        return;
+    }
+
+    int group = 0;      // plain elements pushed since the last piece
+    int pieces = 0;     // lists pushed for append
+    int tail = 0;       // a dotted tail was pushed
+
+    while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+    {
+        int splice = 0;
+        int element_list = 0;   // the element is a list, its '(' already matched
+        if (depth == 1 && LOOKAHEAD == UNQUOTE_SPLICING && qq_is_abbreviation(pSK))
+        {
+            match(pSK, UNQUOTE_SPLICING);           // ,@expr
+            splice = 1;
+        }
+        else if (LOOKAHEAD == '(')
+        {
+            match(pSK, '(');
+            if (depth == 1 && LOOKAHEAD == UNQUOTE_SPLICING && !qq_is_abbreviation(pSK))
+            {
+                match(pSK, UNQUOTE_SPLICING);       // (unquote-splicing expr)
+                splice = 2;
+            }
+            else
+                element_list = 1;
+        }
+        else if (LOOKAHEAD == '.')
+        {
+            match(pSK, '.');                        // (a . tail)
+            if (group == 0 && pieces == 0)
+                yyerror(pSK, "nothing before '.' in quasiquoted list");
+            qq_datum(pSK, depth);
+            tail = 1;
+            break;
+        }
+        else if (LOOKAHEAD == UNQUOTE && !qq_is_abbreviation(pSK) && (group > 0 || pieces > 0))
+        {
+            // (a unquote b) is (a . (unquote b))
+            match(pSK, UNQUOTE);
+            qq_unquote_operand(pSK, depth, "unquote");
+            tail = 1;
+            break;
+        }
+
+        if (splice)
+        {
+            // the elements so far become one piece; then the spliced list
+            if (group > 0)
+            {
+                vm_emit(&pSK->vm, OP_LIST);
+                vm_emit(&pSK->vm, (VMCode_t)group);
+                pieces++;
+                group = 0;
+            }
+            expr(pSK);
+            if (splice == 2)
+                match(pSK, ')');
+            pieces++;
+        }
+        else
+        {
+            if (element_list)
+                qq_list_rest(pSK, depth);
+            else
+                qq_datum(pSK, depth);
+            group++;
+        }
+    }
+    match(pSK, ')');
+
+    if (pieces == 0)
+    {
+        // no splicing: as for a quoted list
+        if (group == 0 && !tail)
+            vm_emit_push_object(&pSK->vm, NULL);
+        else
+        {
+            vm_emit(&pSK->vm, tail ? OP_LIST_TAIL : OP_LIST);
+            vm_emit(&pSK->vm, (VMCode_t)group);
+        }
+        return;
+    }
+
+    // the last group, with the tail if there is one, is the last piece
+    if (group > 0 || tail)
+    {
+        if (group > 0)
+        {
+            vm_emit(&pSK->vm, tail ? OP_LIST_TAIL : OP_LIST);
+            vm_emit(&pSK->vm, (VMCode_t)group);
+        }
+        pieces++;
+    }
+
+    // (append piece ...): the append native itself, so that redefining
+    // append does not change what quasiquote builds
+    Object* append_fn = vm_get_global(&pSK->vm, vm_new_string(&pSK->vm, "<append>"));
+    vm_emit(&pSK->vm, OP_CALL);
+    vm_emit(&pSK->vm, (VMCode_t)append_fn);
+    vm_emit(&pSK->vm, (VMCode_t)pieces);
+}
+
+static int quasiquote_expr(SKState* pSK)
+{
+    match(pSK, QUASIQUOTE);
+    qq_datum(pSK, 1);
     unindent(pSK);
     return 0;
 }
@@ -2310,6 +2559,17 @@ static int expr(SKState* pSK)
 
         case QUOTE:
             quote_expr(pSK);
+            break;
+
+        case QUASIQUOTE:
+            quasiquote_expr(pSK);       // (quasiquote datum)
+            break;
+
+        case UNQUOTE:
+        case UNQUOTE_SPLICING:
+            yyerror(pSK, "unquote outside a quasiquote");
+            match(pSK, LOOKAHEAD);
+            expr(pSK);
             break;
 
         case IF:

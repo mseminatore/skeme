@@ -41,6 +41,9 @@ Tokens tokens[] =
     { "do",      DO },
     { "when",    WHEN },
     { "unless",  UNLESS },
+    { "quasiquote", QUASIQUOTE },
+    { "unquote", UNQUOTE },
+    { "unquote-splicing", UNQUOTE_SPLICING },
     // { "eval",    EVAL },
     { NULL, 0}
 };
@@ -374,15 +377,39 @@ int getString(SKState* pSK, int delim)
 
     c = getch(pSK);
 
-    while (c != delim && cptr < &buf[sizeof(buf)])
+    while (c != delim)
     {
-        if (c == '\n' || c == EOF)
+        if (c == EOF)
+        {
             yyerror(pSK, "missing end quote");
+            break;
+        }
+        if (cptr == &buf[sizeof(buf) - 1])
+        {
+            // too long: report it once, and skip to the closing quote
+            yyerror(pSK, "string literal too long");
+            while (c != delim && c != EOF)
+                c = getch(pSK);
+            break;
+        }
+
+        // a string may span lines; keep the line count right
+        if (c == '\n')
+        {
+            if (sk_reading_string(pSK))
+                pSK->eval_lineno++;
+            else
+            {
+                pSK->lineno++;
+                if (pSK->file_stack_ptr >= 0)
+                    CURRENT_LINENO++;
+            }
+        }
 
         *cptr++ = backslash(pSK, c);
         c = getch(pSK);
     }
-    
+
     *cptr = 0;
 
     strncpy(pSK->yylval.word, buf, BUF_SIZE - 1);
@@ -463,6 +490,24 @@ yylex01:
     {
         skipToEOL(pSK);
         goto yylex01;
+    }
+
+    // quasiquote syntax: `datum, ,expr and ,@expr. The word is the
+    // abbreviation, as for ' (the long forms are keywords).
+    if (c == '`')
+    {
+        strcpy(pSK->yylval.word, "`");
+        return QUASIQUOTE;
+    }
+    if (c == ',')
+    {
+        if (follow(pSK, '@', TRUE, FALSE))
+        {
+            strcpy(pSK->yylval.word, ",@");
+            return UNQUOTE_SPLICING;
+        }
+        strcpy(pSK->yylval.word, ",");
+        return UNQUOTE;
     }
 
     // look for char literals and quote syntax

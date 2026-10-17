@@ -582,6 +582,30 @@ void test_error(int argc, char *argv[])
         TEST(g_test_ctx.error_count == 1);
         reset_test_context();
 
+        COMMENT("Quasiquote and eval errors...");
+        eval_quietly(&sk, "(define ei-q1 ,ei-x)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "outside a quasiquote") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-q2 `,@ei-x)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "only allowed inside a list") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-q3 (append '(1 . 2) '(3)))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "'append' must be lists") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-q4 (eval (list car '(1 2))))");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "no source form") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-q5 \"unterminated");
+        TEST(g_test_ctx.error_count >= 1);
+        reset_test_context();
+        eval_quietly(&sk, "(define ei-q6 `(1 ,(+ 1 1)))");
+        TEST(g_test_ctx.error_count == 0);
+        reset_test_context();
+
         COMMENT("Inline arithmetic checks its operands...");
         eval_quietly(&sk, "(define ei-bad (+ 1 \"x\"))");
         TEST(g_test_ctx.error_count == 1);
