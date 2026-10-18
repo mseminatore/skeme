@@ -2991,6 +2991,415 @@ static int vector_map_each(SKState* pSK, int map, const char* name)
     return SK_TRUE;
 }
 
+//-----------------------------------------------
+// Hash tables (SRFI-69 style). A table compares keys with equal? (the
+// default) or with eqv?/eq?, given to make-hash-table. The empty list is
+// stored as the unbound tag, since the hash library marks an empty slot
+// with a NULL key.
+//-----------------------------------------------
+#define HKEY(k)     ((k) == NULL ? MAKE_UNBOUND() : (k))                       // to the table
+#define UNHKEY(k)   (IS_UNBOUND((Object*)(k)) ? NULL : (Object*)(k))           // from it
+
+// A hash consistent with equal?: equal objects hash the same. Strings by
+// their characters, lists and vectors by their first elements (to a
+// limited depth), floats by value; anything else (symbols are interned,
+// numbers and characters are tagged) by identity.
+static size_t equal_hash(Object* obj, int depth)
+{
+    if (obj == NULL)
+        return 1;
+    if (IS_STRING(obj))
+    {
+        size_t h = 2166136261u;                 // FNV-1a
+        for (const unsigned char* s = (const unsigned char*)((String*)obj)->value; *s; s++)
+            h = (h ^ *s) * 16777619u;
+        return h;
+    }
+    if (IS_FLOAT(obj))
+    {
+        double d = AS_DOUBLE(obj);
+        if (d == 0.0) d = 0.0;                  // -0.0 equals 0.0
+        size_t h = 0;
+        memcpy(&h, &d, sizeof(h) < sizeof(d) ? sizeof(h) : sizeof(d));
+        return h ^ (h >> 17);
+    }
+    if (depth < 4 && IS_PAIR(obj))
+    {
+        size_t h = 17;
+        int n = 0;
+        Object* p = obj;
+        for (; IS_PAIR(p) && n < 16; p = ((Pair*)p)->cdr, n++)
+            h = h * 31 + equal_hash(((Pair*)p)->car, depth + 1);
+        return h * 31 + (IS_PAIR(p) ? 0 : equal_hash(p, depth + 1));
+    }
+    if (depth < 4 && IS_VECTOR(obj))
+    {
+        Vector* vec = (Vector*)obj;
+        size_t h = 19 + (size_t)vec->length;
+        for (int i = 0; i < vec->length && i < 16; i++)
+            h = h * 31 + equal_hash(vec->items[i], depth + 1);
+        return h;
+    }
+    if (IS_PAIR(obj) || IS_VECTOR(obj))
+        return 23;                              // too deep: all equal ones still collide
+    size_t h = (size_t)obj;
+    return h ^ (h >> 7) ^ (h >> 17);
+}
+
+static ht_hash_t equal_hash_fn(ht_key_t key) { return (ht_hash_t)equal_hash(UNHKEY(key), 0); }
+static int equal_compare_fn(ht_key_t a, ht_key_t b) { return objects_equal(UNHKEY(a), UNHKEY(b)); }
+
+static HashTableObject* hashtable_arg(SKState* pSK, Object* obj, const char* name)
+{
+    if (!IS_HASHTABLE(obj))
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "argument to '%s' must be a hash table", name);
+        yyerror(pSK, msg);
+        return NULL;
+    }
+    return (HashTableObject*)obj;
+}
+
+static Object* new_hashtable(SKState* pSK, int kind)
+{
+    HashTableObject* hto = (HashTableObject*)vm_newObject(&pSK->vm, sizeof(HashTableObject), OBJ_HASHTABLE);
+    hto->kind = kind;
+    hto->table = (HashTable*)vm_check_alloc(&pSK->vm, ht_create());
+    if (kind == HASH_EQUAL)
+    {
+        ht_set_hash_func(hto->table, equal_hash_fn);
+        ht_set_compare_func(hto->table, equal_compare_fn);
+    }
+    // HASH_EQV: the library's defaults, the pointer (or tagged value) itself
+    return (Object*)hto;
+}
+
+static void hashtable_put(SKState* pSK, HashTableObject* hto, Object* key, Object* value)
+{
+    if (!ht_add(hto->table, HKEY(key), value))     // adds, or replaces the value
+        vm_fatal(&pSK->vm, "out of memory");
+}
+
+// the comparison an equivalence procedure names: eq? and eqv? compare by
+// identity, equal? (or none) and string=? by contents
+static int hash_kind(SKState* pSK, Object* equiv)
+{
+    if (IS_NATIVE_FN(equiv))
+    {
+        const char* name = ((NativeFunction*)equiv)->name->value;
+        if (strcmp(name, "eq?") == 0 || strcmp(name, "eqv?") == 0)
+            return HASH_EQV;
+        if (strcmp(name, "equal?") == 0 || strcmp(name, "string=?") == 0)
+            return HASH_EQUAL;
+    }
+    yyerror(pSK, "make-hash-table: the equivalence must be eq?, eqv?, equal? or string=?");
+    return -1;
+}
+
+// (make-hash-table [equiv])
+static int sk_make_hash_table(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    int kind = HASH_EQUAL;
+    if (n > 0)
+    {
+        kind = hash_kind(pSK, vm_peek(pvm, n - 1));     // a hash function after it is ignored
+        if (kind < 0) return SK_FALSE;
+    }
+    Object* table = new_hashtable(pSK, kind);
+    vm_pop_n(pvm, n);
+    vm_push(pvm, table);
+    return SK_TRUE;
+}
+
+static int sk_hash_tablep(SKState* pSK)
+{
+    Object* obj = vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, IS_HASHTABLE(obj) ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+// (hash-table-set! table key value)
+static int sk_hash_table_set(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 2), "hash-table-set!");
+    if (!hto) return SK_FALSE;
+    hashtable_put(pSK, hto, vm_peek(pvm, 1), vm_peek(pvm, 0));
+    vm_pop_n(pvm, 3);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-ref table key [failure [success]]): the value, or
+// (failure) if key is missing (an error if no failure is given); with
+// success, (success value)
+static int sk_hash_table_ref(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n < 2 || n > 4) { yyerror(pSK, "'hash-table-ref' expects 2 to 4 arguments"); return SK_FALSE; }
+
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, n - 1), "hash-table-ref");
+    if (!hto) return SK_FALSE;
+    ht_value_t value;
+    int found = ht_lookup(hto->table, HKEY(vm_peek(pvm, n - 2)), &value);
+
+    Object* result;
+    if (!found)
+    {
+        if (n < 3)
+        {
+            char key[128], msg[192];
+            vm_format_object(vm_peek(pvm, n - 2), 1, key, sizeof(key));
+            snprintf(msg, sizeof(msg), "hash-table-ref: no value for key %s", key);
+            yyerror(pSK, msg);
+            return SK_FALSE;
+        }
+        result = vm_call_function(pvm, vm_peek(pvm, n - 3), 0, NULL);
+    }
+    else if (n == 4)
+    {
+        Object* arg = (Object*)value;
+        result = vm_call_function(pvm, vm_peek(pvm, 0), 1, &arg);
+    }
+    else
+        result = (Object*)value;
+
+    if (pvm->abort_exec) return SK_FALSE;
+    vm_pop_n(pvm, n);
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+// (hash-table-ref/default table key default)
+static int sk_hash_table_ref_default(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 2), "hash-table-ref/default");
+    if (!hto) return SK_FALSE;
+    ht_value_t value;
+    Object* result = ht_lookup(hto->table, HKEY(vm_peek(pvm, 1)), &value) ? (Object*)value : vm_peek(pvm, 0);
+    vm_pop_n(pvm, 3);
+    vm_push(pvm, result);
+    return SK_TRUE;
+}
+
+// (hash-table-delete! table key)
+static int sk_hash_table_delete(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 1), "hash-table-delete!");
+    if (!hto) return SK_FALSE;
+    ht_remove(hto->table, HKEY(vm_peek(pvm, 0)));
+    vm_pop_n(pvm, 2);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-contains? table key), also hash-table-exists?
+static int sk_hash_table_contains(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 1), "hash-table-contains?");
+    if (!hto) return SK_FALSE;
+    int found = ht_contains(hto->table, HKEY(vm_peek(pvm, 0)));
+    vm_pop_n(pvm, 2);
+    vm_push(pvm, found ? MAKE_TRUE() : MAKE_FALSE());
+    return SK_TRUE;
+}
+
+// (hash-table-count table), also hash-table-size: the number of entries
+static int sk_hash_table_count(SKState* pSK)
+{
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(&pSK->vm, 0), "hash-table-count");
+    if (!hto) return SK_FALSE;
+    size_t count = ht_size(hto->table);
+    vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, MAKE_NUM((int)count));
+    return SK_TRUE;
+}
+
+// The entries as a list, built before anything else runs (so a procedure
+// that changes the table cannot disturb an iteration): of keys ('what' 0),
+// values (1), or (key . value) pairs (2). The table is on top of the stack.
+static void hashtable_list(SKState* pSK, int what)
+{
+    VM* pvm = &pSK->vm;
+    vm_push(pvm, NULL);                     // the list so far
+    HashTable* table = ((HashTableObject*)vm_peek(pvm, 1))->table;
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+    while (ht_next(table, &index, &key, &value))
+    {
+        if (what == 2)
+        {
+            Pair* entry = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);     // may GC: the table is reachable
+            entry->car = UNHKEY(key);
+            entry->cdr = (Object*)value;
+            vm_push(pvm, (Object*)entry);
+        }
+        else
+            vm_push(pvm, what == 0 ? UNHKEY(key) : (Object*)value);
+        Pair* pair = (Pair*)vm_newObject(pvm, sizeof(Pair), OBJ_PAIR);
+        pair->car = vm_pop(pvm);
+        pair->cdr = vm_peek(pvm, 0);
+        pvm->stack[pvm->sp - 1] = (Object*)pair;
+    }
+    Object* list = vm_pop(pvm);
+    vm_pop(pvm);                            // the table
+    vm_push(pvm, list);
+}
+
+static int hashtable_list_native(SKState* pSK, int what, const char* name)
+{
+    if (!hashtable_arg(pSK, vm_peek(&pSK->vm, 0), name)) return SK_FALSE;
+    hashtable_list(pSK, what);
+    return SK_TRUE;
+}
+
+static int sk_hash_table_keys(SKState* pSK) { return hashtable_list_native(pSK, 0, "hash-table-keys"); }
+static int sk_hash_table_values(SKState* pSK) { return hashtable_list_native(pSK, 1, "hash-table-values"); }
+static int sk_hash_table_to_alist(SKState* pSK) { return hashtable_list_native(pSK, 2, "hash-table->alist"); }
+
+// (hash-table-walk table proc): (proc key value) for each entry
+static int sk_hash_table_walk(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    if (!hashtable_arg(pSK, vm_peek(pvm, 1), "hash-table-walk")) return SK_FALSE;
+
+    vm_push(pvm, vm_peek(pvm, 1));
+    hashtable_list(pSK, 2);                 // stack: table proc alist
+    for (Object* p = vm_peek(pvm, 0); IS_PAIR(p); p = ((Pair*)p)->cdr)
+    {
+        Pair* entry = (Pair*)((Pair*)p)->car;
+        Object* args[2] = { entry->car, entry->cdr };
+        vm_call_function(pvm, vm_peek(pvm, 1), 2, args);
+        if (pvm->abort_exec) return SK_FALSE;
+    }
+    vm_pop_n(pvm, 3);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-update! table key proc [failure]): set key to (proc value),
+// where value is the current one, or (failure) if missing (an error if no
+// failure is given)
+static int sk_hash_table_update(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    if (n < 3 || n > 4) { yyerror(pSK, "'hash-table-update!' expects 3 or 4 arguments"); return SK_FALSE; }
+
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, n - 1), "hash-table-update!");
+    if (!hto) return SK_FALSE;
+    ht_value_t value;
+    Object* current;
+    if (ht_lookup(hto->table, HKEY(vm_peek(pvm, n - 2)), &value))
+        current = (Object*)value;
+    else if (n == 4)
+        current = vm_call_function(pvm, vm_peek(pvm, 0), 0, NULL);
+    else
+    {
+        yyerror(pSK, "hash-table-update!: no value for the key, and no failure procedure");
+        return SK_FALSE;
+    }
+    if (pvm->abort_exec) return SK_FALSE;
+
+    vm_push(pvm, current);                  // reachable while proc runs
+    Object* updated = vm_call_function(pvm, vm_peek(pvm, n - 2), 1, &current);
+    if (pvm->abort_exec) return SK_FALSE;
+    vm_pop(pvm);
+    hashtable_put(pSK, (HashTableObject*)vm_peek(pvm, n - 1), vm_peek(pvm, n - 2), updated);
+    vm_pop_n(pvm, n);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-update!/default table key proc default)
+static int sk_hash_table_update_default(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 3), "hash-table-update!/default");
+    if (!hto) return SK_FALSE;
+    ht_value_t value;
+    Object* current = ht_lookup(hto->table, HKEY(vm_peek(pvm, 2)), &value) ? (Object*)value : vm_peek(pvm, 0);
+
+    vm_push(pvm, current);
+    Object* updated = vm_call_function(pvm, vm_peek(pvm, 2), 1, &current);
+    if (pvm->abort_exec) return SK_FALSE;
+    vm_pop(pvm);
+    hashtable_put(pSK, (HashTableObject*)vm_peek(pvm, 3), vm_peek(pvm, 2), updated);
+    vm_pop_n(pvm, 4);
+    vm_push(pvm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-clear! table)
+static int sk_hash_table_clear(SKState* pSK)
+{
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(&pSK->vm, 0), "hash-table-clear!");
+    if (!hto) return SK_FALSE;
+    ht_clear(hto->table);                   // the GC owns the keys and values
+    vm_pop(&pSK->vm);
+    vm_push(&pSK->vm, MAKE_UNSPEC());
+    return SK_TRUE;
+}
+
+// (hash-table-copy table): a new table with the same entries and comparison
+static int sk_hash_table_copy(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    HashTableObject* hto = hashtable_arg(pSK, vm_peek(pvm, 0), "hash-table-copy");
+    if (!hto) return SK_FALSE;
+    Object* copy = new_hashtable(pSK, hto->kind);       // the original is on the stack
+    hto = (HashTableObject*)vm_peek(pvm, 0);
+    size_t index = 0;
+    ht_key_t key;
+    ht_value_t value;
+    while (ht_next(hto->table, &index, &key, &value))
+        if (!ht_insert(((HashTableObject*)copy)->table, key, value))
+            vm_fatal(pvm, "out of memory");
+    vm_pop(pvm);
+    vm_push(pvm, copy);
+    return SK_TRUE;
+}
+
+// (alist->hash-table alist [equiv]): the first entry for a key wins
+static int sk_alist_to_hash_table(SKState* pSK)
+{
+    VM* pvm = &pSK->vm;
+    int n = AS_NUM(vm_peek(pvm, 0));
+    vm_pop(pvm);
+    int kind = HASH_EQUAL;
+    if (n >= 2 && (kind = hash_kind(pSK, vm_peek(pvm, n - 2))) < 0)
+        return SK_FALSE;
+
+    Object* table = new_hashtable(pSK, kind);       // the alist is on the stack
+    vm_push(pvm, table);
+    for (Object* p = vm_peek(pvm, n); IS_PAIR(p); p = ((Pair*)p)->cdr)
+    {
+        Object* entry = ((Pair*)p)->car;
+        if (!IS_PAIR(entry)) {
+            yyerror(pSK, "alist->hash-table: each element must be a (key . value) pair");
+            return SK_FALSE;
+        }
+        HashTableObject* hto = (HashTableObject*)vm_peek(pvm, 0);
+        if (!ht_contains(hto->table, HKEY(((Pair*)entry)->car)))
+            hashtable_put(pSK, hto, ((Pair*)entry)->car, ((Pair*)entry)->cdr);
+    }
+    table = vm_pop(pvm);
+    vm_pop_n(pvm, n);
+    vm_push(pvm, table);
+    return SK_TRUE;
+}
+
 static int sk_vector_map(SKState* pSK) { return vector_map_each(pSK, 1, "vector-map"); }
 static int sk_vector_for_each(SKState* pSK) { return vector_map_each(pSK, 0, "vector-for-each"); }
 
@@ -3533,6 +3942,7 @@ static SKFuncSet built_in_funcs[] =
     { "null?", sk_nullp, 1 },
     { "eq?", sk_eqp, 2},
     { "eqv?", sk_eqp, 2},
+    { "<eqv?>", sk_eqp, 2 },        // case's comparison, which programs cannot redefine
     { "equal?", sk_equalp, 2},
     { "number?", sk_numberp, 1 },
     { "boolean?", sk_booleanp, 1 },
@@ -3573,6 +3983,25 @@ static SKFuncSet built_in_funcs[] =
     { "vector-append", sk_vector_append, SK_ARITY_ANY },
     { "vector-map", sk_vector_map, SK_ARITY_TWO_OR_MORE },
     { "vector-for-each", sk_vector_for_each, SK_ARITY_TWO_OR_MORE },
+    { "make-hash-table", sk_make_hash_table, SK_ARITY_ANY },
+    { "hash-table?", sk_hash_tablep, 1 },
+    { "hash-table-set!", sk_hash_table_set, 3 },
+    { "hash-table-ref", sk_hash_table_ref, SK_ARITY_TWO_OR_MORE },
+    { "hash-table-ref/default", sk_hash_table_ref_default, 3 },
+    { "hash-table-delete!", sk_hash_table_delete, 2 },
+    { "hash-table-contains?", sk_hash_table_contains, 2 },
+    { "hash-table-exists?", sk_hash_table_contains, 2 },
+    { "hash-table-count", sk_hash_table_count, 1 },
+    { "hash-table-size", sk_hash_table_count, 1 },
+    { "hash-table-keys", sk_hash_table_keys, 1 },
+    { "hash-table-values", sk_hash_table_values, 1 },
+    { "hash-table->alist", sk_hash_table_to_alist, 1 },
+    { "hash-table-walk", sk_hash_table_walk, 2 },
+    { "hash-table-update!", sk_hash_table_update, SK_ARITY_TWO_OR_MORE },
+    { "hash-table-update!/default", sk_hash_table_update_default, 4 },
+    { "hash-table-clear!", sk_hash_table_clear, 1 },
+    { "hash-table-copy", sk_hash_table_copy, 1 },
+    { "alist->hash-table", sk_alist_to_hash_table, SK_ARITY_ONE_OR_MORE },
 
     // memory management
     { "gc", sk_gc, 0 },

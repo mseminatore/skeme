@@ -2412,106 +2412,113 @@ static int begin_expr(SKState* pSK)
 }
 
 //-----------------------------------------------
-// case_expr := '(' 'case' expr clause+ ')'
-// clause := '(' '(' datum* ')' expr ')' | '(' 'else' expr ')'
-// Matches key against datums using eqv? semantics
+// case_expr := '(' 'case' expr clause* ')'
+// clause := '(' '(' datum* ')' expr ... ')' | '(' '(' datum* ')' '=>' expr ')'
+//         | '(' 'else' expr ... ')' | '(' 'else' '=>' expr ')'
+// The key is compared with each datum (data, as if quoted) by eqv?; the
+// first clause with a match is used. With '=>', the receiver is called with
+// the key. With no match and no else, the value is unspecified.
 //-----------------------------------------------
 static int case_expr(SKState* pSK)
 {
     PARSE_LOG("case_expr(): lookahead = %d '%c'\n", LOOKAHEAD, (char)LOOKAHEAD);
-    int end_addrs[MAX_REL_CLAUSES];
-    int terms = 0;
+
+    int* ends = NULL;       // the BRA operands that jump to the end
+    int nends = 0, ends_cap = 0;
+    int has_else = 0;
 
     match(pSK, CASE_TOKEN);
+    expr(pSK);              // the key: on the stack until a clause is chosen
 
-    // Evaluate the key expression - stays on stack throughout
-    expr(pSK);
-
-    // Look up eqv? for datum comparison
-    Object* eqv_key = vm_get_string(&pSK->vm, "eqv?");
-    Object* eqv_fn = vm_get_global(&pSK->vm, eqv_key);
-
-    if (!eqv_fn || !IS_FUNCTION(eqv_fn))
-    {
-        yyerror(pSK, "case: 'eqv?' not found");
-        unindent(pSK);
-        return 0;
-    }
-
-    // Parse clauses
     while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
     {
         match(pSK, '(');
 
+        int* matches = NULL;    // the BNF operands that jump to this clause's body
+        int nmatches = 0, matches_cap = 0;
+        int skip_addr = -1;
+
         if (LOOKAHEAD == ELSE)
         {
-            // else clause - unconditional
             match(pSK, ELSE);
-            vm_emit(&pSK->vm, OP_POP);   // discard the key
-            expr(pSK);                    // evaluate body
+            if (has_else)
+                yyerror(pSK, "case: more than one else clause");
+            has_else = 1;
         }
         else
         {
-            // datum clause: ((datum1 datum2 ...) body)
-            match(pSK, '(');
-
-            // We need to match key against any of the datums
-            // Strategy: for each datum, DUP key, push datum, call eqv?
-            // OR the results together - if any match, take the branch
-
-            int match_addrs[MAX_REL_CLAUSES];
-            int num_datums = 0;
-
-            while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+            // the datums: does any equal the key?
+            if (LOOKAHEAD == NIL)
+                match(pSK, NIL);        // () : no datums, never matches
+            else
             {
-                vm_emit(&pSK->vm, OP_DUP);       // duplicate key for comparison
-                expr(pSK);                        // push datum value
-                vm_emit(&pSK->vm, OP_CALL);
-                vm_emit(&pSK->vm, (VMCode_t)eqv_fn);
-                vm_emit(&pSK->vm, (VMCode_t)2);   // nargs = 2
-
-                // If match, branch to body
-                vm_emit(&pSK->vm, OP_BNF);        // branch if NOT false (i.e. true)
-                match_addrs[num_datums++] = vm_emit(&pSK->vm, 0);
-
-                if (num_datums >= MAX_REL_CLAUSES) break;
+                match(pSK, '(');
+                while (LOOKAHEAD != ')' && LOOKAHEAD != DONE)
+                {
+                    vm_emit(&pSK->vm, OP_DUP);
+                    quote_datum(pSK);
+                    emit_internal_call(pSK, "<eqv?>", 2);
+                    vm_emit(&pSK->vm, OP_BNF);          // equal: to the body
+                    if (nmatches == matches_cap)
+                    {
+                        matches_cap = matches_cap ? matches_cap * 2 : 8;
+                        matches = (int*)vm_check_alloc(&pSK->vm, realloc(matches, sizeof(int) * matches_cap));
+                    }
+                    matches[nmatches++] = vm_emit(&pSK->vm, 0);
+                }
+                match(pSK, ')');
             }
 
-            match(pSK, ')');  // close datum list
+            vm_emit(&pSK->vm, OP_BRA);                  // none equal: the next clause
+            skip_addr = vm_emit(&pSK->vm, 0);
 
-            // No datum matched - skip body, jump to next clause
-            vm_emit(&pSK->vm, OP_BRA);
-            int skip_addr = vm_emit(&pSK->vm, 0);
-
-            // Backpatch all datum match addresses to here (body start)
-            for (int i = 0; i < num_datums; i++)
-            {
-                vm_get_current_chunk()->code[match_addrs[i]] = 
-                    vm_get_current_chunk()->count - match_addrs[i];
-            }
-
-            // Body: pop key, evaluate body expression
-            vm_emit(&pSK->vm, OP_POP);   // discard the key
-            expr(pSK);                    // evaluate body
-
-            // Jump to end of case
-            vm_emit(&pSK->vm, OP_BRA);
-            end_addrs[terms++] = vm_emit(&pSK->vm, 0);
-
-            // Backpatch skip address (no match -> next clause)
-            vm_get_current_chunk()->code[skip_addr] = 
-                vm_get_current_chunk()->count - skip_addr;
+            CodeChunk* chunk = vm_get_current_chunk();
+            for (int i = 0; i < nmatches; i++)
+                chunk->code[matches[i]] = chunk->count - matches[i];
+            free(matches);
         }
 
-        match(pSK, ')');  // close clause
+        // the body, with the key still on the stack
+        if (LOOKAHEAD == ID && strcmp(pSK->yylval.word, "=>") == 0)
+        {
+            match(pSK, ID);
+            expr(pSK);                                  // the receiver
+            CodeChunk* chunk = vm_get_current_chunk();
+            pSK->last_call_offset = (int)chunk->count;
+            pSK->last_call_chunk = chunk;
+            vm_emit(&pSK->vm, OP_ICALL);                // (receiver key)
+            vm_emit(&pSK->vm, 1);
+        }
+        else
+        {
+            vm_emit(&pSK->vm, OP_POP);                  // the key
+            cond_body(pSK);
+        }
+
+        vm_emit(&pSK->vm, OP_BRA);                      // to the end
+        if (nends == ends_cap)
+        {
+            ends_cap = ends_cap ? ends_cap * 2 : 16;
+            ends = (int*)vm_check_alloc(&pSK->vm, realloc(ends, sizeof(int) * ends_cap));
+        }
+        ends[nends++] = vm_emit(&pSK->vm, 0);
+
+        if (skip_addr >= 0)
+            vm_get_current_chunk()->code[skip_addr] = vm_get_current_chunk()->count - skip_addr;
+
+        match(pSK, ')');
     }
 
-    // Backpatch all end addresses
-    for (int i = 0; i < terms; i++)
+    if (!has_else)
     {
-        vm_get_current_chunk()->code[end_addrs[i]] = 
-            vm_get_current_chunk()->count - end_addrs[i];
+        vm_emit(&pSK->vm, OP_POP);                      // the key
+        vm_emit_push_object(&pSK->vm, MAKE_UNSPEC());
     }
+
+    CodeChunk* chunk = vm_get_current_chunk();
+    for (int i = 0; i < nends; i++)
+        chunk->code[ends[i]] = chunk->count - ends[i];
+    free(ends);
 
     unindent(pSK);
     return 0;

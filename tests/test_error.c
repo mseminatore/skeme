@@ -791,6 +791,53 @@ void test_error(int argc, char *argv[])
         sk_shutdown(&sk);
     }
 
+    // Test: hash tables keep their keys and values alive
+    SUITE("Hash Tables");
+    {
+        SKState sk;
+        memset(&sk, 0, sizeof(SKState));
+        sk_init(&sk, 0, NULL);
+        reset_test_context();
+        sk_set_error_handler(&sk, test_error_handler);
+
+        COMMENT("Keys and values reachable only from a table survive collections...");
+        eval_quietly(&sk, "(define ht-t (make-hash-table))");
+        eval_quietly(&sk, "(hash-table-set! ht-t (list 'k (string-append \"a\" \"b\")) (vector 1 (list 2 3)))");
+        vm_gc(&sk.vm);
+        vm_gc(&sk.vm);
+        eval_quietly(&sk, "(define ht-v (hash-table-ref ht-t (list 'k \"ab\")))");
+        TEST(g_test_ctx.error_count == 0);
+        eval_quietly(&sk, "(define ht-ok (equal? ht-v (vector 1 (list 2 3))))");
+        TEST(IS_TRUE(get_global(&sk, "ht-ok")));
+        eval_quietly(&sk, "(define ht-k (car (car (car (hash-table->alist ht-t)))))");   // the key's first element
+        TEST(get_global(&sk, "ht-k") == vm_new_symbol(&sk.vm, "k"));
+
+        COMMENT("Unreachable tables are freed...");
+        eval_quietly(&sk, "(set! ht-t #f)");
+        vm_gc(&sk.vm);
+        size_t before = sk.vm.numObjects;
+        for (int i = 0; i < 50; i++)
+            eval_quietly(&sk, "(let ((t (make-hash-table))) (hash-table-set! t 1 2) t)");
+        vm_gc(&sk.vm);
+        TEST(sk.vm.numObjects < before + 20);
+
+        COMMENT("Errors...");
+        reset_test_context();
+        eval_quietly(&sk, "(hash-table-ref (make-hash-table) 'nope)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "no value for key nope") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(hash-table-set! '() 1 2)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "must be a hash table") != NULL);
+        reset_test_context();
+        eval_quietly(&sk, "(make-hash-table car)");
+        TEST(g_test_ctx.error_count == 1);
+        TEST(strstr(g_test_ctx.last_message, "equivalence") != NULL);
+
+        sk_shutdown(&sk);
+    }
+
     // Test: what an embedder (a web REPL, say) relies on
     SUITE("Embedding");
     {

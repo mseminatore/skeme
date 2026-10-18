@@ -149,6 +149,7 @@ enum
     OBJ_CONTINUATION,
     OBJ_ERROR,          // an error object: (error msg irritant ...), or an error the VM raised
     OBJ_VECTOR,         // #(a b c)
+    OBJ_HASHTABLE,      // (make-hash-table)
 
 	// mark the last object type
     OBJ_LAST
@@ -443,7 +444,18 @@ typedef struct Upvalue {
 // An escape continuation, made by call/cc. Calling it returns its value
 // from that call/cc, but only while the call/cc is still running (its
 // "dynamic extent"); afterwards it is invalid. See sk_call_cc.
-// a vector: length elements, stored in the same allocation, after the
+// a hash table (SRFI-69 style): a table of the hash library, with Scheme
+// objects as keys and values (the GC traces them). The empty list, which
+// is NULL, is stored as the unbound tag, since the library marks an empty
+// slot with a NULL key.
+enum { HASH_EQUAL, HASH_EQV };      // HashTableObject.kind: how keys compare
+typedef struct HashTableObject {
+    Object base;
+    HashTable* table;
+    int kind;
+} HashTableObject;
+
+// a vector: 'length' elements, stored in the same allocation, after the
 // header (vm_new_vector)
 typedef struct Vector {
     Object base;
@@ -597,6 +609,7 @@ Object* vm_raise(VM* pvm, Object* obj, int continuable);  // raise obj (see VM.h
 Object* vm_new_error(VM* pvm, Object* message, Object* irritants);
 Object* vm_new_vector(VM* pvm, int length, Object* fill);
 #define IS_VECTOR(obj)      (OBJ_TYPE(obj) == OBJ_VECTOR)
+#define IS_HASHTABLE(obj)   (OBJ_TYPE(obj) == OBJ_HASHTABLE)
 void vm_format_object(Object* obj, int readable, char* buf, size_t size);   // printed form, truncated
 void vm_fatal(VM* pvm, const char* msg);   // an unrecoverable failure (see VM.fatal_handler)
 void* vm_check_alloc(VM* pvm, void* p);     // p, or vm_fatal if an allocation returned NULL

@@ -194,6 +194,10 @@ void vm_print_object(Object* obj, int flags, FILE* stream)
             fprintf(stream, "#<native_fn:%s>", ((String*)((NativeFunction*)obj)->name)->value);
             break;
 
+        case OBJ_HASHTABLE:
+            fprintf(stream, "#<hash-table %zu>", ((HashTableObject*)obj)->table ? ht_size(((HashTableObject*)obj)->table) : (size_t)0);
+            break;
+
         case OBJ_VECTOR:
         {
             Vector* vec = (Vector*)obj;
@@ -2118,6 +2122,15 @@ static void freeObject(VM* pvm, Object* object)
     }
         break;
 
+    case OBJ_HASHTABLE:
+    {
+        HashTableObject* hto = (HashTableObject*)object;
+        if (hto->table)
+            ht_free(hto->table);
+        hto->table = NULL;
+    }
+        break;
+
     case OBJ_CLOSURE:
     {
         Closure* closure = (Closure*)object;
@@ -2238,6 +2251,21 @@ static void blackenObject(VM* pvm, Object* object)
                 }
             }
 		}
+        break;
+
+    case OBJ_HASHTABLE:
+        {
+            // keys and values (the empty list as a key is a tag, not an object)
+            HashTable* table = ((HashTableObject*)object)->table;
+            size_t index = 0;
+            ht_key_t key;
+            ht_value_t value;
+            while (table && ht_next(table, &index, &key, &value))
+            {
+                markObject(pvm, (Object*)key);
+                markObject(pvm, (Object*)value);
+            }
+        }
         break;
 
     case OBJ_VECTOR:
@@ -3292,6 +3320,8 @@ void vm_freeObjects(VM* pvm) {
 
     while (obj) {
         Object* next = obj->next;
+        if (obj->type == OBJ_HASHTABLE && ((HashTableObject*)obj)->table)
+            ht_free(((HashTableObject*)obj)->table);    // its own allocation
         free(obj);  // TODO - use vm_alloc for obj dtors?
         obj = next;
     }

@@ -339,7 +339,7 @@ Checked individually on `main`. Each item below fails today.
 
 **Data**
 - [x] vectors (`make-vector`, `vector-ref`, `vector-set!`, `vector`, `#(...)`) (see #22)
-- [ ] hash tables
+- [x] hash tables (see #23)
 - [x] dotted-pair literals in quoted data: `'(1 . 2)` (the printer handles `(cons 1 2)` fine; this is a lexer/parser gap and currently also aborts, see the syntax-error issue) (see #14)
 
 **Strings and characters**
@@ -747,3 +747,26 @@ A few tests keep 100,000-element structures alive. Under the GC-stress build, wh
 
 ### Verification
 23 new tests in `test.scm` (531 total) and new C tests in `tests/test_error.c` (376 total): `write` and `display` output, the symbol table shrinking after 20,000 dead symbols, and vector errors. Everything passes in Debug, Release and the GC-stress build (which also covers the hash library update), plus `ctest`; `bench.scm` speed is unchanged.
+
+---
+
+## 23. ✅ case fixed; hash tables
+
+**Labels:** bug, enhancement
+**Status:** Fixed (working tree, not yet committed). Hash tables are from #8.
+
+### case was broken
+* Datums were compiled as expressions, so symbols were looked up as variables: `(case 'x ((x) 'sym))` failed with "unbound variable x". They are now data, as if quoted.
+* A clause body could hold only one expression; it is now a body of any length (shared with `cond`).
+* With no match and no `else`, the value was the key; it is now unspecified.
+* `=>` clauses, `((datum ...) => receiver)` and `(else => receiver)`, call the receiver with the key.
+* It compared with whatever `eqv?` meant when the `case` was compiled; it now uses `<eqv?>`, which programs cannot redefine. And there is no longer a limit of 16 datums or clauses.
+
+### Hash tables (SRFI-69 style)
+* `make-hash-table` (keys compared with `equal?` by default, or `eq?`/`eqv?` by identity, or `string=?`), `hash-table?`, `hash-table-set!`, `hash-table-ref` (with optional failure and success procedures; a missing key without one is a catchable error), `hash-table-ref/default`, `hash-table-delete!`, `hash-table-contains?` (and `hash-table-exists?`), `hash-table-count` (and `hash-table-size`), `hash-table-keys`, `hash-table-values`, `hash-table->alist`, `hash-table-walk`, `hash-table-update!`, `hash-table-update!/default`, `hash-table-clear!`, `hash-table-copy`, `alist->hash-table`.
+* A `HashTableObject` wraps a table of the hash library. Keys and values are Scheme objects, traced by the GC; the library table is freed with the object (and at shutdown). An `equal?` table hashes keys structurally (`equal_hash`: strings by contents, lists and vectors by their first elements to a limited depth, floats by value, everything else by identity) and compares with `objects_equal`; an `eq?` table uses the library's pointer hash and comparison. The empty list, which is NULL, is stored as the unbound tag, since the library marks an empty slot with a NULL key.
+* The procedures that run code for each entry (`hash-table-walk`) take a snapshot of the entries first, so the code may change the table.
+* Tables print as `#<hash-table count>`.
+
+### Verification
+30 new tests in `test.scm` (561 total) and a "Hash Tables" suite in `tests/test_error.c` (386 total): keys and values reachable only from a table survive collections, unreachable tables are freed, and the error messages. Everything passes in Debug, Release and the GC-stress build, plus `ctest`; `bench.scm` speed is unchanged.
